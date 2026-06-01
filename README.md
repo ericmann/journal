@@ -147,9 +147,8 @@ journal threads [--stale] [--days 14] [--json]
 ```
 journal index --watch                           # continuous, debounced re-index
 journal doctor [--json]                          # health checks
+journal synth weekly|decisions|stale [--dry-run] [--write] [--project slug] [--days 14]
 ```
-
-_Coming in later phases:_ `synth weekly|decisions|stale` (Phase 5).
 
 ### Retrieval & queries
 
@@ -227,6 +226,29 @@ hands-off.
 
 ---
 
+## Synthesis (cloud Claude)
+
+`journal synth` turns the indexed firehose into curated drafts using the
+Anthropic API. It runs scheduled or on demand — never in the capture/search hot
+path.
+
+```sh
+journal synth weekly                 # dry-run by default: prints prompt + target path
+journal synth weekly --write         # calls Claude, writes reflections/YYYY-Www.md (DRAFT)
+journal synth decisions --project canton --write   # appends a marked rollup to its _index.md
+journal synth stale --days 21        # surface threads idle > 21 days
+```
+
+- **`--dry-run` is the default** (and is explicit-safe): it assembles and prints
+  the prompt and the intended output path, and makes **no** network call and
+  **no** file write — useful for cost control and verifying token boundaries.
+- **`--write`** calls the API and writes output. `weekly`/`stale` write a new
+  file under `reflections/` (refusing to clobber an existing one, since you edit
+  those). `decisions --project <slug>` appends a **clearly-marked rollup block**
+  to `projects/<slug>/_index.md` — it never mutates your note bodies.
+- Requires **`ANTHROPIC_API_KEY` in the environment** (only for `--write`); it's
+  never written to config or logged. The model is `synth_model` in config.
+
 ## Configuration & secrets
 
 Non-secret settings live in `.journal/config.yaml` (committed):
@@ -241,6 +263,8 @@ excludes:
   - reflections/**
   - .journal/**
 store_path: .journal/index/journal.db
+synth_model: claude-sonnet-4-6        # Anthropic model for `journal synth`
+synth_max_tokens: 4096
 ```
 
 **Secrets never go in config.** The Anthropic API key for synthesis is read from
@@ -278,7 +302,7 @@ interfaces with deterministic fakes, and integration tests use a temp-file
 | 2 | `sqlite-vec` store: schema, migrations, CRUD/KNN | ✅ done |
 | 3 | Chunking + hashing, embed client, `index`, `search`, structured queries | ✅ done (MVP) |
 | 4 | `index --watch` (debounced), `doctor` | ✅ done |
-| 5 | Synthesis: Anthropic client, prompt assembly, `synth` | ⏳ |
+| 5 | Synthesis: Anthropic client, prompt assembly, `synth` | ✅ done |
 | 6 | `skills/journal/SKILL.md`, second-workspace validation | ⏳ |
 
 See [`docs/TDD.md`](docs/TDD.md) §7 for the per-story acceptance criteria.

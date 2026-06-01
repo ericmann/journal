@@ -109,6 +109,47 @@ retrieval path — not yet shipped), and Ollama (local embed/rerank; cloud Claud
 for inference/synth). A first-party `journal mcp` subcommand is noted as natural
 future work.
 
+## Phase 5 — Synthesis
+
+### Synthesis model default: `claude-sonnet-4-6` (configurable) ⚠️
+`synth_model` defaults to **`claude-sonnet-4-6`** — a cost/quality balance for a
+recurring, scheduled job. The TDD calls for "strong long-context reasoning";
+**`claude-opus-4-8`** is the most capable option and a one-line config change if
+you want maximum weekly-reflection quality. Flagged for your call; either works.
+`synth_max_tokens` defaults to 4096.
+
+### `--dry-run` is the default; `--write` is explicit
+Synthesis costs money and makes a network call, so the command **defaults to
+dry-run** (assemble + print prompt and intended path, no API call, no write).
+You must pass `--write` to actually call Claude. A test asserts dry-run makes
+zero client calls and writes nothing; the dry-run path uses a `noopClient` that
+errors if ever invoked.
+
+### Output writing rules (never mutate user content)
+- `weekly` → `reflections/YYYY-Www.md`; `stale` → `reflections/stale-<date>.md`.
+  Both **refuse to overwrite** an existing file (you edit those drafts).
+- `decisions --project <slug>` → appends a **clearly-marked block**
+  (`<!-- journal:decisions-rollup ... -->` … `<!-- /journal:decisions-rollup -->`)
+  to `projects/<slug>/_index.md`, preserving every existing byte. Append-only;
+  re-running adds another dated block rather than rewriting.
+
+### Prompt assembly is pure + golden-file tested
+`AssembleWeekly/Decisions/Stale` are pure functions over gathered chunks, tested
+against `internal/synth/testdata/*.golden` (regenerate with `go test -update`).
+The runner gathers from the store (which holds note bodies), so synthesis needs
+no second read path.
+
+### Anthropic client: key from env, never logged
+`NewAnthropic(key)` takes the key (read via `config.AnthropicAPIKey()` from
+`ANTHROPIC_API_KEY` only). Errors include the response body but **never** the
+key (a test asserts this). The runner reports a one-line summary with token
+counts + output path — no secrets.
+
+### store.Open now creates its parent directory
+The index dir is a rebuildable cache that may be deleted; `store.Open` now
+`MkdirAll`s the parent (skipped for `:memory:`), so `index`/`synth` work even if
+`.journal/index/` was removed.
+
 ## Tooling / process
 
 ### Commit signing

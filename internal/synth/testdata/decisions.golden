@@ -1,0 +1,13 @@
+You are compiling a decision log from a developer's journal.
+Produce a concise rollup of the decisions below.
+
+Guidelines:
+- One bullet per decision: the decision, then its rationale if present.
+- Preserve dates and cite the source note as path:line_start-line_end.
+- Group by theme if helpful. Do not invent decisions not in the notes.
+- Output GitHub-flavored markdown.
+
+## Decisions — canton
+
+- [daily/2026/06/2026-06-02.md:3-4] 2026-06-02 14:02 — 14:02 #displace @decision (@decision)
+  Declaring the dev fund payment as business income.

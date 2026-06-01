@@ -1,0 +1,12 @@
+You are reviewing project threads with no activity in the last 21 days.
+For each, suggest whether to revive, park, or close it, and the single next action if reviving.
+
+Guidelines:
+- Be brief: one short paragraph per thread.
+- Flag any open questions that are blocking.
+- Output GitHub-flavored markdown.
+
+## Stale threads
+
+- canton — last activity 2026-04-01, 12 notes, 2 open question(s)
+- old-experiment — last activity 2026-03-15, 3 notes, 0 open question(s)

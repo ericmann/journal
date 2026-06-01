@@ -13,6 +13,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -68,6 +70,15 @@ type Store struct {
 func Open(path string, dim int) (*Store, error) {
 	if dim <= 0 {
 		return nil, fmt.Errorf("embed dimension must be > 0, got %d", dim)
+	}
+	// Ensure the parent directory exists (the index dir may have been deleted;
+	// the DB is a rebuildable cache). ":memory:" and similar have no directory.
+	if path != ":memory:" && !strings.HasPrefix(path, ":") {
+		if dir := filepath.Dir(path); dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return nil, fmt.Errorf("creating index directory: %w", err)
+			}
+		}
 	}
 	db, err := sql.Open("sqlite3", path)
 	if err != nil {

@@ -44,6 +44,10 @@ type Config struct {
 	StorePath string `yaml:"store_path"`
 	// RetrievalInstruction is prefixed to queries when embedding for search.
 	RetrievalInstruction string `yaml:"retrieval_instruction"`
+	// SynthModel is the Anthropic model used for synthesis jobs.
+	SynthModel string `yaml:"synth_model"`
+	// SynthMaxTokens caps the synthesis response length.
+	SynthMaxTokens int `yaml:"synth_max_tokens"`
 
 	// root is the absolute repo root; not serialized.
 	root string
@@ -60,6 +64,8 @@ func Default() Config {
 		Excludes:             []string{"reflections/**", ".journal/**"},
 		StorePath:            filepath.Join(JournalDir, "index", "journal.db"),
 		RetrievalInstruction: "Represent this query for retrieving relevant developer journal notes:",
+		SynthModel:           "claude-sonnet-4-6",
+		SynthMaxTokens:       4096,
 	}
 }
 
@@ -93,6 +99,12 @@ func (c *Config) Validate() error {
 	}
 	if c.StorePath == "" {
 		return errors.New("store_path must not be empty")
+	}
+	if c.SynthModel == "" {
+		return errors.New("synth_model must not be empty")
+	}
+	if c.SynthMaxTokens <= 0 {
+		return fmt.Errorf("synth_max_tokens must be > 0, got %d", c.SynthMaxTokens)
 	}
 	return nil
 }
