@@ -64,7 +64,32 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 `gofmt` check, `go vet`, `go build`, race-enabled tests with coverage, and
 `golangci-lint` (pinned to v1.64.8 to match the locally verified version).
 
-### sqlite-vec loading (to be verified in Phase 2)
-Ground rule: verify the `sqlite-vec` extension actually loads — preferring pure
--Go `modernc.org/sqlite`, else cgo `mattn/go-sqlite3` — before building the
-store on it. If it doesn't load cleanly, stop and report. _(Pending Phase 2.)_
+### sqlite-vec loading: pure-Go via `ncruces/go-sqlite3` (no cgo) ✅
+Ground rule: verify the `sqlite-vec` extension actually loads before building on
+it, preferring a pure-Go (no-cgo) driver. I spiked three paths:
+
+- **`modernc.org/sqlite`** — pure Go, but cannot load the `sqlite-vec` C
+  extension. Not viable.
+- **cgo `mattn/go-sqlite3` + `sqlite-vec-go-bindings/cgo`** — compiles, but the
+  bindings register vec via `sqlite3_auto_extension`, which is a **no-op on
+  Apple platforms**, so `vec_version()` is "no such function". Would need a
+  loadable `.dylib` shipped alongside the binary (breaks single-static-binary).
+- **`ncruces/go-sqlite3` (WASM via wazero) + `sqlite-vec-go-bindings/ncruces`**
+  — **pure Go, `CGO_ENABLED=0`, works.** sqlite-vec is statically compiled into
+  the bundled WASM. Full KNN round-trip verified.
+
+**Decision:** use the ncruces path. Version lock matters and is narrow — the
+bindings (v0.1.6) require `sqlite3.Binary` (removed in newer ncruces), and the
+vec-enabled WASM needs wazero atomics, which ncruces **only enables in
+v0.20.3–v0.21.3** (v0.22.0+ disabled them by default, giving
+`i32.atomic.store ... feature "" is disabled` at first query). We pin
+**v0.21.3** (highest in the working window). This keeps the single-static-binary,
+easy-cross-compile property the project is built around (`CGO_ENABLED=0`).
+
+> If we later need a newer SQLite, the upgrade path is to publish a vec-enabled
+> WASM built for current ncruces (or move to the cgo path with a per-connection
+> `sqlite3_vec_init` hook). Tracked as future work, not needed at this scale.
+
+Driver registration: import `_ "github.com/ncruces/go-sqlite3/driver"` (registers
+the `sqlite3` database/sql driver) and `sqlite-vec-go-bindings/ncruces` (sets the
+vec-enabled WASM binary + provides `SerializeFloat32`).

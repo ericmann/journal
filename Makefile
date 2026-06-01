@@ -3,8 +3,10 @@ PKG := ./...
 
 .PHONY: build test lint fmt vet tidy clean cover
 
+# CGO_ENABLED=0 yields a fully static binary; all deps (incl. the ncruces
+# sqlite-vec driver, which runs SQLite as WASM via wazero) are pure Go.
 build:
-	go build -o $(BINARY) .
+	CGO_ENABLED=0 go build -o $(BINARY) .
 
 test:
 	go test $(PKG)
