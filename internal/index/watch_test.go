@@ -76,6 +76,55 @@ func TestProcessChangesSkipsExcludedAndNonMarkdown(t *testing.T) {
 	}
 }
 
+func TestWatcherHelpers(t *testing.T) {
+	w, _, _, root := newWatchFixture(t)
+	if w.rel(filepath.Join(root, "daily", "d.md")) != "daily/d.md" {
+		t.Error("rel should produce slash repo-relative path")
+	}
+	if w.rel("/somewhere/else.md") != "" {
+		t.Error("rel should return empty for a path outside root")
+	}
+	if !isMarkdown("a/b.MD") || isMarkdown("a/b.txt") {
+		t.Error("isMarkdown wrong")
+	}
+	got := keys(map[string]bool{"a": true, "b": true})
+	if len(got) != 2 {
+		t.Errorf("keys = %v", got)
+	}
+}
+
+// TestWatchRunPicksUpNewSubdirectory covers watching directories created after
+// the watcher starts (the addDirUnder path).
+func TestWatchRunPicksUpNewSubdirectory(t *testing.T) {
+	w, s, _, root := newWatchFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	time.Sleep(50 * time.Millisecond)
+	// Create a brand-new nested directory and a note inside it.
+	if err := os.MkdirAll(filepath.Join(root, "projects", "newproj", "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond) // let the watcher add the new dirs
+	write(t, root, "projects/newproj/notes/2026-06-01.md", "# 2026-06-01\n\n## 09:00 @decision\nnew project note\n")
+
+	deadline := time.After(5 * time.Second)
+	for {
+		if n, _ := s.Count(ctx); n == 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("watcher did not index a note in a newly-created subdir within 5s")
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	cancel()
+	<-done
+}
+
 // TestWatchRunReindexesOnEdit exercises the real fsnotify loop end to end.
 func TestWatchRunReindexesOnEdit(t *testing.T) {
 	w, s, _, root := newWatchFixture(t)
