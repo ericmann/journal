@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	github.com/asg017/sqlite-vec-go-bindings v0.1.6
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/ncruces/go-sqlite3 v0.21.3
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1

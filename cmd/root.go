@@ -2,10 +2,13 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -37,7 +40,11 @@ var rootCmd = &cobra.Command{
 
 // Execute runs the root command and exits non-zero on error.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	// Cancel the command context on Ctrl-C / SIGTERM so long-running commands
+	// (notably `index --watch`) shut down cleanly.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		if !errors.Is(err, errSilent) {
 			fmt.Fprintln(os.Stderr, "journal:", err)
 		}

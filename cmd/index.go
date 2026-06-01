@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,7 @@ import (
 var (
 	indexRebuild  bool
 	indexSinceStr string
+	indexWatch    bool
 )
 
 var indexCmd = &cobra.Command{
@@ -34,12 +36,35 @@ var indexCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if indexWatch {
+			return runWatch(cmd.Context(), cfg, newEmbedder(cfg), cmd.OutOrStdout())
+		}
 		_, err = runIndex(cmd.Context(), cfg, newEmbedder(cfg), indexOptions{
 			rebuild: indexRebuild,
 			since:   since,
 		}, cmd.OutOrStdout())
 		return err
 	},
+}
+
+// runWatch opens the store and runs the debounced watcher until the context is
+// cancelled (Ctrl-C). It logs a one-line summary per re-index to out.
+func runWatch(ctx context.Context, cfg *config.Config, e embed.Embedder, out io.Writer) error {
+	s, err := store.Open(cfg.StoreAbsPath(), cfg.EmbedDim)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	ix := index.NewIndexer(s, e)
+	logf := func(format string, args ...any) {
+		fmt.Fprintf(out, format+"\n", args...)
+	}
+	w := index.NewWatcher(cfg.Root(), cfg.Excludes, ix, 0, logf)
+	err = w.Run(ctx)
+	if errors.Is(err, context.Canceled) {
+		return nil // clean shutdown on Ctrl-C
+	}
+	return err
 }
 
 type indexOptions struct {
@@ -95,5 +120,6 @@ func removeDBFiles(path string) error {
 func init() {
 	indexCmd.Flags().BoolVar(&indexRebuild, "rebuild", false, "discard the index and re-embed everything")
 	indexCmd.Flags().StringVar(&indexSinceStr, "since", "", "only index files modified within this window (e.g. 2w, 14d, 36h)")
+	indexCmd.Flags().BoolVar(&indexWatch, "watch", false, "run continuously, re-indexing files as they change (Ctrl-C to stop)")
 	rootCmd.AddCommand(indexCmd)
 }
