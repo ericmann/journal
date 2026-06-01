@@ -29,9 +29,15 @@ func relTo(root, path string) string {
 // logLevel is the global stderr log verbosity (default quiet).
 var logLevel string
 
+// version is the build version, overridable at build time via:
+//
+//	go build -ldflags "-X github.com/ericmann/journal/cmd.version=v1.0.0"
+var version = "dev"
+
 // rootCmd is the base command invoked as `journal`.
 var rootCmd = &cobra.Command{
 	Use:           "journal",
+	Version:       version,
 	Short:         "A local-first developer journal with semantic retrieval and AI synthesis",
 	Long:          "journal turns a folder of plain-markdown developer notes into a searchable,\nAI-queryable corpus with scheduled synthesis jobs. Markdown is the source of\ntruth; the on-disk index is a disposable, rebuildable cache.",
 	SilenceUsage:  true,

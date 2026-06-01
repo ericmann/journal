@@ -68,6 +68,16 @@ func nonNil(s []string) []string {
 	return s
 }
 
+// marshalResults serializes results to the stable {results:[...]} JSON used by
+// both --json output and the MCP server.
+func marshalResults(results []Result) (string, error) {
+	b, err := json.MarshalIndent(resultsEnvelope{Results: nonNilResults(results)}, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 // renderResults writes results as JSON (stable schema) or human-readable text.
 func renderResults(out io.Writer, results []Result, jsonMode bool) error {
 	if jsonMode {

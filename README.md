@@ -147,7 +147,12 @@ journal threads [--stale] [--days 14] [--json]
 journal index --watch                           # continuous, debounced re-index
 journal doctor [--json]                          # health checks
 journal synth weekly|decisions|stale [--dry-run] [--write] [--project slug] [--days 14]
+journal mcp [--repo path]                        # MCP server (stdio) for Claude Desktop
 ```
+
+`journal mcp` exposes `search`/`recent`/`decisions`/`threads`/`capture` as MCP
+tools (same JSON as `--json`) for the Claude desktop app — see
+[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) §3b for the one-block config.
 
 ### Retrieval & queries
 

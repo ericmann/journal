@@ -140,45 +140,43 @@ canton notes", weaker for "find the thing about fallback routing".
 Keep the disposable index out of scope: only the markdown matters here
 (`.journal/index/` is gitignored and irrelevant to the app).
 
-### 3b. MCP tool wrapping `journal search` (recommended for retrieval)
+### 3b. Built-in MCP server: `journal mcp` (recommended for retrieval)
 
-The desktop app speaks **MCP** (Model Context Protocol). Exposing `journal` as a
-local MCP server gives the app the *same high-precision retrieval* Claude Code
-gets, by calling the CLI and returning its `--json`.
+The desktop app speaks **MCP** (Model Context Protocol), and `journal` ships a
+**first-party MCP server** over stdio: `journal mcp`. It gives the app the *same
+high-precision retrieval* Claude Code gets, exposing these tools (each returns
+the same stable JSON as the CLI's `--json`):
 
-Because every read command already emits stable JSON, the wrapper is thin — an
-MCP server that maps tools to subcommands:
+| MCP tool    | Arguments                                  | Returns                         |
+|-------------|--------------------------------------------|---------------------------------|
+| `search`    | `query`, `k?`, `tag[]?`, `project?`, `since?` | `{results:[…]}` (path:line cites) |
+| `recent`    | `tag[]?`, `project?`, `since?`             | `{results:[…]}`                 |
+| `decisions` | `project?`, `since?`                       | `{results:[…]}` (@decision only)|
+| `threads`   | `stale?`, `days?`                          | `{threads:[…]}`                 |
+| `capture`   | `text`, `tags[]?`, `project?`, `marker?`   | `{"captured":"<path>"}`         |
 
-| MCP tool      | Shells out to                                        |
-|---------------|------------------------------------------------------|
-| `search`      | `journal search <query> --k <k> --json`              |
-| `recent`      | `journal recent --json`                              |
-| `decisions`   | `journal decisions [--project p] --json`             |
-| `threads`     | `journal threads [--stale] --json`                   |
-| `capture`     | `journal capture <text> [--tags ..] [--marker ..]`   |
-
-Register it in the desktop app's MCP config (`claude_desktop_config.json`),
-pointing `command` at your MCP server binary/script and setting its working
-directory to the journal repo so it resolves the right `.journal/` and env:
+Register it in the desktop app's MCP config (`claude_desktop_config.json`).
+Point `command` at the `journal` binary and use `--repo` (or the working
+directory) to bind it to a specific journal repo:
 
 ```jsonc
 {
   "mcpServers": {
     "journal": {
-      "command": "/usr/local/bin/journal-mcp",
-      "args": [],
-      "env": { "JOURNAL_DIR": "/Users/you/journal" }
+      "command": "/usr/local/bin/journal",
+      "args": ["mcp", "--repo", "/Users/you/journal"]
     }
   }
 }
 ```
 
-> **Status:** the MCP server is **not shipped yet** — `journal` itself is the
-> CLI. The contract it would wrap (stable `--json`, `path:line` citations,
-> error-vs-empty distinction) is in place today, so a small stdio MCP shim is
-> straightforward. A first-party `journal mcp` subcommand is a natural future
-> addition; until then, 3a works immediately and Claude Code (section 2) is the
-> fully-supported agent path.
+That's it — restart the desktop app and the `journal` tools appear. Search still
+uses the local Ollama configured in that repo; `capture` appends append-only.
+Tool errors come back as `{"error":"…"}` (e.g. if Ollama is down), so the model
+can tell failure from an empty result set.
+
+> Verified end-to-end over the real JSON-RPC stdio handshake (initialize →
+> tools/list → tools/call). Built on the official `modelcontextprotocol/go-sdk`.
 
 ### Inference, locally vs. cloud
 

@@ -177,6 +177,25 @@ own gitignored `.journal/index/journal.db` and never leak into each other;
 config). README documents the clone-to-second-workspace recipe. No tool-held
 profiles — separation is "which repo + which env", exactly as the TDD intends.
 
+## Post-Phase-6 — MCP server (`journal mcp`)
+
+Shipped a first-party MCP server (the shim noted earlier as future work) so the
+Claude desktop app gets the same retrieval as Claude Code.
+
+- Built on the **official `github.com/modelcontextprotocol/go-sdk` v1.6.1** (pure
+  Go; typed `AddTool` auto-generates input schemas). Chosen over hand-rolling
+  JSON-RPC for protocol correctness (can't test against Desktop locally) and
+  over `mark3labs/mcp-go` since the official SDK is now a stable v1.
+- Transport: stdio (newline-delimited JSON-RPC). `journal mcp [--repo path]`
+  binds to a workspace; tools reuse the in-process `run*` logic (no self-exec),
+  so output is byte-identical to the CLI `--json`.
+- Tools: `search`, `recent`, `decisions`, `threads`, `capture`. Errors return a
+  tool-error result with the same `{"error":…}` shape (distinct from empty).
+- Verified end-to-end over the real JSON-RPC handshake (initialize → tools/list
+  → tools/call). Handler logic is unit-tested with the fake embedder.
+- Added a `version` var (default `dev`, set via `-ldflags` at release) surfaced
+  as `journal --version` and the MCP serverInfo.
+
 ## Tooling / process
 
 ### Commit signing

@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -53,12 +54,18 @@ var threadsCmd = &cobra.Command{
 // runThreads gathers project activity, marks threads with no activity in the
 // last `days` as stale, and (when staleOnly) returns only those.
 func runThreads(ctx context.Context, staleOnly bool, days int) ([]Thread, error) {
-	if days <= 0 {
-		days = 14
-	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return nil, err
+	}
+	return threadsFromStore(ctx, cfg, staleOnly, days)
+}
+
+// threadsFromStore is the cfg-explicit variant used by both the CLI and the MCP
+// server.
+func threadsFromStore(ctx context.Context, cfg *config.Config, staleOnly bool, days int) ([]Thread, error) {
+	if days <= 0 {
+		days = 14
 	}
 	s, err := store.Open(cfg.StoreAbsPath(), cfg.EmbedDim)
 	if err != nil {

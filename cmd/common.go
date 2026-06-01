@@ -12,7 +12,13 @@ import (
 
 // loadConfig resolves the repo root from the current directory and loads config.
 func loadConfig() (*config.Config, error) {
-	root, err := config.FindRepoRoot(".")
+	return loadConfigFrom(".")
+}
+
+// loadConfigFrom resolves the repo root by walking up from start and loads
+// config. Used by `mcp --repo` to bind to a specific workspace.
+func loadConfigFrom(start string) (*config.Config, error) {
+	root, err := config.FindRepoRoot(start)
 	if err != nil {
 		return nil, err
 	}
