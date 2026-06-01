@@ -25,7 +25,9 @@ zero-friction and retrieval excellent, without a server, daemon, or cloud store.
 
 The full rationale, architecture, and acceptance criteria live in
 [`docs/TDD.md`](docs/TDD.md). Build-time decisions and deviations are tracked in
-[`docs/DECISIONS.md`](docs/DECISIONS.md).
+[`docs/DECISIONS.md`](docs/DECISIONS.md). For wiring `journal` into **Claude
+Code**, the **Claude desktop app**, and **Ollama**, see
+[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
 
 ---
 
@@ -63,8 +65,15 @@ ollama pull qwen3-embedding:4b    # default embedding model
 ollama pull qwen3-reranker        # reranker for precision
 ```
 
-`journal doctor` _(coming in Phase 4)_ verifies Ollama is reachable and these
-models are present before you rely on indexing.
+`journal doctor` verifies Ollama is reachable and these models are present (and
+checks the index schema + repo/config) before you rely on indexing:
+
+```sh
+journal doctor          # or: journal doctor --json
+```
+
+It prints an actionable per-check report and exits non-zero if anything is
+wrong (Ollama down, a model missing, schema mismatch).
 
 ---
 
@@ -135,8 +144,12 @@ journal decisions [--project slug] [--since 4w] [--json]
 journal threads [--stale] [--days 14] [--json]
 ```
 
-_Coming in later phases:_ `index --watch` (Phase 4), `doctor` (Phase 4),
-`synth weekly|decisions|stale` (Phase 5).
+```
+journal index --watch                           # continuous, debounced re-index
+journal doctor [--json]                          # health checks
+```
+
+_Coming in later phases:_ `synth weekly|decisions|stale` (Phase 5).
 
 ### Retrieval & queries
 
@@ -164,19 +177,53 @@ distinguishable from an error.
 
 ---
 
-## The watcher _(coming in Phase 4)_
+## The watcher
 
-Indexing stays fresh via a long-running `journal index --watch`. The
-**recommended way to run it is a dedicated `tmux` pane** — simple, visible, and
-easy to restart:
+Indexing stays fresh via a long-running `journal index --watch`: it does an
+initial index, then debounces filesystem events and re-indexes only changed
+files (deletions remove their chunks). Ctrl-C stops it cleanly.
+
+The **recommended way to run it is a dedicated `tmux` pane** — simple, visible,
+and easy to restart:
 
 ```sh
 tmux new-session -d -s journal 'cd ~/journal && journal index --watch'
-# attach to watch it:  tmux attach -t journal
+tmux attach -t journal     # watch it;  Ctrl-b d to detach
 ```
 
-If you'd rather have it survive reboots unattended, a `launchd` user agent is
-also supported; that recipe will be documented here when the watcher ships.
+### Optional: run it unattended via launchd (macOS)
+
+If you'd rather it survive logout/reboot, install a per-user launchd agent.
+Create `~/Library/LaunchAgents/com.ericmann.journal-watch.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>com.ericmann.journal-watch</string>
+  <key>ProgramArguments</key> <array>
+    <string>/usr/local/bin/journal</string>
+    <string>index</string>
+    <string>--watch</string>
+  </array>
+  <key>WorkingDirectory</key> <string>/Users/you/journal</string>
+  <key>RunAtLoad</key>        <true/>
+  <key>KeepAlive</key>        <true/>
+  <key>StandardOutPath</key>  <string>/tmp/journal-watch.log</string>
+  <key>StandardErrorPath</key><string>/tmp/journal-watch.log</string>
+</dict>
+</plist>
+```
+
+```sh
+launchctl load   ~/Library/LaunchAgents/com.ericmann.journal-watch.plist
+launchctl unload ~/Library/LaunchAgents/com.ericmann.journal-watch.plist   # to stop
+```
+
+The **tmux pane is the documented default**; launchd is there if you want it
+hands-off.
 
 ---
 
@@ -230,7 +277,7 @@ interfaces with deterministic fakes, and integration tests use a temp-file
 | 1 | Repo skeleton, config, note format, `capture`, `init` | ✅ done |
 | 2 | `sqlite-vec` store: schema, migrations, CRUD/KNN | ✅ done |
 | 3 | Chunking + hashing, embed client, `index`, `search`, structured queries | ✅ done (MVP) |
-| 4 | `index --watch` (debounced), `doctor` | ⏳ |
+| 4 | `index --watch` (debounced), `doctor` | ✅ done |
 | 5 | Synthesis: Anthropic client, prompt assembly, `synth` | ⏳ |
 | 6 | `skills/journal/SKILL.md`, second-workspace validation | ⏳ |
 

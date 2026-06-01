@@ -78,6 +78,37 @@ to `--k` (default 5). No ANN index (per the TDD; brute force is fine at ≤25k).
 Results render as `path:line_start-line_end`. Line numbers track the `##` block:
 `line_start` is the heading line, `line_end` the last non-blank content line.
 
+## Phase 4 — Watch + doctor
+
+### Watcher: fsnotify + debounce, re-index only changed files
+`journal index --watch` uses `fsnotify` (pure Go). It watches every
+non-excluded directory (adding newly-created dirs as they appear), debounces
+event bursts (default 500ms), and re-indexes only the files that changed. A
+deleted file is re-indexed as empty content, which removes its chunks. The
+`.journal/index/**` exclude keeps the DB's own writes from causing a feedback
+loop. `ProcessChanges` is the unit-tested core; `Run` is covered by a real
+fsnotify end-to-end test. Ctrl-C/SIGTERM cancels via a signal-bound context for
+clean shutdown.
+
+### Watcher delivery default: tmux pane (launchd documented as optional)
+Confirmed default is a dedicated tmux pane; the README also documents a launchd
+per-user agent for hands-off operation.
+
+### doctor: injected model-lister for network-free tests
+`runDoctor` takes a `modelLister` interface (just `Tags`), so health checks are
+tested with a fake. Checks: repo/config, Ollama reachability, embed + rerank
+model presence (tolerating a missing `:tag`), and index schema/chunk count. The
+Anthropic key is informational only (synth-only) and never fails the verdict.
+Exits non-zero on any failure; `--json` emits `{ok, checks:[{name,ok,detail}]}`.
+
+### Integrations documented
+[INTEGRATIONS.md](INTEGRATIONS.md) covers Claude Code (the first-class path via
+`skills/journal/SKILL.md` + `search --json`), the Claude desktop app (filesystem
+connector now; an MCP shim wrapping the stable `--json` as the recommended
+retrieval path — not yet shipped), and Ollama (local embed/rerank; cloud Claude
+for inference/synth). A first-party `journal mcp` subcommand is noted as natural
+future work.
+
 ## Tooling / process
 
 ### Commit signing
