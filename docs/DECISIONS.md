@@ -44,6 +44,40 @@ onto the block header for retrieval, but the original text is preserved verbatim
 
 ---
 
+## Phase 3 — Index + search + structured queries (MVP)
+
+### Reranking: LLM-as-reranker via `/api/generate`, with graceful fallback ⚠️
+Ollama has no dedicated rerank endpoint. `Ollama.Rerank` scores each candidate
+by prompting the reranker model (`/api/generate`, temperature 0) to emit a 0–10
+relevance number, parsed and normalized to [0,1], run over a bounded worker
+pool. `search` reranks the KNN candidates and, **if reranking errors**, falls
+back to vector-distance order (score = `1/(1+distance)`) so search still works.
+
+> **Needs validation during dogfooding:** whether `qwen3-reranker` behaves well
+> through `/api/generate`, and the latency of reranking ~50 candidates against
+> the <5s search budget. If it's too slow or the model isn't suited to the
+> generate path, options are: lower `candidateN`, lower the rerank worker count,
+> or swap to a proper cross-encoder rerank endpoint when Ollama exposes one. The
+> reranker sits behind the `embed.Embedder` interface, so this is a localized
+> change.
+
+### `--json` schema + error/empty distinction
+Read commands emit a stable schema. `search`/`recent`/`decisions` use
+`{"results":[{path,line_start,line_end,heading,snippet,score,tags,markers}]}`.
+`threads` is project-shaped, so it uses `{"threads":[{project,last_activity,
+chunks,open_questions,stale,days_since}]}`. On failure, commands emit
+`{"error":"..."}` to stdout and exit non-zero (via an internal `errSilent`
+sentinel so the root doesn't also print to stderr) — so a machine consumer can
+tell an error from a legitimately empty result set.
+
+### Search candidate count
+`candidateN = 50` nearest chunks fetched by brute-force KNN, then reranked down
+to `--k` (default 5). No ANN index (per the TDD; brute force is fine at ≤25k).
+
+### Citations
+Results render as `path:line_start-line_end`. Line numbers track the `##` block:
+`line_start` is the heading line, `line_end` the last non-blank content line.
+
 ## Tooling / process
 
 ### Commit signing

@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -409,6 +410,115 @@ func (s *Store) KNN(ctx context.Context, query []float32, k int, f Filter) ([]Ca
 		}
 		out = append(out, Candidate{Chunk: c, Distance: h.dist})
 	}
+	return out, nil
+}
+
+// Recent returns chunks matching the filter, most recent first (by created_at,
+// with unknown-date chunks last), limited to limit rows (limit <= 0 means no
+// limit). This backs the `recent` and `decisions` commands.
+func (s *Store) Recent(ctx context.Context, f Filter, limit int) ([]Chunk, error) {
+	where, args := buildWhere(f)
+	q := `SELECT id FROM chunks c` + where +
+		` ORDER BY (created_at IS NULL OR created_at='') ASC, created_at DESC, id ASC`
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	var idsList []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		idsList = append(idsList, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	out := make([]Chunk, 0, len(idsList))
+	for _, id := range idsList {
+		c, err := s.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// buildWhere assembles a parameterized WHERE clause from a Filter. It returns
+// the clause (prefixed with " WHERE " when non-empty) and its arguments.
+func buildWhere(f Filter) (string, []any) {
+	var conds []string
+	var args []any
+	if f.Project != "" {
+		conds = append(conds, "c.project = ?")
+		args = append(args, f.Project)
+	}
+	if !f.Since.IsZero() {
+		conds = append(conds, "c.created_at != '' AND c.created_at >= ?")
+		args = append(args, f.Since.UTC().Format(time.RFC3339))
+	}
+	for _, tag := range f.Tags {
+		conds = append(conds, "EXISTS (SELECT 1 FROM tags t WHERE t.chunk_id=c.id AND t.tag=?)")
+		args = append(args, tag)
+	}
+	for _, m := range f.Markers {
+		conds = append(conds, "EXISTS (SELECT 1 FROM markers mk WHERE mk.chunk_id=c.id AND mk.marker=?)")
+		args = append(args, m)
+	}
+	if len(conds) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(conds, " AND "), args
+}
+
+// ProjectInfo summarizes activity in one project thread.
+type ProjectInfo struct {
+	Slug          string
+	LastActivity  time.Time // most recent chunk created_at; zero if unknown
+	Chunks        int
+	OpenQuestions int // chunks marked @question
+}
+
+// Projects returns per-project activity, most recently active first. It backs
+// the `threads` command.
+func (s *Store) Projects(ctx context.Context) ([]ProjectInfo, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.project,
+		       COUNT(*),
+		       MAX(c.created_at),
+		       SUM(CASE WHEN EXISTS (SELECT 1 FROM markers mk WHERE mk.chunk_id=c.id AND mk.marker='question') THEN 1 ELSE 0 END)
+		FROM chunks c
+		WHERE c.project IS NOT NULL AND c.project != ''
+		GROUP BY c.project`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ProjectInfo
+	for rows.Next() {
+		var pi ProjectInfo
+		var maxCreated sql.NullString
+		if err := rows.Scan(&pi.Slug, &pi.Chunks, &maxCreated, &pi.OpenQuestions); err != nil {
+			return nil, err
+		}
+		pi.LastActivity = parseTime(maxCreated.String)
+		out = append(out, pi)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].LastActivity.After(out[j].LastActivity)
+	})
 	return out, nil
 }
 

@@ -128,11 +128,39 @@ slugified, e.g. `"Canton COI"` → `canton-coi`).
 ```
 journal init    [path]                          # bootstrap a repo
 journal capture <text> [--tags a,b] [--project slug] [--marker decision|question|todo]
+journal index   [--rebuild] [--since 2w]        # embed changed notes (one-shot)
+journal search  <query> [--k 5] [--tag t] [--project slug] [--since 2w] [--json]
+journal recent  [--tag t] [--project slug] [--since 1w] [--json]
+journal decisions [--project slug] [--since 4w] [--json]
+journal threads [--stale] [--days 14] [--json]
 ```
 
-_Coming in later phases:_ `index [--watch|--rebuild|--since]`, `search`,
-`recent`, `decisions`, `threads`, `synth weekly|decisions|stale`, `doctor`.
-Every read command will support `--json` with a stable schema.
+_Coming in later phases:_ `index --watch` (Phase 4), `doctor` (Phase 4),
+`synth weekly|decisions|stale` (Phase 5).
+
+### Retrieval & queries
+
+- **`search`** embeds your query (with a retrieval instruction), runs a
+  brute-force vector KNN over the index, reranks the top candidates, and returns
+  the best `--k` with `path:line_start-line_end` citations. If the reranker is
+  unavailable it falls back to vector-distance order.
+- **`recent`** / **`decisions`** are plain metadata queries (newest first);
+  `decisions` filters to `@decision` blocks.
+- **`threads`** summarizes project activity; `--stale` surfaces projects with no
+  activity in `--days` (default 14).
+
+Every read command supports **`--json`**. Results use a stable schema:
+
+```json
+{ "results": [ { "path": "daily/2026/06/2026-06-01.md", "line_start": 3,
+  "line_end": 5, "heading": "09:14 #cabot", "snippet": "…", "score": 0.87,
+  "tags": ["cabot"], "markers": [] } ] }
+```
+
+`threads --json` emits `{ "threads": [ { "project", "last_activity", "chunks",
+"open_questions", "stale", "days_since" } ] }`. On failure, commands emit
+`{ "error": "…" }` to stdout and exit non-zero — so an empty result set is
+distinguishable from an error.
 
 ---
 
@@ -200,8 +228,8 @@ interfaces with deterministic fakes, and integration tests use a temp-file
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | Repo skeleton, config, note format, `capture`, `init` | ✅ done |
-| 2 | `sqlite-vec` store: schema, migrations, CRUD/KNN | ⏳ |
-| 3 | Chunking + hashing, embed client, `index`, `search`, structured queries | ⏳ (MVP) |
+| 2 | `sqlite-vec` store: schema, migrations, CRUD/KNN | ✅ done |
+| 3 | Chunking + hashing, embed client, `index`, `search`, structured queries | ✅ done (MVP) |
 | 4 | `index --watch` (debounced), `doctor` | ⏳ |
 | 5 | Synthesis: Anthropic client, prompt assembly, `synth` | ⏳ |
 | 6 | `skills/journal/SKILL.md`, second-workspace validation | ⏳ |

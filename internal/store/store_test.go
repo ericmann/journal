@@ -293,6 +293,98 @@ func TestKNNValidates(t *testing.T) {
 	}
 }
 
+func TestRecentOrdersAndFilters(t *testing.T) {
+	s := openTemp(t, 8)
+	ctx := context.Background()
+	mk := func(id string, day int, project string, markers []string) Chunk {
+		c := sampleChunk(id, "p.md", project, []string{"tax"}, markers)
+		c.CreatedAt = time.Date(2026, 6, day, 9, 0, 0, 0, time.UTC)
+		return c
+	}
+	for i, c := range []Chunk{
+		mk("oldest", 1, "canton", []string{"decision"}),
+		mk("middle", 2, "displace", []string{"question"}),
+		mk("newest", 3, "canton", []string{"decision"}),
+	} {
+		if err := s.Upsert(ctx, c, vec(8, i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := s.Recent(ctx, Filter{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids(toCandidates(all))[0] != "newest" || ids(toCandidates(all))[2] != "oldest" {
+		t.Errorf("recent order = %v, want newest..oldest", ids(toCandidates(all)))
+	}
+
+	// decisions in canton only
+	dec, _ := s.Recent(ctx, Filter{Project: "canton", Markers: []string{"decision"}}, 0)
+	if !sameSet(ids(toCandidates(dec)), []string{"newest", "oldest"}) {
+		t.Errorf("canton decisions = %v, want {newest,oldest}", ids(toCandidates(dec)))
+	}
+
+	// limit
+	lim, _ := s.Recent(ctx, Filter{}, 1)
+	if len(lim) != 1 || lim[0].ID != "newest" {
+		t.Errorf("limit 1 = %v, want [newest]", ids(toCandidates(lim)))
+	}
+
+	// since
+	since, _ := s.Recent(ctx, Filter{Since: time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)}, 0)
+	if len(since) != 1 || since[0].ID != "newest" {
+		t.Errorf("since filter = %v, want [newest]", ids(toCandidates(since)))
+	}
+}
+
+func TestProjects(t *testing.T) {
+	s := openTemp(t, 8)
+	ctx := context.Background()
+	mk := func(id, project string, day int, markers []string) Chunk {
+		c := sampleChunk(id, "projects/"+project+"/notes/n.md", project, nil, markers)
+		c.CreatedAt = time.Date(2026, 6, day, 9, 0, 0, 0, time.UTC)
+		return c
+	}
+	rows := []Chunk{
+		mk("a", "canton", 1, []string{"question"}),
+		mk("b", "canton", 5, []string{"decision"}),
+		mk("c", "displace", 2, []string{"question"}),
+		mk("d", "", 3, nil), // daily chunk, no project -> excluded
+	}
+	for i, c := range rows {
+		if err := s.Upsert(ctx, c, vec(8, i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	projects, err := s.Projects(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 2 {
+		t.Fatalf("got %d projects, want 2", len(projects))
+	}
+	// canton most recently active (day 5) -> first
+	if projects[0].Slug != "canton" {
+		t.Errorf("first project = %q, want canton", projects[0].Slug)
+	}
+	if projects[0].Chunks != 2 || projects[0].OpenQuestions != 1 {
+		t.Errorf("canton stats = chunks %d, questions %d; want 2,1", projects[0].Chunks, projects[0].OpenQuestions)
+	}
+	want := time.Date(2026, 6, 5, 9, 0, 0, 0, time.UTC)
+	if !projects[0].LastActivity.Equal(want) {
+		t.Errorf("canton last activity = %v, want %v", projects[0].LastActivity, want)
+	}
+}
+
+func toCandidates(cs []Chunk) []Candidate {
+	out := make([]Candidate, len(cs))
+	for i, c := range cs {
+		out[i] = Candidate{Chunk: c}
+	}
+	return out
+}
+
 func TestDimAndGetMissing(t *testing.T) {
 	s := openTemp(t, 8)
 	if s.Dim() != 8 {

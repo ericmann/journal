@@ -2,12 +2,17 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
+
+// errSilent signals that an error has already been reported to the user (e.g. as
+// a JSON error envelope on stdout). Execute exits non-zero without printing it.
+var errSilent = errors.New("")
 
 // relTo returns path relative to root for display, falling back to the absolute
 // path if it can't be made relative.
@@ -33,7 +38,9 @@ var rootCmd = &cobra.Command{
 // Execute runs the root command and exits non-zero on error.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "journal:", err)
+		if !errors.Is(err, errSilent) {
+			fmt.Fprintln(os.Stderr, "journal:", err)
+		}
 		os.Exit(1)
 	}
 }
