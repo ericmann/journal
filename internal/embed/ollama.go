@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -162,6 +163,57 @@ func (o *Ollama) scoreOne(ctx context.Context, query, doc string) float32 {
 		score = 1
 	}
 	return score
+}
+
+type tagsResponse struct {
+	Models []struct {
+		Name  string `json:"name"`
+		Model string `json:"model"`
+	} `json:"models"`
+}
+
+// Tags returns the list of model names available in Ollama (from /api/tags).
+// It doubles as a reachability check.
+func (o *Ollama) Tags(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, o.baseURL+"/api/tags", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := o.hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ollama unreachable at %s: %w", o.baseURL, err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama /api/tags: status %d: %s", resp.StatusCode, truncate(string(data), 200))
+	}
+	var tr tagsResponse
+	if err := json.Unmarshal(data, &tr); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(tr.Models))
+	for _, m := range tr.Models {
+		names = append(names, m.Name)
+	}
+	return names, nil
+}
+
+// HasModel reports whether want is present among Ollama's models, tolerating a
+// missing ":tag" on either side (e.g. "qwen3-reranker" matches
+// "qwen3-reranker:latest").
+func HasModel(tags []string, want string) bool {
+	wantBase, _, _ := strings.Cut(want, ":")
+	for _, t := range tags {
+		if t == want {
+			return true
+		}
+		tBase, _, _ := strings.Cut(t, ":")
+		if tBase == want || t == wantBase || tBase == wantBase {
+			return true
+		}
+	}
+	return false
 }
 
 // postJSON POSTs body to path and decodes the JSON response into out, with

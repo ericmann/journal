@@ -149,6 +149,40 @@ func TestOllamaRetriesThenSucceeds(t *testing.T) {
 	}
 }
 
+func TestOllamaTagsAndHasModel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"models":[{"name":"qwen3-embedding:4b"},{"name":"qwen3-reranker:latest"}]}`))
+	}))
+	defer srv.Close()
+	c := NewOllama(srv.URL, "qwen3-embedding:4b", "qwen3-reranker")
+	tags, err := c.Tags(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 2 {
+		t.Fatalf("tags = %v", tags)
+	}
+	if !HasModel(tags, "qwen3-embedding:4b") {
+		t.Error("exact match should be found")
+	}
+	if !HasModel(tags, "qwen3-reranker") { // tolerate :latest
+		t.Error("reranker should match qwen3-reranker:latest")
+	}
+	if HasModel(tags, "llama3") {
+		t.Error("absent model should not match")
+	}
+}
+
+func TestOllamaTagsUnreachable(t *testing.T) {
+	c := NewOllama("http://127.0.0.1:0", "m", "r")
+	if _, err := c.Tags(context.Background()); err == nil {
+		t.Error("expected error when Ollama unreachable")
+	}
+}
+
 func TestOllamaGivesUpAfterRetries(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
