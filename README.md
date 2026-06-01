@@ -166,6 +166,10 @@ Declaring the dev fund payment through Displace as business income.
 instead of the daily file, using the same block format (the project name is
 slugified, e.g. `"Canton COI"` → `canton-coi`).
 
+Capture appends instantly and, in a git repo, **auto-commits the note** (see
+[Auto-commit](#auto-commit-never-lose-a-days-work)). It still does no embedding —
+run `journal index` (or the watcher) to make new notes searchable.
+
 ### Command surface
 
 ```
@@ -266,10 +270,12 @@ hands-off.
 
 ### Auto-commit (never lose a day's work)
 
-When the repo is a git repository, `journal index` and `index --watch`
-**auto-commit your note changes** (controlled by `git_autocommit`, default on).
-So once the watcher is running, every captured note is committed within the
-debounce window — you can't forget. Details:
+When the repo is a git repository, `journal capture`, `journal index`, and
+`index --watch` all **auto-commit your note changes** (controlled by
+`git_autocommit`, default on). **Capture commits the note immediately** — so your
+words are committed the moment you capture them, watcher or not. The watcher /
+`index` then keep the search index fresh and also commit any direct file edits.
+You can't forget. Details:
 
 - It commits **only your markdown** (`git add -A` honors `.gitignore`, so the
   vector index is never committed).

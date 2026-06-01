@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/ericmann/journal/internal/config"
+	"github.com/ericmann/journal/internal/index"
 	"github.com/ericmann/journal/internal/note"
+	"github.com/ericmann/journal/internal/vcs"
 	"github.com/spf13/cobra"
 )
 
@@ -23,11 +25,16 @@ var captureCmd = &cobra.Command{
 	Use:   "capture <text>",
 	Short: "Append a timestamped note to today's journal (no embedding)",
 	Long: "capture appends a timestamped, tagged block to today's daily file (or to a\n" +
-		"project's notes with --project). It is append-only and returns immediately;\n" +
-		"embedding happens later in `journal index`.",
+		"project's notes with --project). It is append-only and returns immediately\n" +
+		"(embedding happens later in `journal index`). When the repo is a git work\n" +
+		"tree it also auto-commits the note (git_autocommit, unsigned by default).",
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		root, err := config.FindRepoRoot(".")
+		if err != nil {
+			return err
+		}
+		cfg, err := config.Load(root)
 		if err != nil {
 			return err
 		}
@@ -36,10 +43,31 @@ var captureCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		rel := relTo(root, path)
-		fmt.Fprintf(cmd.OutOrStdout(), "captured → %s\n", rel)
+		out := cmd.OutOrStdout()
+		fmt.Fprintf(out, "captured → %s\n", relTo(root, path))
+
+		// Commit the note immediately so it's never left uncommitted — even when
+		// the watcher isn't running. No-op outside a git repo; failures are
+		// logged, never fatal (the markdown is already safely on disk).
+		committed, cerr := autoCommitCapture(cfg, root, now())
+		switch {
+		case cerr != nil:
+			fmt.Fprintf(out, "  (auto-commit skipped: %v)\n", cerr)
+		case committed:
+			fmt.Fprintln(out, "  committed ✓")
+		}
 		return nil
 	},
+}
+
+// autoCommitCapture commits note changes after a capture, gated by config and
+// only when root is a git top level. Returns committed=false when disabled, not
+// a git repo, or nothing changed.
+func autoCommitCapture(cfg *config.Config, root string, t time.Time) (bool, error) {
+	if !cfg.GitAutocommit || !vcs.IsRepoRoot(root) {
+		return false, nil
+	}
+	return vcs.CommitAll(root, index.CaptureCommitMessage(t), cfg.GitAutocommitSign)
 }
 
 // capture builds a block from text + flags and appends it append-only. Tags and

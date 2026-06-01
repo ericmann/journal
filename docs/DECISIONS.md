@@ -246,6 +246,23 @@ Design choices:
 - Messages are auto-generated with a little personality (rotating verbs +
   chunk deltas + timestamp).
 
+## v1.1.1 — capture also auto-commits
+
+v1.1.0 only auto-committed during `index`/`index --watch`, on the rationale that
+`capture` stays pure. But dogfooding showed the obvious gap: a user who captures
+without immediately indexing (and isn't running the watcher) still ends up with
+uncommitted notes — the exact footgun the feature targets. Fix: **`capture` now
+auto-commits too** (`autoCommitCapture` → `vcs.CommitAll` with a capture-specific
+message), gated by the same `git_autocommit` and only when the repo root is a git
+top level.
+
+A local commit of one small file is ~100ms (well under capture's 2s budget) and
+unsigned by default (no prompt), so there's no reason to defer it. `capture()`
+itself stays pure (no git) — the commit lives in the command's RunE — so the
+perf unit test and the function contract are unchanged. Result: your words are
+committed the instant you capture; `index`/`watch` commit any direct file edits
+and keep the search index fresh.
+
 ## Tooling / process
 
 ### Commit signing

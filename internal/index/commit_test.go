@@ -25,6 +25,13 @@ func TestCommitMessage(t *testing.T) {
 	}
 }
 
+func TestCaptureCommitMessage(t *testing.T) {
+	msg := CaptureCommitMessage(time.Date(2026, 6, 1, 12, 53, 0, 0, time.UTC))
+	if !strings.Contains(msg, "note") || !strings.Contains(msg, "2026-06-01 12:53") {
+		t.Errorf("capture message = %q, want a note + timestamp", msg)
+	}
+}
+
 func TestAutoCommitNoOpOutsideGitRepo(t *testing.T) {
 	// A plain temp dir is not a git repo -> AutoCommit is a no-op, no error.
 	committed, err := AutoCommit(t.TempDir(), Stats{Embedded: 1}, false, time.Now())

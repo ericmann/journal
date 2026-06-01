@@ -2,11 +2,39 @@ package cmd
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ericmann/journal/internal/config"
 )
+
+func execLook(name string) (string, error) { return exec.LookPath(name) }
+
+func gitInitRepo(t *testing.T, dir string) {
+	t.Helper()
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "T"},
+		{"config", "commit.gpgsign", "false"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+}
+
+func gitCmd(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
+}
 
 func ts(t *testing.T, s string) time.Time {
 	t.Helper()
@@ -71,6 +99,68 @@ func TestCaptureRejectsBadMarker(t *testing.T) {
 	if _, err := capture(t.TempDir(), time.Now(), "x", nil, "", "idea"); err == nil {
 		t.Error("expected error on invalid marker")
 	}
+}
+
+func TestAutoCommitCaptureCommitsInGitRepo(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not available")
+	}
+	root := t.TempDir()
+	gitInitRepo(t, root)
+	cfg := config.Default()
+	cfg.GitAutocommit = true
+	cfg.GitAutocommitSign = false
+
+	// Capture a note, then auto-commit it.
+	if _, err := capture(root, ts(t, "2026-06-01 12:53"), "a committed note", nil, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	committed, err := autoCommitCapture(&cfg, root, ts(t, "2026-06-01 12:53"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !committed {
+		t.Fatal("expected the capture to be committed")
+	}
+	if out := gitCmd(t, root, "log", "-1", "--pretty=%s"); !strings.Contains(out, "note") {
+		t.Errorf("commit message lacks expected text: %q", out)
+	}
+	if files := gitCmd(t, root, "ls-files"); !strings.Contains(files, "daily/") {
+		t.Errorf("note not committed: %s", files)
+	}
+}
+
+func TestAutoCommitCaptureDisabledIsNoOp(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not available")
+	}
+	root := t.TempDir()
+	gitInitRepo(t, root)
+	cfg := config.Default()
+	cfg.GitAutocommit = false // disabled
+	if _, err := capture(root, ts(t, "2026-06-01 12:53"), "note", nil, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	committed, err := autoCommitCapture(&cfg, root, ts(t, "2026-06-01 12:53"))
+	if err != nil || committed {
+		t.Errorf("disabled autocommit should be a no-op, got committed=%v err=%v", committed, err)
+	}
+}
+
+func TestAutoCommitCaptureOutsideGitRepoIsNoOp(t *testing.T) {
+	root := t.TempDir() // not a git repo
+	cfg := config.Default()
+	cfg.GitAutocommit = true
+	committed, err := autoCommitCapture(&cfg, root, time.Now())
+	if err != nil || committed {
+		t.Errorf("outside a git repo should be a no-op, got committed=%v err=%v", committed, err)
+	}
+}
+
+func haveGit(t *testing.T) bool {
+	t.Helper()
+	_, err := execLook("git")
+	return err == nil
 }
 
 func TestCaptureIsFast(t *testing.T) {
