@@ -23,11 +23,11 @@ func TestRunSynthDryRunNoKeyNoWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "dry-run") || !strings.Contains(out, "intended output:") {
+	if !strings.Contains(out, "DRY RUN") || !strings.Contains(out, "intended output:") {
 		t.Errorf("dry-run output missing header:\n%s", out)
 	}
-	if !strings.Contains(out, "no API call made") {
-		t.Errorf("dry-run should state no API call:\n%s", out)
+	if !strings.Contains(out, "--write") {
+		t.Errorf("dry-run should hint at --write:\n%s", out)
 	}
 	if !strings.Contains(out, "weekly reflection") {
 		t.Errorf("dry-run should print the assembled prompt:\n%s", out)

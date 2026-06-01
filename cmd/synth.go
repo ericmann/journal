@@ -82,10 +82,12 @@ func runSynth(ctx context.Context, cfg *config.Config, opts synth.Options, out i
 	}
 
 	if !res.Wrote {
-		// Dry-run: print the assembled prompt and the intended output path.
-		fmt.Fprintf(out, "# synth %s (dry-run)\n", res.Kind)
+		// Dry-run (the default): print the assembled prompt + intended path; no
+		// API call, no write. The hint makes the next step obvious.
+		fmt.Fprintf(out, "# synth %s — DRY RUN (no API call, nothing written)\n", res.Kind)
 		fmt.Fprintf(out, "# intended output: %s\n", res.OutputPath)
-		fmt.Fprintf(out, "# model: %s (no API call made)\n\n", cfg.SynthModel)
+		fmt.Fprintf(out, "# model: %s\n", cfg.SynthModel)
+		fmt.Fprintf(out, "# → re-run with --write to call the API and save the draft (needs ANTHROPIC_API_KEY)\n\n")
 		fmt.Fprint(out, res.Prompt)
 		return nil
 	}
