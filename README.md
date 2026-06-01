@@ -49,11 +49,28 @@ journal --version
 ```sh
 git clone git@github.com:ericmann/journal.git
 cd journal
-make build                                          # version-stamped static binary
-install -m 0755 ./journal /usr/local/bin/journal    # or anywhere on PATH
+make install                 # builds a version-stamped static binary AND puts it on PATH
+journal --version
 ```
 
-Cross-compile all platforms with `make release VERSION=v1.0.0` (output in
+`make install` is build+install in one step, so you never run a stale binary by
+forgetting to copy it. It installs to `/usr/local/bin` by default — override with
+`make install PREFIX=$HOME/.local`. (`make build` alone just produces `./journal`
+in the repo.)
+
+**Updating from source:** `git pull && make install`. The version is stamped
+from `git describe`, so pull first or you'll rebuild the older tag.
+
+**For active development** you can instead symlink the live binary once, so a
+bare `make build` updates what's on PATH:
+
+```sh
+ln -sf "$PWD/journal" /usr/local/bin/journal   # then just `make build` to update
+```
+(Caveat: `make clean` removes `./journal` and breaks the symlink; use `make
+install` for a stable setup.)
+
+Cross-compile all platforms with `make release VERSION=v1.1.0` (output in
 `dist/`). The binary is fully static (`CGO_ENABLED=0`) — no runtime deps.
 
 Confirm:

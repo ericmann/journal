@@ -8,12 +8,26 @@ LDFLAGS := -s -w -X github.com/ericmann/journal/cmd.version=$(VERSION)
 # Platforms for `make release` (all pure-Go, CGO_ENABLED=0 cross-compiles).
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
-.PHONY: build test lint fmt vet tidy clean cover release
+# Install location. Override e.g. `make install PREFIX=$HOME/.local`.
+PREFIX ?= /usr/local
+BINDIR := $(PREFIX)/bin
+
+.PHONY: build install uninstall test lint fmt vet tidy clean cover release
 
 # CGO_ENABLED=0 yields a fully static binary; all deps (incl. the ncruces
 # sqlite-vec driver, which runs SQLite as WASM via wazero) are pure Go.
 build:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+
+# install builds a fresh, version-stamped binary and copies it onto PATH in one
+# step — so you can never run a stale binary by forgetting to reinstall.
+install: build
+	@mkdir -p "$(BINDIR)"
+	@install -m 0755 $(BINARY) "$(BINDIR)/$(BINARY)"
+	@echo "installed $(BINARY) $(VERSION) -> $(BINDIR)/$(BINARY)"
+
+uninstall:
+	@rm -f "$(BINDIR)/$(BINARY)" && echo "removed $(BINDIR)/$(BINARY)"
 
 # release cross-compiles a versioned static binary per platform into dist/.
 release:
