@@ -8,11 +8,10 @@ corpus. Capture is frictionless and append-only; retrieval is a local RAG stack
 backed by cloud Claude. **Markdown in git is the single source of truth** — the
 vector index is a disposable, rebuildable cache and is never committed.
 
-> **Status:** built phase by phase against [`docs/TDD.md`](docs/TDD.md).
-> Phase 1 (capture + repo skeleton) is complete. Indexing, search, the watcher,
-> synthesis, and the Claude Code skill land in later phases — see
-> [Roadmap](#roadmap). Sections below are marked _(coming in Phase N)_ where the
-> feature isn't wired up yet.
+> **Status:** all six build phases (capture, store, index+search, watch+doctor,
+> synthesis, and the Claude Code skill) are complete — see [Roadmap](#roadmap).
+> Built phase by phase against [`docs/TDD.md`](docs/TDD.md); build decisions in
+> [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ---
 
@@ -287,6 +286,30 @@ different key.
 
 ---
 
+## A second, isolated workspace (e.g. Displace)
+
+The whole pattern clones to a separate workspace by copying a repo and swapping a
+config + env token — no shared state:
+
+```sh
+# a brand-new, independent journal repo (or `git clone` an existing one)
+journal init ~/displace-journal
+cd ~/displace-journal
+
+# its own gitignored index, built from its own notes:
+journal index
+
+# its own synthesis token, supplied by the environment (never stored in config):
+ANTHROPIC_API_KEY=$A8C_TOKEN journal synth weekly --write
+```
+
+Each repo resolves its own root (the nearest `.journal/`), keeps its own
+`.journal/index/journal.db` (gitignored), and reads whatever `ANTHROPIC_API_KEY`
+is in the environment at invocation. There is no cross-workspace contamination —
+searching one repo never returns another's notes. Workspace separation is
+enforced by *which repo you're in* and *which env is loaded*, not by the tool
+holding multiple profiles. (Verified by `TestWorkspaceIsolation`.)
+
 ## Development
 
 ```sh
@@ -315,6 +338,6 @@ interfaces with deterministic fakes, and integration tests use a temp-file
 | 3 | Chunking + hashing, embed client, `index`, `search`, structured queries | ✅ done (MVP) |
 | 4 | `index --watch` (debounced), `doctor` | ✅ done |
 | 5 | Synthesis: Anthropic client, prompt assembly, `synth` | ✅ done |
-| 6 | `skills/journal/SKILL.md`, second-workspace validation | ⏳ |
+| 6 | `skills/journal/SKILL.md`, second-workspace validation | ✅ done |
 
 See [`docs/TDD.md`](docs/TDD.md) §7 for the per-story acceptance criteria.

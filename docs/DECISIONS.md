@@ -161,6 +161,22 @@ The index dir is a rebuildable cache that may be deleted; `store.Open` now
 `MkdirAll`s the parent (skipped for `:memory:`), so `index`/`synth` work even if
 `.journal/index/` was removed.
 
+## Phase 6 — SKILL.md + second-workspace validation
+
+### `skills/journal/SKILL.md`
+Authored the Claude Code skill: prefer `search --json`, read the stable result
+schema, always cite `path:line_start-line_end`, choose between
+search/recent/decisions/threads, distinguish `{error}` from `{results:[]}`, and
+don't run `index`/`synth --write` unprompted. Discoverable from the repo or via
+`~/.claude/skills/journal` (see INTEGRATIONS.md §2).
+
+### Workspace isolation validated
+`TestWorkspaceIsolation` proves two independent repos index + search with their
+own gitignored `.journal/index/journal.db` and never leak into each other;
+`TestWorkspaceSeparateSecrets` confirms the API key is per-environment (never in
+config). README documents the clone-to-second-workspace recipe. No tool-held
+profiles — separation is "which repo + which env", exactly as the TDD intends.
+
 ## Tooling / process
 
 ### Commit signing
