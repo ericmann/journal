@@ -4,9 +4,19 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
+
+// relTo returns path relative to root for display, falling back to the absolute
+// path if it can't be made relative.
+func relTo(root, path string) string {
+	if rel, err := filepath.Rel(root, path); err == nil {
+		return rel
+	}
+	return path
+}
 
 // logLevel is the global stderr log verbosity (default quiet).
 var logLevel string
