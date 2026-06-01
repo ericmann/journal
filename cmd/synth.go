@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/store"
@@ -74,7 +75,7 @@ func runSynth(ctx context.Context, cfg *config.Config, opts synth.Options, out i
 		client = noopClient{} // dry-run never calls it
 	}
 
-	r := synth.NewRunner(s, client, cfg.Root(), cfg.SynthModel, cfg.SynthMaxTokens)
+	r := synth.NewRunner(s, client, cfg.Root(), cfg.SynthModel, cfg.SynthMaxTokens, readVoiceProfile(cfg))
 	res, err := r.Run(ctx, opts)
 	if err != nil {
 		return err
@@ -92,6 +93,20 @@ func runSynth(ctx context.Context, cfg *config.Config, opts synth.Options, out i
 	fmt.Fprintf(out, "wrote %s — model %s, %d in / %d out tokens\n",
 		res.OutputPath, cfg.SynthModel, res.InputTokens, res.OutputTokens)
 	return nil
+}
+
+// readVoiceProfile loads the configured voice profile, returning "" if none is
+// configured or the file is absent (it's optional).
+func readVoiceProfile(cfg *config.Config) string {
+	path := cfg.VoiceProfileAbsPath()
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "" // optional: missing/unreadable profile just means no voice section
+	}
+	return string(data)
 }
 
 // noopClient stands in during dry-run; calling it is a programming error.

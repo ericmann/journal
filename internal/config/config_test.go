@@ -150,6 +150,25 @@ func TestLoadInvalidYAML(t *testing.T) {
 	}
 }
 
+func TestVoiceProfileAbsPath(t *testing.T) {
+	c := Default()
+	c.root = "/repo"
+	want := filepath.Join("/repo", "docs", "VOICE_PROFILE.md")
+	if got := c.VoiceProfileAbsPath(); got != want {
+		t.Errorf("VoiceProfileAbsPath = %q, want %q", got, want)
+	}
+	// Absolute config path is used as-is.
+	c.VoiceProfilePath = "/abs/voice.md"
+	if got := c.VoiceProfileAbsPath(); got != "/abs/voice.md" {
+		t.Errorf("absolute path = %q", got)
+	}
+	// Empty means "no profile".
+	c.VoiceProfilePath = ""
+	if got := c.VoiceProfileAbsPath(); got != "" {
+		t.Errorf("empty profile path should yield \"\", got %q", got)
+	}
+}
+
 func TestStoreAbsPath(t *testing.T) {
 	c := Default()
 	c.root = "/repo"

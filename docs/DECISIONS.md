@@ -139,6 +139,17 @@ against `internal/synth/testdata/*.golden` (regenerate with `go test -update`).
 The runner gathers from the store (which holds note bodies), so synthesis needs
 no second read path.
 
+### Voice profile injected into synthesis prompts
+A `voice_profile` config key (default `docs/VOICE_PROFILE.md`, optional) points
+to a markdown description of the author's writing voice. When present, the
+runner reads it and the prompt assembler injects it into every synth prompt as a
+delimited **style reference**, with an explicit instruction to (a) honor its
+anti-AI word/phrase guardrails and (b) *ignore* any meta-instructions inside it
+(e.g. "ask which platform") since the destination is fixed. Assembly stays pure
+(voice passed as a param, golden-tested both with and without); the runner does
+the file read. Synthesis was not in the original design — the author wrote
+weekly reflections by hand — so this keeps the drafts close to that voice.
+
 ### Anthropic client: key from env, never logged
 `NewAnthropic(key)` takes the key (read via `config.AnthropicAPIKey()` from
 `ANTHROPIC_API_KEY` only). Errors include the response body but **never** the

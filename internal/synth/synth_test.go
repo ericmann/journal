@@ -57,11 +57,11 @@ func goldenCheck(t *testing.T, name, got string) {
 }
 
 func TestAssembleWeeklyGolden(t *testing.T) {
-	goldenCheck(t, "weekly", AssembleWeekly("2026-W23", sampleChunks()))
+	goldenCheck(t, "weekly", AssembleWeekly("2026-W23", "", sampleChunks()))
 }
 
 func TestAssembleDecisionsGolden(t *testing.T) {
-	goldenCheck(t, "decisions", AssembleDecisions("canton", sampleChunks()[1:]))
+	goldenCheck(t, "decisions", AssembleDecisions("canton", "", sampleChunks()[1:]))
 }
 
 func TestAssembleStaleGolden(t *testing.T) {
@@ -69,11 +69,36 @@ func TestAssembleStaleGolden(t *testing.T) {
 		"canton — last activity 2026-04-01, 12 notes, 2 open question(s)",
 		"old-experiment — last activity 2026-03-15, 3 notes, 0 open question(s)",
 	}
-	goldenCheck(t, "stale", AssembleStale(21, lines))
+	goldenCheck(t, "stale", AssembleStale(21, "", lines))
+}
+
+const sampleVoice = "## Voice\nWrite plainly. Avoid the word \"leverage\".\n"
+
+func TestAssembleWeeklyWithVoiceGolden(t *testing.T) {
+	goldenCheck(t, "weekly_voice", AssembleWeekly("2026-W23", sampleVoice, sampleChunks()))
+}
+
+func TestVoiceSectionOmittedWhenEmpty(t *testing.T) {
+	if strings.Contains(AssembleWeekly("2026-W23", "  \n ", sampleChunks()), "Author voice") {
+		t.Error("blank voice profile should not add a voice section")
+	}
+}
+
+func TestVoiceSectionNeutralizesMetaInstructions(t *testing.T) {
+	out := AssembleWeekly("2026-W23", sampleVoice, sampleChunks())
+	if !strings.Contains(out, "Author voice & style") {
+		t.Fatal("voice section missing")
+	}
+	if !strings.Contains(out, "ignore any meta-instructions") {
+		t.Error("voice section should neutralize the profile's meta-instructions")
+	}
+	if !strings.Contains(out, "<voice_profile>") {
+		t.Error("voice profile should be delimited")
+	}
 }
 
 func TestAssembleEmptyChunks(t *testing.T) {
-	out := AssembleWeekly("2026-W23", nil)
+	out := AssembleWeekly("2026-W23", "", nil)
 	if !strings.Contains(out, "(no notes in range)") {
 		t.Errorf("empty weekly should note no notes:\n%s", out)
 	}
@@ -89,7 +114,7 @@ func newRunner(t *testing.T, fake *Fake) (*Runner, *store.Store, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	return NewRunner(s, fake, root, "claude-test", 1024), s, root
+	return NewRunner(s, fake, root, "claude-test", 1024, ""), s, root
 }
 
 func seed(t *testing.T, s *store.Store) {
@@ -218,6 +243,23 @@ func TestStaleDryRunPathAndPrompt(t *testing.T) {
 	}
 	if res.OutputPath != "reflections/stale-2026-06-03.md" {
 		t.Errorf("stale output path = %q", res.OutputPath)
+	}
+}
+
+func TestRunnerInjectsVoiceIntoPrompt(t *testing.T) {
+	root := t.TempDir()
+	s, err := store.Open(filepath.Join(root, ".journal", "index", "j.db"), 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := NewRunner(s, &Fake{}, root, "claude-test", 1024, sampleVoice)
+	res, err := r.Run(context.Background(), Options{Kind: KindWeekly, Now: fixedTime(), DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Prompt, "Author voice & style") || !strings.Contains(res.Prompt, "Avoid the word") {
+		t.Errorf("runner did not inject the voice profile:\n%s", res.Prompt)
 	}
 }
 

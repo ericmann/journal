@@ -48,6 +48,10 @@ type Config struct {
 	SynthModel string `yaml:"synth_model"`
 	// SynthMaxTokens caps the synthesis response length.
 	SynthMaxTokens int `yaml:"synth_max_tokens"`
+	// VoiceProfilePath is the repo-relative markdown file describing the
+	// author's writing voice; when present it is injected into synthesis
+	// prompts so drafts sound like the author. Optional.
+	VoiceProfilePath string `yaml:"voice_profile"`
 
 	// root is the absolute repo root; not serialized.
 	root string
@@ -66,7 +70,20 @@ func Default() Config {
 		RetrievalInstruction: "Represent this query for retrieving relevant developer journal notes:",
 		SynthModel:           "claude-sonnet-4-6",
 		SynthMaxTokens:       4096,
+		VoiceProfilePath:     filepath.ToSlash(filepath.Join("docs", "VOICE_PROFILE.md")),
 	}
+}
+
+// VoiceProfileAbsPath returns the absolute path to the voice profile, or "" if
+// none is configured.
+func (c *Config) VoiceProfileAbsPath() string {
+	if c.VoiceProfilePath == "" {
+		return ""
+	}
+	if filepath.IsAbs(c.VoiceProfilePath) {
+		return c.VoiceProfilePath
+	}
+	return filepath.Join(c.root, c.VoiceProfilePath)
 }
 
 // Root returns the absolute repo root this config was loaded from.

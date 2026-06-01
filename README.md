@@ -249,6 +249,17 @@ journal synth stale --days 21        # surface threads idle > 21 days
 - Requires **`ANTHROPIC_API_KEY` in the environment** (only for `--write`); it's
   never written to config or logged. The model is `synth_model` in config.
 
+### Writing in your voice
+
+If `docs/VOICE_PROFILE.md` exists (path configurable via `voice_profile`), its
+contents are injected into every synthesis prompt as a **style reference** so
+drafts sound like you — matching your language patterns and honoring any
+anti-AI word/phrase guardrails it lists. The profile is treated as style only:
+the prompt explicitly tells the model to ignore meta-instructions in it (e.g.
+"ask which platform") since the destination is fixed. Evolve the profile over
+time; it's plain markdown. Omit the file and synthesis still works, just without
+the voice section.
+
 ## Configuration & secrets
 
 Non-secret settings live in `.journal/config.yaml` (committed):
@@ -265,6 +276,7 @@ excludes:
 store_path: .journal/index/journal.db
 synth_model: claude-sonnet-4-6        # Anthropic model for `journal synth`
 synth_max_tokens: 4096
+voice_profile: docs/VOICE_PROFILE.md  # optional; injected into synth prompts
 ```
 
 **Secrets never go in config.** The Anthropic API key for synthesis is read from

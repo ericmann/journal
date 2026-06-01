@@ -40,11 +40,13 @@ type Runner struct {
 	root      string
 	model     string
 	maxTokens int
+	voice     string // author voice profile injected into prompts (may be "")
 }
 
-// NewRunner constructs a Runner.
-func NewRunner(s *store.Store, client Client, root, model string, maxTokens int) *Runner {
-	return &Runner{store: s, client: client, root: root, model: model, maxTokens: maxTokens}
+// NewRunner constructs a Runner. voiceProfile (may be "") is injected into
+// synthesis prompts so drafts match the author's writing voice.
+func NewRunner(s *store.Store, client Client, root, model string, maxTokens int, voiceProfile string) *Runner {
+	return &Runner{store: s, client: client, root: root, model: model, maxTokens: maxTokens, voice: voiceProfile}
 }
 
 // Run executes the job described by opts. On DryRun it assembles the prompt and
@@ -102,7 +104,7 @@ func (r *Runner) weekly(ctx context.Context, opts Options) (prompt, outPath stri
 		return "", "", err
 	}
 	chunks = chronological(chunks)
-	prompt = AssembleWeekly(label, chunks)
+	prompt = AssembleWeekly(label, r.voice, chunks)
 	outPath = filepath.ToSlash(filepath.Join("reflections", label+".md"))
 	return prompt, outPath, nil
 }
@@ -119,7 +121,7 @@ func (r *Runner) decisions(ctx context.Context, opts Options) (prompt, outPath s
 		return "", "", err
 	}
 	chunks = chronological(chunks)
-	prompt = AssembleDecisions(scope, chunks)
+	prompt = AssembleDecisions(scope, r.voice, chunks)
 	if opts.Project != "" {
 		outPath = filepath.ToSlash(filepath.Join("projects", opts.Project, "_index.md"))
 	} else {
@@ -147,7 +149,7 @@ func (r *Runner) stale(ctx context.Context, opts Options) (prompt, outPath strin
 		lines = append(lines, fmt.Sprintf("%s — last activity %s, %d notes, %d open question(s)",
 			pi.Slug, last, pi.Chunks, pi.OpenQuestions))
 	}
-	prompt = AssembleStale(opts.Days, lines)
+	prompt = AssembleStale(opts.Days, r.voice, lines)
 	outPath = filepath.ToSlash(filepath.Join("reflections", "stale-"+opts.Now.Format("2006-01-02")+".md"))
 	return prompt, outPath, nil
 }
