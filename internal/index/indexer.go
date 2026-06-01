@@ -100,6 +100,12 @@ func (ix *Indexer) indexOne(ctx context.Context, relPath, content string) (Stats
 		if len(vecs) != len(toEmbed) {
 			return st, fmt.Errorf("embedder returned %d vectors for %d chunks", len(vecs), len(toEmbed))
 		}
+		// Catch a config/model dimension mismatch with an actionable message
+		// before the store rejects it.
+		if len(vecs) > 0 && len(vecs[0]) != ix.store.Dim() {
+			return st, fmt.Errorf("embed model returned %d-dim vectors but embed_dim is %d; set `embed_dim: %d` in .journal/config.yaml and run `journal index --rebuild`",
+				len(vecs[0]), ix.store.Dim(), len(vecs[0]))
+		}
 		for i, c := range toEmbed {
 			if err := ix.store.Upsert(ctx, c, vecs[i]); err != nil {
 				return st, err

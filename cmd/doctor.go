@@ -14,10 +14,11 @@ import (
 
 var doctorJSON bool
 
-// modelLister is the slice of the Ollama client doctor needs; tests inject a
-// fake so the health checks run without a network.
-type modelLister interface {
+// ollamaChecker is the slice of the Ollama client doctor needs: list models and
+// embed a probe. Tests inject a fake so the health checks run without a network.
+type ollamaChecker interface {
 	Tags(ctx context.Context) ([]string, error)
+	Embed(ctx context.Context, texts []string, instruction string) ([][]float32, error)
 }
 
 // check is one health-check result.
@@ -55,8 +56,8 @@ var doctorCmd = &cobra.Command{
 }
 
 // runDoctor runs all health checks and returns a report. It is network-free
-// except through the provided modelLister.
-func runDoctor(ctx context.Context, cfg *config.Config, lister modelLister) doctorReport {
+// except through the provided checker.
+func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) doctorReport {
 	var checks []check
 
 	checks = append(checks, check{
@@ -65,13 +66,14 @@ func runDoctor(ctx context.Context, cfg *config.Config, lister modelLister) doct
 		Detail: fmt.Sprintf("root %s; embed_model=%s reranker=%s embed_dim=%d", cfg.Root(), cfg.EmbedModel, cfg.Reranker, cfg.EmbedDim),
 	})
 
-	tags, err := lister.Tags(ctx)
+	tags, err := checker.Tags(ctx)
 	if err != nil {
 		checks = append(checks, check{Name: "ollama", OK: false, Detail: err.Error()})
 	} else {
 		checks = append(checks, check{Name: "ollama", OK: true, Detail: fmt.Sprintf("reachable at %s; %d models", cfg.OllamaBaseURL, len(tags))})
 		checks = append(checks, modelCheck("embed_model", cfg.EmbedModel, tags))
-		checks = append(checks, modelCheck("reranker", cfg.Reranker, tags))
+		checks = append(checks, rerankerCheck(cfg.Reranker, tags))
+		checks = append(checks, embedDimCheck(ctx, cfg, checker, tags))
 	}
 
 	checks = append(checks, storeCheck(ctx, cfg))
@@ -98,6 +100,36 @@ func modelCheck(name, model string, tags []string) check {
 		return check{Name: name, OK: true, Detail: fmt.Sprintf("%s present", model)}
 	}
 	return check{Name: name, OK: false, Detail: fmt.Sprintf("%s missing — run `ollama pull %s`", model, model)}
+}
+
+// rerankerCheck is informational: reranking is optional, so a missing or unset
+// reranker never fails the overall verdict.
+func rerankerCheck(model string, tags []string) check {
+	if model == "" {
+		return check{Name: "reranker", OK: true, Detail: "disabled (set `reranker` to a generate model to enable LLM-as-reranker)"}
+	}
+	if embed.HasModel(tags, model) {
+		return check{Name: "reranker", OK: true, Detail: fmt.Sprintf("%s present", model)}
+	}
+	return check{Name: "reranker", OK: true, Detail: fmt.Sprintf("%s not found — reranking will fall back to vector order; `ollama pull %s` to enable", model, model)}
+}
+
+// embedDimCheck probes the embed model's actual output dimension and compares it
+// to config, so a mismatch is caught (with the exact number to set) before
+// indexing. Skipped if the embed model isn't present.
+func embedDimCheck(ctx context.Context, cfg *config.Config, checker ollamaChecker, tags []string) check {
+	if !embed.HasModel(tags, cfg.EmbedModel) {
+		return check{Name: "embed_dim", OK: false, Detail: "cannot verify — embed model not present"}
+	}
+	vecs, err := checker.Embed(ctx, []string{"dimension probe"}, "")
+	if err != nil || len(vecs) == 0 {
+		return check{Name: "embed_dim", OK: false, Detail: fmt.Sprintf("could not probe embedding dimension: %v", err)}
+	}
+	got := len(vecs[0])
+	if got != cfg.EmbedDim {
+		return check{Name: "embed_dim", OK: false, Detail: fmt.Sprintf("%s outputs %d-dim vectors but embed_dim is %d; set `embed_dim: %d` and run `journal index --rebuild`", cfg.EmbedModel, got, cfg.EmbedDim, got)}
+	}
+	return check{Name: "embed_dim", OK: true, Detail: fmt.Sprintf("%d matches %s", got, cfg.EmbedModel)}
 }
 
 func storeCheck(ctx context.Context, cfg *config.Config) check {

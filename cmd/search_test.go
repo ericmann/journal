@@ -18,6 +18,9 @@ import (
 func indexedRepo(t *testing.T, files map[string]string) (*config.Config, *embed.Fake) {
 	t.Helper()
 	cfg := testRepo(t, files)
+	// Enable reranking so search tests exercise the rerank path (the Fake
+	// reranks by lexical overlap regardless of the model name).
+	cfg.Reranker = "rerank-model"
 	fake := embed.NewFake(cfg.EmbedDim)
 	if _, err := runIndex(context.Background(), cfg, fake, indexOptions{}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
@@ -167,6 +170,25 @@ func TestSnippetTruncates(t *testing.T) {
 	}
 	if !strings.HasSuffix(s, "…") {
 		t.Errorf("expected ellipsis, got %q", s)
+	}
+}
+
+func TestSearchWithRerankerDisabledUsesVectorOrder(t *testing.T) {
+	cfg, fake := indexedRepo(t, map[string]string{
+		"daily/2026/06/d.md": "# 2026-06-01\n\n## 09:00\nalpha beta\n\n## 09:01\ngamma delta\n",
+	})
+	cfg.Reranker = "" // disabled: no rerank call, vector-distance order
+	results, err := runSearch(context.Background(), cfg, fake, "alpha", 5, store.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("no results")
+	}
+	for _, r := range results {
+		if r.Score <= 0 {
+			t.Errorf("disabled-rerank score should be distance-derived (>0), got %v", r.Score)
+		}
 	}
 }
 

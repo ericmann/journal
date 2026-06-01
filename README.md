@@ -64,12 +64,23 @@ journal --help
 
 ### Local models (for indexing & search — coming in Phases 2–3)
 
-Retrieval runs entirely on your machine via [Ollama](https://ollama.com):
+Retrieval runs entirely on your machine via [Ollama](https://ollama.com). Only
+the embedding model is required:
 
 ```sh
-ollama pull qwen3-embedding:4b    # default embedding model
-ollama pull qwen3-reranker        # reranker for precision
+ollama pull qwen3-embedding:4b    # required; outputs 2560-dim vectors
 ```
+
+**Reranking is optional and off by default.** Ollama has no native rerank API
+and there is no official reranker model, so `journal` does LLM-as-reranker: set
+`reranker` in config to any small generate model you have (e.g. `qwen3:4b`) for
+a precision lift, or leave it empty — vector search with `qwen3-embedding:4b` is
+strong on its own.
+
+> **Embedding dimension must match the model.** The default `embed_dim: 2560` is
+> correct for `qwen3-embedding:4b`. If you use a different embedding model, run
+> `journal doctor` — it probes the model and tells you the exact `embed_dim` to
+> set (then `journal index --rebuild`).
 
 `journal doctor` verifies Ollama is reachable and these models are present (and
 checks the index schema + repo/config) before you rely on indexing:
@@ -164,9 +175,10 @@ tools (same JSON as `--json`) for the Claude desktop app — see
 ### Retrieval & queries
 
 - **`search`** embeds your query (with a retrieval instruction), runs a
-  brute-force vector KNN over the index, reranks the top candidates, and returns
-  the best `--k` with `path:line_start-line_end` citations. If the reranker is
-  unavailable it falls back to vector-distance order.
+  brute-force vector KNN over the index, optionally reranks the top candidates
+  (if a `reranker` is configured), and returns the best `--k` with
+  `path:line_start-line_end` citations. With reranking off, results are in
+  vector-distance order.
 - **`recent`** / **`decisions`** are plain metadata queries (newest first);
   `decisions` filters to `@decision` blocks.
 - **`threads`** summarizes project activity; `--stale` surfaces projects with no
@@ -277,10 +289,10 @@ Non-secret settings live in `.journal/config.yaml` (committed):
 
 ```yaml
 embed_model: qwen3-embedding:4b
-reranker: qwen3-reranker
+reranker: ""                          # optional; e.g. qwen3:4b to enable reranking
 ollama_base_url: http://localhost:11434
 chunk_strategy: heading
-embed_dim: 1024
+embed_dim: 2560                       # must match the embed model (doctor verifies)
 excludes:
   - reflections/**
   - .journal/**

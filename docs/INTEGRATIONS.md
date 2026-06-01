@@ -39,36 +39,39 @@ scheduled `synth` jobs). Markdown in git is always the source of truth.
 `http://localhost:11434`); no auth, nothing leaves the machine.
 
 ```sh
-# install + start Ollama (https://ollama.com), then pull the models:
-ollama pull qwen3-embedding:4b     # embeddings (config: embed_model)
-ollama pull qwen3-reranker         # reranking  (config: reranker)
+# install + start Ollama (https://ollama.com), then pull the embedding model:
+ollama pull qwen3-embedding:4b     # required (config: embed_model), 2560-dim
+# reranking is OPTIONAL — see below; e.g. a small generate model:
+# ollama pull qwen3:4b
 ```
 
 Configure in `.journal/config.yaml`:
 
 ```yaml
 embed_model: qwen3-embedding:4b
-reranker: qwen3-reranker
+reranker: ""                       # optional; a generate model enables reranking
 ollama_base_url: http://localhost:11434
-embed_dim: 1024                    # MUST match the model's output dimension
+embed_dim: 2560                    # MUST match the model's output dimension
 ```
 
 Verify the link before relying on it:
 
 ```sh
-journal doctor          # checks Ollama reachable + both models present + index health
+journal doctor          # Ollama reachable, embed model present, embed_dim correct, index health
 ```
 
 - **Embeddings** are used by `journal index` (documents) and `journal search`
-  (queries, with a retrieval-instruction prefix).
-- **Reranking** is used by `journal search` to reorder the vector-KNN
-  candidates. Because Ollama has no dedicated rerank endpoint, journal scores
-  candidates by prompting the reranker model via `/api/generate`; if that's
-  unavailable, search falls back to vector-distance order (see
-  [DECISIONS.md](DECISIONS.md)).
-- `embed_dim` **must** equal your embed model's real output dimension. A
-  mismatch surfaces as a clear error on `index`; fix `embed_dim` and
-  `journal index --rebuild`.
+  (queries, with a retrieval-instruction prefix). **Required.**
+- **Reranking** is **optional and off by default.** Ollama has no dedicated
+  rerank endpoint and no official reranker model, so `journal` does
+  LLM-as-reranker: set `reranker` to any small generate model (e.g. `qwen3:4b`)
+  and it scores the top vector-KNN candidates via `/api/generate` for a
+  precision lift. Leave it empty (or if the model is unavailable) and search
+  uses vector-distance order — `qwen3-embedding:4b` is strong on its own. See
+  [DECISIONS.md](DECISIONS.md).
+- `embed_dim` **must** equal your embed model's real output dimension (2560 for
+  `qwen3-embedding:4b`). `journal doctor` probes the model and reports the exact
+  value; on a mismatch, set it and run `journal index --rebuild`.
 
 > Ollama runs the *retrieval* models locally. It is **not** used for synthesis —
 > that's cloud Claude (`journal synth`, Phase 5), which reads

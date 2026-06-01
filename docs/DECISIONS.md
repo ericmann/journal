@@ -196,6 +196,30 @@ Claude desktop app gets the same retrieval as Claude Code.
 - Added a `version` var (default `dev`, set via `-ldflags` at release) surfaced
   as `journal --version` and the MCP serverInfo.
 
+## v1.0.1 — reranker + embed_dim defaults corrected (dogfooding)
+
+Setting up against a real Ollama surfaced two wrong assumptions inherited from
+the generated TDD:
+
+- **`qwen3-reranker` is not a real Ollama model**, and Ollama has **no native
+  rerank API** (confirmed: only community uploads like
+  `dengcao/Qwen3-Reranker-*`; standard Ollama can't serve cross-encoder
+  rerankers). Fix: **reranking is now optional and off by default**
+  (`reranker: ""`). When set, it's LLM-as-reranker via `/api/generate` with any
+  generate model (e.g. `qwen3:4b`). `search` skips reranking entirely when
+  unset and uses vector-KNN order; `doctor` treats a missing/unset reranker as
+  informational (never fails the verdict). Vector search with
+  `qwen3-embedding:4b` is strong on its own, so this is a sensible default.
+- **`embed_dim` default was 1024 but `qwen3-embedding:4b` outputs 2560.** Fix:
+  default is now **2560**. `journal doctor` gained an **embed_dim probe** (embeds
+  a test string, compares to config, prints the exact value to set), and the
+  indexer now fails with an actionable "set embed_dim: N and --rebuild" message
+  instead of a raw length error.
+
+Lesson: the generated TDD specified plausible-sounding model names/dims that
+didn't survive contact with the actual Ollama registry — validated and corrected
+during first real setup.
+
 ## Tooling / process
 
 ### Commit signing

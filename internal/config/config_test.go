@@ -14,8 +14,11 @@ func TestDefaultConfigIsValid(t *testing.T) {
 	if c.EmbedModel != "qwen3-embedding:4b" {
 		t.Errorf("embed model = %q, want qwen3-embedding:4b", c.EmbedModel)
 	}
-	if c.Reranker != "qwen3-reranker" {
-		t.Errorf("reranker = %q, want qwen3-reranker", c.Reranker)
+	if c.Reranker != "" {
+		t.Errorf("reranker = %q, want \"\" (disabled by default)", c.Reranker)
+	}
+	if c.EmbedDim != 2560 {
+		t.Errorf("embed_dim = %d, want 2560 (qwen3-embedding:4b)", c.EmbedDim)
 	}
 	if c.OllamaBaseURL != "http://localhost:11434" {
 		t.Errorf("ollama url = %q", c.OllamaBaseURL)
@@ -44,7 +47,6 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		"zero dim":         func(c *Config) { c.EmbedDim = 0 },
 		"negative dim":     func(c *Config) { c.EmbedDim = -1 },
 		"empty embedmodel": func(c *Config) { c.EmbedModel = "" },
-		"empty reranker":   func(c *Config) { c.Reranker = "" },
 		"empty ollamaurl":  func(c *Config) { c.OllamaBaseURL = "" },
 		"bad strategy":     func(c *Config) { c.ChunkStrategy = "paragraph" },
 		"empty storepath":  func(c *Config) { c.StorePath = "" },
@@ -111,8 +113,8 @@ func TestLoadAppliesDefaultsForMissingKeys(t *testing.T) {
 	if c.EmbedDim != 768 {
 		t.Errorf("embed dim = %d, want 768", c.EmbedDim)
 	}
-	if c.Reranker != "qwen3-reranker" {
-		t.Errorf("reranker = %q, want defaulted", c.Reranker)
+	if c.SynthModel != "claude-sonnet-4-6" {
+		t.Errorf("synth_model = %q, want defaulted", c.SynthModel)
 	}
 	if c.ChunkStrategy != "heading" {
 		t.Errorf("chunk strategy = %q, want defaulted", c.ChunkStrategy)

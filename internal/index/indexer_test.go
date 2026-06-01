@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,6 +151,23 @@ func TestDeletingBlockRemovesItsRow(t *testing.T) {
 	}
 	if n, _ := s.Count(ctx); n != 1 {
 		t.Errorf("count = %d, want 1", n)
+	}
+}
+
+func TestIndexDimensionMismatchIsActionable(t *testing.T) {
+	// Store expects dim 16; embedder returns dim 8 -> clear, actionable error.
+	s, err := store.Open(filepath.Join(t.TempDir(), "j.db"), 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	ix := NewIndexer(s, embed.NewFake(8))
+	_, err = ix.IndexContent(context.Background(), "daily/d.md", twoBlocks)
+	if err == nil {
+		t.Fatal("expected a dimension-mismatch error")
+	}
+	if !strings.Contains(err.Error(), "embed_dim") || !strings.Contains(err.Error(), "--rebuild") {
+		t.Errorf("error not actionable: %v", err)
 	}
 }
 

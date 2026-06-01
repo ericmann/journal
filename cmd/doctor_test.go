@@ -4,14 +4,27 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/ericmann/journal/internal/embed"
 )
 
-type fakeLister struct {
+// fakeChecker satisfies ollamaChecker: canned tags + a fake embedder whose
+// vector length is `dim` (so embed_dim probing can be exercised).
+type fakeChecker struct {
 	tags []string
 	err  error
+	dim  int
 }
 
-func (f fakeLister) Tags(context.Context) ([]string, error) { return f.tags, f.err }
+func (f fakeChecker) Tags(context.Context) ([]string, error) { return f.tags, f.err }
+
+func (f fakeChecker) Embed(ctx context.Context, texts []string, instruction string) ([][]float32, error) {
+	d := f.dim
+	if d == 0 {
+		d = 2560 // default-config dimension
+	}
+	return embed.NewFake(d).Embed(ctx, texts, instruction)
+}
 
 func findCheck(rep doctorReport, name string) (check, bool) {
 	for _, c := range rep.Checks {
@@ -23,21 +36,25 @@ func findCheck(rep doctorReport, name string) (check, bool) {
 }
 
 func TestDoctorAllHealthy(t *testing.T) {
-	cfg := testRepo(t, nil)
-	lister := fakeLister{tags: []string{"qwen3-embedding:4b", "qwen3-reranker:latest"}}
-	rep := runDoctor(context.Background(), cfg, lister)
+	cfg := testRepo(t, nil) // default config: reranker disabled, embed_dim 2560
+	checker := fakeChecker{tags: []string{"qwen3-embedding:4b"}, dim: cfg.EmbedDim}
+	rep := runDoctor(context.Background(), cfg, checker)
 	if !rep.OK {
 		t.Errorf("expected healthy, got: %+v", rep.Checks)
 	}
+	// Reranker disabled by default -> OK (informational).
 	if c, _ := findCheck(rep, "reranker"); !c.OK {
-		t.Errorf("reranker check should pass with :latest tolerance: %+v", c)
+		t.Errorf("disabled reranker should be OK: %+v", c)
+	}
+	if c, _ := findCheck(rep, "embed_dim"); !c.OK {
+		t.Errorf("embed_dim should match: %+v", c)
 	}
 }
 
 func TestDoctorOllamaDownFails(t *testing.T) {
 	cfg := testRepo(t, nil)
-	lister := fakeLister{err: errors.New("connection refused")}
-	rep := runDoctor(context.Background(), cfg, lister)
+	checker := fakeChecker{err: errors.New("connection refused")}
+	rep := runDoctor(context.Background(), cfg, checker)
 	if rep.OK {
 		t.Error("expected failure when Ollama is down")
 	}
@@ -45,22 +62,44 @@ func TestDoctorOllamaDownFails(t *testing.T) {
 	if !ok || c.OK {
 		t.Errorf("ollama check should fail: %+v", c)
 	}
-	// Model checks are skipped when Ollama is unreachable.
 	if _, ok := findCheck(rep, "embed_model"); ok {
 		t.Error("model checks should be skipped when Ollama is down")
 	}
 }
 
-func TestDoctorMissingModelFails(t *testing.T) {
+func TestDoctorMissingEmbedModelFails(t *testing.T) {
 	cfg := testRepo(t, nil)
-	lister := fakeLister{tags: []string{"qwen3-embedding:4b"}} // reranker missing
-	rep := runDoctor(context.Background(), cfg, lister)
+	checker := fakeChecker{tags: []string{"some-other-model"}, dim: cfg.EmbedDim}
+	rep := runDoctor(context.Background(), cfg, checker)
 	if rep.OK {
-		t.Error("expected failure when reranker model missing")
+		t.Error("expected failure when the embed model is missing")
 	}
+	if c, _ := findCheck(rep, "embed_model"); c.OK {
+		t.Errorf("embed_model check should fail: %+v", c)
+	}
+}
+
+func TestDoctorEmbedDimMismatchFails(t *testing.T) {
+	cfg := testRepo(t, nil) // embed_dim 2560
+	checker := fakeChecker{tags: []string{"qwen3-embedding:4b"}, dim: 1024}
+	rep := runDoctor(context.Background(), cfg, checker)
+	if rep.OK {
+		t.Error("expected failure when probed dimension != embed_dim")
+	}
+	c, _ := findCheck(rep, "embed_dim")
+	if c.OK || !contains(c.Detail, "1024") {
+		t.Errorf("embed_dim check should report actual dim: %+v", c)
+	}
+}
+
+func TestDoctorRerankerMissingIsNotFatal(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Reranker = "qwen3:4b" // set but not pulled
+	checker := fakeChecker{tags: []string{"qwen3-embedding:4b"}, dim: cfg.EmbedDim}
+	rep := runDoctor(context.Background(), cfg, checker)
 	c, _ := findCheck(rep, "reranker")
-	if c.OK {
-		t.Errorf("reranker check should fail: %+v", c)
+	if !c.OK {
+		t.Errorf("a missing-but-optional reranker must not fail the verdict: %+v", c)
 	}
 }
 
@@ -68,8 +107,8 @@ func TestDoctorReportsChunkCount(t *testing.T) {
 	cfg, _ := indexedRepo(t, map[string]string{
 		"daily/2026/06/d.md": "# 2026-06-01\n\n## 09:00\nnote\n",
 	})
-	lister := fakeLister{tags: []string{"qwen3-embedding:4b", "qwen3-reranker"}}
-	rep := runDoctor(context.Background(), cfg, lister)
+	checker := fakeChecker{tags: []string{"qwen3-embedding:4b"}, dim: cfg.EmbedDim}
+	rep := runDoctor(context.Background(), cfg, checker)
 	c, _ := findCheck(rep, "index")
 	if !c.OK {
 		t.Errorf("index check should pass: %+v", c)

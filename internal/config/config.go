@@ -27,7 +27,9 @@ const AnthropicKeyEnv = "ANTHROPIC_API_KEY"
 type Config struct {
 	// EmbedModel is the Ollama embedding model (e.g. qwen3-embedding:4b).
 	EmbedModel string `yaml:"embed_model"`
-	// Reranker is the Ollama reranking model (e.g. qwen3-reranker).
+	// Reranker is optional. When empty, reranking is disabled and search uses
+	// vector-KNN order directly. When set, it names the Ollama generate model
+	// used for LLM-as-reranker scoring (Ollama has no native rerank API).
 	Reranker string `yaml:"reranker"`
 	// OllamaBaseURL is the local Ollama HTTP endpoint.
 	OllamaBaseURL string `yaml:"ollama_base_url"`
@@ -36,7 +38,7 @@ type Config struct {
 	ChunkStrategy string `yaml:"chunk_strategy"`
 	// EmbedDim is the embedding vector dimension. It MUST match the model's
 	// output dimension; the vec0 table is declared float[EmbedDim]. Validated
-	// against the live model at index time.
+	// against the live model by `journal doctor` and at index time.
 	EmbedDim int `yaml:"embed_dim"`
 	// Excludes are glob patterns (repo-relative) skipped by the indexer.
 	Excludes []string `yaml:"excludes"`
@@ -60,11 +62,17 @@ type Config struct {
 // Default returns a Config populated with the documented defaults. It is valid.
 func Default() Config {
 	return Config{
-		EmbedModel:           "qwen3-embedding:4b",
-		Reranker:             "qwen3-reranker",
-		OllamaBaseURL:        "http://localhost:11434",
-		ChunkStrategy:        "heading",
-		EmbedDim:             1024,
+		EmbedModel: "qwen3-embedding:4b",
+		// Reranking is off by default: Ollama has no native rerank API and there
+		// is no official reranker model. Vector KNN with qwen3-embedding is
+		// strong on its own. Set this to a generate model (e.g. "qwen3:4b") to
+		// enable the LLM-as-reranker precision lift.
+		Reranker:      "",
+		OllamaBaseURL: "http://localhost:11434",
+		ChunkStrategy: "heading",
+		// qwen3-embedding:4b outputs 2560-dim vectors. MUST match the model;
+		// `journal doctor` reports the model's actual dimension.
+		EmbedDim:             2560,
 		Excludes:             []string{"reflections/**", ".journal/**"},
 		StorePath:            filepath.Join(JournalDir, "index", "journal.db"),
 		RetrievalInstruction: "Represent this query for retrieving relevant developer journal notes:",
@@ -102,9 +110,7 @@ func (c *Config) Validate() error {
 	if c.EmbedModel == "" {
 		return errors.New("embed_model must not be empty")
 	}
-	if c.Reranker == "" {
-		return errors.New("reranker must not be empty")
-	}
+	// Reranker may be empty (reranking disabled) — no validation needed.
 	if c.OllamaBaseURL == "" {
 		return errors.New("ollama_base_url must not be empty")
 	}

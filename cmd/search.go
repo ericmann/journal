@@ -81,7 +81,13 @@ func runSearch(ctx context.Context, cfg *config.Config, e embed.Embedder, query 
 		return []Result{}, nil
 	}
 
-	scored := rerankOrDistance(ctx, e, query, cands)
+	var scored []scoredChunk
+	if cfg.Reranker == "" {
+		// Reranking disabled: use vector-KNN (ascending distance) order.
+		scored = distanceOrder(cands)
+	} else {
+		scored = rerankOrDistance(ctx, e, query, cands)
+	}
 	if len(scored) > k {
 		scored = scored[:k]
 	}
@@ -107,11 +113,7 @@ func rerankOrDistance(ctx context.Context, e embed.Embedder, query string, cands
 	scores, err := e.Rerank(ctx, query, docs)
 	if err != nil || len(scores) != len(cands) {
 		// Fallback: candidates are already in ascending-distance order.
-		out := make([]scoredChunk, len(cands))
-		for i, c := range cands {
-			out[i] = scoredChunk{chunk: c.Chunk, score: 1.0 / (1.0 + c.Distance)}
-		}
-		return out
+		return distanceOrder(cands)
 	}
 	out := make([]scoredChunk, len(cands))
 	for i, c := range cands {
@@ -119,6 +121,16 @@ func rerankOrDistance(ctx context.Context, e embed.Embedder, query string, cands
 	}
 	// Stable sort by score desc so ties keep KNN (distance) order.
 	sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
+	return out
+}
+
+// distanceOrder preserves the vector-KNN ascending-distance order, assigning a
+// monotonic distance-derived score in (0,1].
+func distanceOrder(cands []store.Candidate) []scoredChunk {
+	out := make([]scoredChunk, len(cands))
+	for i, c := range cands {
+		out[i] = scoredChunk{chunk: c.Chunk, score: 1.0 / (1.0 + c.Distance)}
+	}
 	return out
 }
 
