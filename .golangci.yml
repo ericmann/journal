@@ -1,10 +1,7 @@
 # golangci-lint configuration.
 #
-# The pinned golangci-lint release (v1.64.8) is built with go1.24 and refuses to
-# analyze a module whose go.mod targets a newer Go than its own build. We keep
-# go.mod at the real toolchain version (1.26.x) for building/testing, and tell
-# the linter to target 1.24 — our code uses no >1.24 language features, so this
-# is accurate and keeps CI's prebuilt linter happy.
+# CI builds golangci-lint from source with the repo's Go toolchain (see the
+# `install-mode: goinstall` step in .github/workflows/ci.yml), so it can
+# typecheck this go1.26 module. Default linters; just a generous timeout.
 run:
-  go: "1.24"
   timeout: 5m

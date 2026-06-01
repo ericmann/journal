@@ -59,3 +59,7 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
+          # Build the linter from source with the Go toolchain set up above
+          # (1.26.x). The prebuilt v1.64.8 binary is built with go1.24 and
+          # cannot typecheck a module that targets go1.26 (go.mod).
+          install-mode: goinstall
