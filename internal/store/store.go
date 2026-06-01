@@ -270,6 +270,24 @@ func (s *Store) Delete(ctx context.Context, ids ...string) error {
 	return tx.Commit()
 }
 
+// UpdateLines updates only the location of an already-indexed chunk (and its
+// indexed_at) without touching its embedding. The incremental indexer calls
+// this for chunks whose content is unchanged but whose line numbers shifted
+// because an earlier block in the same file grew or shrank — so re-indexing
+// never re-embeds unchanged content.
+func (s *Store) UpdateLines(ctx context.Context, id string, lineStart, lineEnd int, indexedAt time.Time) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE chunks SET line_start=?, line_end=?, indexed_at=? WHERE id=?`,
+		lineStart, lineEnd, timeString(indexedAt), id)
+	if err != nil {
+		return fmt.Errorf("update lines for %s: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("update lines: chunk %s not found", id)
+	}
+	return nil
+}
+
 // ChunkIDsByPath returns the set of chunk ids currently stored for a path. The
 // incremental indexer uses this to compute which chunks disappeared.
 func (s *Store) ChunkIDsByPath(ctx context.Context, path string) ([]string, error) {
