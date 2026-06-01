@@ -3,26 +3,28 @@
 `journal` is built as a **local retrieval substrate** that a reasoning layer
 (Claude) drives. The division of labor:
 
-```
-            ┌─────────────────────────────┐
-            │  Reasoning / inference      │
-            │  • Claude Code (CLI/IDE)    │   ← drives journal, cites results
-            │  • Claude.ai desktop app    │
-            │  • journal synth (Phase 5)  │   ← cloud Claude for weekly drafts
-            └──────────────┬──────────────┘
-                           │ shells out / MCP / reads markdown
-            ┌──────────────▼──────────────┐
-            │  journal (this CLI)         │
-            │  capture · index · search   │
-            │  recent · decisions ·threads│
-            └──────────────┬──────────────┘
-              local, no network surface
-            ┌──────────────▼──────────────┐
-            │  Local services + storage   │
-            │  • Ollama (embed + rerank)  │   ← localhost:11434, no auth
-            │  • sqlite-vec .db (cache)   │
-            │  • markdown repo (git)      │   ← source of truth
-            └─────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Reasoning["Reasoning / inference (Claude)"]
+        CC[Claude Code CLI/IDE]
+        DA[Claude.ai desktop app]
+        SY[journal synth — cloud Claude, weekly drafts]
+    end
+    subgraph Tool["journal — this CLI (local, no network surface)"]
+        CMD["capture · index · search<br/>recent · decisions · threads"]
+    end
+    subgraph Local["Local services + storage"]
+        OLL["Ollama — embed + rerank<br/>localhost:11434, no auth"]
+        DB[("sqlite-vec .db — derived cache")]
+        MD[("markdown repo — git, source of truth")]
+    end
+
+    CC -->|"drives; cites path:line"| CMD
+    DA -->|"MCP / filesystem"| CMD
+    SY --> CMD
+    CMD --> OLL
+    CMD --> DB
+    CMD --> MD
 ```
 
 Key idea: **retrieval is local** (Ollama embeddings + reranking over a
