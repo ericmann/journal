@@ -126,8 +126,24 @@ watcher ships in Phase 4.
 
 ### CI
 GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
-`gofmt` check, `go vet`, `go build`, race-enabled tests with coverage, and
-`golangci-lint` (pinned to v1.64.8 to match the locally verified version).
+`gofmt` check, `go vet`, `go build`, the test suite with coverage, a scoped race
+run, and `golangci-lint` (pinned v1.64.8).
+
+Two CI-specific gotchas hit and fixed:
+
+- **golangci-lint vs go1.26 module:** the prebuilt v1.64.8 binary is built with
+  go1.24 and cannot *typecheck* a module whose `go.mod` targets go1.26 (its
+  go/packages loader rejects the packages; `run.go` in config doesn't help). Fix:
+  `install-mode: goinstall` so the action builds golangci-lint from source with
+  CI's Go 1.26 toolchain — exactly how it works locally.
+- **Race detector vs the sqlite-vec WASM runtime:** `go test -race ./...` faults
+  intermittently on linux/amd64 (`fatal error: fault` / `unsafe.Slice: len out
+  of range`) inside wazero while executing the SQLite WASM — a wazero/runtime
+  interaction, not our code (passed under race in one run, crashed the next).
+  Fix: the full suite runs **without** `-race` (with coverage), and `-race` runs
+  only on `internal/embed` (the concurrency-sensitive package — the rerank
+  worker pool — that doesn't touch wazero). Local `go test -race ./...` on
+  darwin/arm64 happens to pass, but we don't rely on it in CI.
 
 ### sqlite-vec loading: pure-Go via `ncruces/go-sqlite3` (no cgo) ✅
 Ground rule: verify the `sqlite-vec` extension actually loads before building on
