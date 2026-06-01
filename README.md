@@ -35,19 +35,26 @@ Code**, the **Claude desktop app**, and **Ollama**, see
 `journal` is a single static binary with no runtime dependencies (the binary
 itself; embeddings and synthesis talk to Ollama/Anthropic over HTTP).
 
-**Prerequisite:** Go 1.26+ to build (`brew install go`).
+**Option A — download a release binary.** Grab the static binary for your
+platform from the [releases page](https://github.com/ericmann/journal/releases)
+(darwin/linux, arm64/amd64) and put it on your `PATH`:
+
+```sh
+install -m 0755 ./journal_v1.0.0_darwin_arm64 /usr/local/bin/journal
+journal --version
+```
+
+**Option B — build from source** (Go 1.26+, `brew install go`):
 
 ```sh
 git clone git@github.com:ericmann/journal.git
 cd journal
-make build            # produces ./journal
+make build                                          # version-stamped static binary
+install -m 0755 ./journal /usr/local/bin/journal    # or anywhere on PATH
 ```
 
-Put it on your `PATH`:
-
-```sh
-install -m 0755 ./journal /usr/local/bin/journal   # or anywhere on PATH
-```
+Cross-compile all platforms with `make release VERSION=v1.0.0` (output in
+`dist/`). The binary is fully static (`CGO_ENABLED=0`) — no runtime deps.
 
 Confirm:
 
