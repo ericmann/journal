@@ -3,7 +3,9 @@ package index
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,7 +22,7 @@ func newWatchFixture(t *testing.T) (*Watcher, *store.Store, *embed.Fake, string)
 	t.Cleanup(func() { s.Close() })
 	fake := embed.NewFake(16)
 	root := t.TempDir()
-	w := NewWatcher(root, []string{"reflections/**", ".journal/**"}, NewIndexer(s, fake), 20*time.Millisecond, nil)
+	w := NewWatcher(root, []string{"reflections/**", ".journal/**"}, NewIndexer(s, fake), 20*time.Millisecond, nil, false, false)
 	return w, s, fake, root
 }
 
@@ -74,6 +76,37 @@ func TestProcessChangesSkipsExcludedAndNonMarkdown(t *testing.T) {
 	if st.FilesScanned != 0 || fake.EmbedTexts != 0 {
 		t.Errorf("excluded/non-md were processed: scanned=%d embeds=%d", st.FilesScanned, fake.EmbedTexts)
 	}
+}
+
+func TestWatcherCommitGatedAndWorks(t *testing.T) {
+	if !haveGit() {
+		t.Skip("git not available")
+	}
+	root := t.TempDir()
+	gitInit(t, root)
+	mustWrite(t, filepath.Join(root, "daily", "d.md"), "# 2026-06-01\n\n## 09:00\nnote\n")
+
+	// autoCommit disabled -> no commit (safe with zero commits via rev-list).
+	off := NewWatcher(root, nil, nil, 10*time.Millisecond, nil, false, false)
+	off.commit(Stats{Embedded: 1})
+	if n := strings.TrimSpace(gitOut(t, root, "rev-list", "--all", "--count")); n != "0" {
+		t.Errorf("commit happened with autoCommit off: %s commits", n)
+	}
+
+	// autoCommit enabled -> the note is committed.
+	on := NewWatcher(root, nil, nil, 10*time.Millisecond, nil, true, false)
+	on.commit(Stats{Embedded: 1})
+	if n := strings.TrimSpace(gitOut(t, root, "rev-list", "--all", "--count")); n != "1" {
+		t.Errorf("expected exactly 1 auto-commit, got %s", n)
+	}
+	if msg := gitOut(t, root, "log", "-1", "--pretty=%s"); !strings.Contains(msg, "notes") {
+		t.Errorf("commit message lacks flair: %q", msg)
+	}
+}
+
+func haveGit() bool {
+	_, err := exec.LookPath("git")
+	return err == nil
 }
 
 func TestWatcherHelpers(t *testing.T) {

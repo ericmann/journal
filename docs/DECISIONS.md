@@ -220,6 +220,32 @@ Lesson: the generated TDD specified plausible-sounding model names/dims that
 didn't survive contact with the actual Ollama registry — validated and corrected
 during first real setup.
 
+## v1.1.0 — auto-commit note changes
+
+Dogfooding surfaced a real footgun: `capture` appends but doesn't commit, so a
+day's notes could sit uncommitted. Fix: `index` and `index --watch` now
+auto-commit note changes (new `internal/vcs` package shelling out to git).
+
+Design choices:
+- **Where:** in `index`/`watch`, not `capture` (capture must stay <2s and pure).
+  Once the watcher runs, every note is committed within the debounce window.
+- **Default on** (`git_autocommit: true`) — a safety net you must remember to
+  enable isn't one. No-op if git is absent or the folder isn't a git repo.
+- **Only commits a git *top level*** (`vcs.IsRepoRoot` compares
+  `rev-parse --show-toplevel` to the resolved root) — never commits notes into a
+  parent repository. The watcher also stops watching `.git/` to avoid churn.
+- **`git add -A`** so the whole notes repo is captured; the gitignored index is
+  naturally excluded (tested).
+- **Unsigned by default** (`git_autocommit_sign: false`): the user signs commits
+  via 1Password (interactive), and an unattended watcher signing every note
+  would fire a biometric prompt per capture. Auto-commits are mechanical
+  snapshots; signing is opt-in. (This intentionally diverges from the
+  sign-everything preference for *this codebase* — notes-repo auto-commits have
+  different ergonomics.)
+- **Non-fatal:** commit failures are logged; markdown is always safe on disk.
+- Messages are auto-generated with a little personality (rotating verbs +
+  chunk deltas + timestamp).
+
 ## Tooling / process
 
 ### Commit signing

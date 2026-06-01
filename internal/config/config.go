@@ -54,6 +54,13 @@ type Config struct {
 	// author's writing voice; when present it is injected into synthesis
 	// prompts so drafts sound like the author. Optional.
 	VoiceProfilePath string `yaml:"voice_profile"`
+	// GitAutocommit, when true, makes `index`/`index --watch` auto-commit note
+	// changes if the repo root is a git work tree (the gitignored index is never
+	// committed). A safety net against forgetting to commit a day's work.
+	GitAutocommit bool `yaml:"git_autocommit"`
+	// GitAutocommitSign signs auto-commits using the repo's git config. Off by
+	// default so an unattended watcher doesn't trigger a signing prompt per note.
+	GitAutocommitSign bool `yaml:"git_autocommit_sign"`
 
 	// root is the absolute repo root; not serialized.
 	root string
@@ -79,6 +86,10 @@ func Default() Config {
 		SynthModel:           "claude-sonnet-4-6",
 		SynthMaxTokens:       4096,
 		VoiceProfilePath:     filepath.ToSlash(filepath.Join("docs", "VOICE_PROFILE.md")),
+		// Auto-commit note changes during index/watch (no-op outside a git repo);
+		// unsigned by default to avoid signing prompts in an unattended watcher.
+		GitAutocommit:     true,
+		GitAutocommitSign: false,
 	}
 }
 

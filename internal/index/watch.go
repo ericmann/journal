@@ -16,23 +16,42 @@ import (
 // (honoring excludes), debounces bursts of filesystem events, and re-indexes
 // only the files that changed — deletions remove the file's chunks.
 type Watcher struct {
-	root     string
-	excludes []string
-	ix       *Indexer
-	debounce time.Duration
-	logf     func(string, ...any)
+	root       string
+	excludes   []string
+	ix         *Indexer
+	debounce   time.Duration
+	logf       func(string, ...any)
+	autoCommit bool
+	signCommit bool
 }
 
 // NewWatcher constructs a Watcher. debounce is the quiet period after the last
 // event before a re-index runs; logf (may be nil) receives one-line status logs.
-func NewWatcher(root string, excludes []string, ix *Indexer, debounce time.Duration, logf func(string, ...any)) *Watcher {
+// When autoCommit is true, the watcher commits note changes after each re-index
+// (no-op outside a git repo); signCommit signs those commits.
+func NewWatcher(root string, excludes []string, ix *Indexer, debounce time.Duration, logf func(string, ...any), autoCommit, signCommit bool) *Watcher {
 	if debounce <= 0 {
 		debounce = 500 * time.Millisecond
 	}
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
-	return &Watcher{root: root, excludes: excludes, ix: ix, debounce: debounce, logf: logf}
+	return &Watcher{root: root, excludes: excludes, ix: ix, debounce: debounce, logf: logf, autoCommit: autoCommit, signCommit: signCommit}
+}
+
+// commit auto-commits note changes if enabled, logging the outcome. Commit
+// failures are never fatal — the markdown is already safe on disk.
+func (w *Watcher) commit(st Stats) {
+	if !w.autoCommit {
+		return
+	}
+	committed, err := AutoCommit(w.root, st, w.signCommit, time.Now())
+	switch {
+	case err != nil:
+		w.logf("auto-commit failed (notes are safe on disk): %v", err)
+	case committed:
+		w.logf("auto-committed note changes")
+	}
 }
 
 // Run watches until ctx is cancelled. It performs an initial full index, then
@@ -57,6 +76,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 		w.logf("initial index error: %v", err)
 	} else {
 		w.logf("watching %s — initial index: %d files, %d embedded", w.root, st.FilesScanned, st.Embedded)
+		w.commit(st) // commit anything captured before the watcher started
 	}
 
 	pending := map[string]bool{}
@@ -80,7 +100,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 				}
 			}
 			rel := w.rel(ev.Name)
-			if rel == "" || !isMarkdown(rel) || Excluded(rel, w.excludes) {
+			if rel == "" || !isMarkdown(rel) || w.skipDir(rel) {
 				continue
 			}
 			pending[rel] = true
@@ -108,6 +128,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 			}
 			w.logf("re-indexed %d file(s): %d embedded, %d updated, %d deleted",
 				len(changed), st.Embedded, st.Updated, st.Deleted)
+			w.commit(st)
 		}
 	}
 }
@@ -151,11 +172,20 @@ func (w *Watcher) addDirs(watcher *fsnotify.Watcher) error {
 			return nil
 		}
 		rel := w.rel(p)
-		if rel != "" && Excluded(rel, w.excludes) {
+		if rel != "" && w.skipDir(rel) {
 			return filepath.SkipDir
 		}
 		return watcher.Add(p)
 	})
+}
+
+// skipDir reports whether a directory should not be watched: the git internals
+// (which churn on every auto-commit) or any configured exclude.
+func (w *Watcher) skipDir(rel string) bool {
+	if rel == ".git" || strings.HasPrefix(rel, ".git/") {
+		return true
+	}
+	return Excluded(rel, w.excludes)
 }
 
 // addDirUnder watches a newly-created directory subtree (best effort).
@@ -165,7 +195,7 @@ func (w *Watcher) addDirUnder(watcher *fsnotify.Watcher, dir string) {
 			return nil //nolint:nilerr // skip unreadable entries
 		}
 		rel := w.rel(p)
-		if rel != "" && Excluded(rel, w.excludes) {
+		if rel != "" && w.skipDir(rel) {
 			return filepath.SkipDir
 		}
 		_ = watcher.Add(p)

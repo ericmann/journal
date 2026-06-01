@@ -59,7 +59,7 @@ func runWatch(ctx context.Context, cfg *config.Config, e embed.Embedder, out io.
 	logf := func(format string, args ...any) {
 		fmt.Fprintf(out, format+"\n", args...)
 	}
-	w := index.NewWatcher(cfg.Root(), cfg.Excludes, ix, 0, logf)
+	w := index.NewWatcher(cfg.Root(), cfg.Excludes, ix, 0, logf, cfg.GitAutocommit, cfg.GitAutocommitSign)
 	err = w.Run(ctx)
 	if errors.Is(err, context.Canceled) {
 		return nil // clean shutdown on Ctrl-C
@@ -103,6 +103,16 @@ func runIndex(ctx context.Context, cfg *config.Config, e embed.Embedder, opts in
 	}
 	fmt.Fprintf(out, "indexed %d files in %s: %d embedded, %d updated, %d deleted\n",
 		st.FilesScanned, time.Since(start).Round(time.Millisecond), st.Embedded, st.Updated, st.Deleted)
+
+	if cfg.GitAutocommit {
+		committed, cerr := index.AutoCommit(cfg.Root(), st, cfg.GitAutocommitSign, time.Now())
+		switch {
+		case cerr != nil:
+			fmt.Fprintf(out, "auto-commit skipped (notes are safe on disk): %v\n", cerr)
+		case committed:
+			fmt.Fprintln(out, "auto-committed note changes")
+		}
+	}
 	return st, nil
 }
 

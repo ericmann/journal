@@ -247,6 +247,27 @@ launchctl unload ~/Library/LaunchAgents/com.ericmann.journal-watch.plist   # to 
 The **tmux pane is the documented default**; launchd is there if you want it
 hands-off.
 
+### Auto-commit (never lose a day's work)
+
+When the repo is a git repository, `journal index` and `index --watch`
+**auto-commit your note changes** (controlled by `git_autocommit`, default on).
+So once the watcher is running, every captured note is committed within the
+debounce window — you can't forget. Details:
+
+- It commits **only your markdown** (`git add -A` honors `.gitignore`, so the
+  vector index is never committed).
+- It's a **no-op unless the repo root is a git top level** — it will never
+  commit your notes into a parent repository, and does nothing if git isn't
+  installed or the folder isn't a repo.
+- Commits are **unsigned by default** (`git_autocommit_sign: false`) so an
+  unattended watcher doesn't trigger a signing prompt per note; set it `true`
+  for signed note-commits.
+- Commit failures are **logged, never fatal** — your markdown is always safe on
+  disk. Messages are auto-generated, e.g.
+  `📓 scribbled notes — +1 new, ~1 revised, -0 removed · Mon 2026-06-01 12:32`.
+
+Set `git_autocommit: false` to manage commits yourself.
+
 ---
 
 ## Synthesis (cloud Claude)
@@ -300,6 +321,8 @@ store_path: .journal/index/journal.db
 synth_model: claude-sonnet-4-6        # Anthropic model for `journal synth`
 synth_max_tokens: 4096
 voice_profile: docs/VOICE_PROFILE.md  # optional; injected into synth prompts
+git_autocommit: true                  # auto-commit notes during index/watch (if a git repo)
+git_autocommit_sign: false            # sign those commits (off avoids watcher signing prompts)
 ```
 
 **Secrets never go in config.** The Anthropic API key for synthesis is read from
