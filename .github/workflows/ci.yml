@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Run the Node20-based actions (checkout, setup-go, etc.) on Node 24 ahead of
+# GitHub forcing it (2026-06-16) and removing Node 20 (2026-09-16).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   test:
     name: build · vet · test

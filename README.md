@@ -60,6 +60,10 @@ brew install displacetech/tap/journal
 journal --version
 ```
 
+The cask clears the macOS quarantine flag on install, so `journal` runs
+immediately — no "Allow Anyway" trip through System Settings. (The binary is
+ad-hoc signed but not Apple-notarized.)
+
 **Option B — install script** (Linux/macOS, no package manager). Downloads the
 latest release, **verifies its SHA-256**, and installs it on your `PATH`:
 

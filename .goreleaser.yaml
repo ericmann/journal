@@ -82,6 +82,16 @@ homebrew_casks:
         3. verify your setup:     journal doctor
 
       An ANTHROPIC_API_KEY in your environment is only needed for `journal synth`.
+    # The binary is ad-hoc (linker) signed but not Apple-notarized, so a freshly
+    # downloaded copy is quarantined and macOS Gatekeeper blocks the first run.
+    # Strip the quarantine flag on install so `journal` runs without a manual
+    # "Allow Anyway" trip through System Settings.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/journal"]
+          end
 
 changelog:
   sort: asc
