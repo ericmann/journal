@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 
@@ -68,7 +69,11 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 
 	tags, err := checker.Tags(ctx)
 	if err != nil {
-		checks = append(checks, check{Name: "ollama", OK: false, Detail: err.Error()})
+		detail := err.Error()
+		if errors.Is(err, embed.ErrUnreachable) {
+			detail += " — is Ollama running? install: https://ollama.com"
+		}
+		checks = append(checks, check{Name: "ollama", OK: false, Detail: detail})
 	} else {
 		checks = append(checks, check{Name: "ollama", OK: true, Detail: fmt.Sprintf("reachable at %s; %d models", cfg.OllamaBaseURL, len(tags))})
 		checks = append(checks, modelCheck("embed_model", cfg.EmbedModel, tags))

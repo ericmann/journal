@@ -45,13 +45,13 @@ var synthCmd = &cobra.Command{
 		// Default to dry-run when neither flag is set: synthesis costs money and
 		// makes a network call, so it must be explicit.
 		dryRun := synthDryRun || !synthWrite
-		return runSynth(cmd.Context(), cfg, synth.Options{
+		return hintOllama(cfg, runSynth(cmd.Context(), cfg, synth.Options{
 			Kind:    kind,
 			Project: synthProject,
 			Days:    synthDays,
 			DryRun:  dryRun,
 			Write:   synthWrite && !synthDryRun,
-		}, cmd.OutOrStdout())
+		}, cmd.OutOrStdout()))
 	},
 }
 

@@ -30,11 +30,11 @@ var searchCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out := cmd.OutOrStdout()
+		cfg, err := loadConfig()
+		if err != nil {
+			return renderError(out, err, searchJSON)
+		}
 		results, err := func() ([]Result, error) {
-			cfg, err := loadConfig()
-			if err != nil {
-				return nil, err
-			}
 			since, err := parseSince(searchSince)
 			if err != nil {
 				return nil, err
@@ -46,7 +46,7 @@ var searchCmd = &cobra.Command{
 			return runSearch(cmd.Context(), cfg, newEmbedder(cfg), strings.Join(args, " "), searchK, f)
 		}()
 		if err != nil {
-			return renderError(out, err, searchJSON)
+			return renderError(out, hintOllama(cfg, err), searchJSON)
 		}
 		return renderResults(out, results, searchJSON)
 	},

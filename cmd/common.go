@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,6 +10,23 @@ import (
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
 )
+
+// hintOllama augments an Ollama-unreachable error with actionable setup steps.
+// Indexing, search, and synthesis all need a local Ollama; when it can't be
+// reached, a raw "connection refused" is unfriendly to a new user, so we point
+// them at the fix. Other errors pass through unchanged.
+func hintOllama(cfg *config.Config, err error) error {
+	if err == nil || !errors.Is(err, embed.ErrUnreachable) {
+		return err
+	}
+	return fmt.Errorf("%w\n\n"+
+		"journal needs a local Ollama for embeddings. To set it up:\n"+
+		"  1. install Ollama:        https://ollama.com\n"+
+		"  2. pull the embed model:  ollama pull %s\n"+
+		"  3. verify:                journal doctor\n"+
+		"(Ollama is expected at %s — change ollama_base_url in .journal/config.yaml if it runs elsewhere.)",
+		err, cfg.EmbedModel, cfg.OllamaBaseURL)
+}
 
 // loadConfig resolves the repo root from the current directory and loads config.
 func loadConfig() (*config.Config, error) {

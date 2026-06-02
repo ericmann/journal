@@ -50,6 +50,14 @@ var initCmd = &cobra.Command{
 		}
 		fmt.Fprintf(out, "  sync script: %s\n", filepath.Join(config.JournalDir, syncScriptName))
 		fmt.Fprintf(out, "  see %s to wire it to an hourly cron (back up notes to a git remote)\n", rel)
+		if res.created {
+			def := config.Default()
+			fmt.Fprintf(out, "\nNext steps (indexing & search need a local Ollama):\n")
+			fmt.Fprintf(out, "  1. install Ollama:        https://ollama.com\n")
+			fmt.Fprintf(out, "  2. pull the embed model:  ollama pull %s\n", def.EmbedModel)
+			fmt.Fprintf(out, "  3. verify your setup:     journal doctor\n")
+			fmt.Fprintf(out, "  4. capture your first note: journal capture \"hello, journal\"\n")
+		}
 		return nil
 	},
 }

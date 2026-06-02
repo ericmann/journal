@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,11 @@ import (
 	"sync"
 	"time"
 )
+
+// ErrUnreachable indicates the Ollama service could not be contacted (e.g. it is
+// not running). Callers can errors.Is against it to print an install/start hint
+// instead of a raw transport error.
+var ErrUnreachable = errors.New("ollama unreachable")
 
 // Ollama is the HTTP Embedder backed by a local Ollama service. It talks to
 // /api/embed for embeddings and scores rerank candidates via /api/generate with
@@ -181,7 +187,7 @@ func (o *Ollama) Tags(ctx context.Context) ([]string, error) {
 	}
 	resp, err := o.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("ollama unreachable at %s: %w", o.baseURL, err)
+		return nil, fmt.Errorf("%w at %s: %v", ErrUnreachable, o.baseURL, err)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
@@ -235,7 +241,9 @@ func (o *Ollama) postJSON(ctx context.Context, path string, body []byte, out any
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := o.hc.Do(req)
 		if err != nil {
-			lastErr = err
+			// Transport-level failure (connection refused, no such host, timeout):
+			// treat as unreachable so callers can surface an install/start hint.
+			lastErr = fmt.Errorf("%w at %s: %v", ErrUnreachable, o.baseURL, err)
 			continue // transient: retry
 		}
 		data, readErr := io.ReadAll(resp.Body)

@@ -37,13 +37,13 @@ var indexCmd = &cobra.Command{
 			return err
 		}
 		if indexWatch {
-			return runWatch(cmd.Context(), cfg, newEmbedder(cfg), cmd.OutOrStdout())
+			return hintOllama(cfg, runWatch(cmd.Context(), cfg, newEmbedder(cfg), cmd.OutOrStdout()))
 		}
 		_, err = runIndex(cmd.Context(), cfg, newEmbedder(cfg), indexOptions{
 			rebuild: indexRebuild,
 			since:   since,
 		}, cmd.OutOrStdout())
-		return err
+		return hintOllama(cfg, err)
 	},
 }
 
