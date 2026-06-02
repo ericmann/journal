@@ -13,6 +13,7 @@ import (
 	"github.com/ericmann/journal/internal/note"
 	"github.com/ericmann/journal/internal/vcs"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // now is the clock, overridable in tests.
@@ -23,7 +24,10 @@ var now = time.Now
 var (
 	// openEditor composes a note in the user's editor and returns its contents.
 	openEditor = editorOpenDefault
-	// stdinIsPiped reports whether stdin has piped/redirected data (vs a TTY).
+	// stdinIsTerminal reports whether stdin is an interactive terminal.
+	stdinIsTerminal = defaultStdinIsTerminal
+	// stdinIsPiped reports whether stdin is a pipe / redirected file / socket
+	// (i.e. has data to read) rather than a char device like a TTY or /dev/null.
 	stdinIsPiped = defaultStdinIsPiped
 	// readStdin reads the whole of stdin (used when input is piped).
 	readStdin = readStdinDefault
@@ -33,8 +37,10 @@ func editorOpenDefault(cmd string) (string, error) { return editor.Open(cmd) }
 
 func readStdinDefault() ([]byte, error) { return io.ReadAll(os.Stdin) }
 
+func defaultStdinIsTerminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
+
 // defaultStdinIsPiped is true when stdin is not a character device — i.e. it is
-// a pipe or a redirected file, so a note can be read from it directly.
+// a pipe, a redirected file, or a socket, so a note can be read from it.
 func defaultStdinIsPiped() bool {
 	fi, err := os.Stdin.Stat()
 	if err != nil {
@@ -43,24 +49,32 @@ func defaultStdinIsPiped() bool {
 	return fi.Mode()&os.ModeCharDevice == 0
 }
 
-// composeNote obtains note text when none was given on the command line: it
-// reads piped stdin if present, otherwise opens the configured editor.
+// composeNote obtains note text when none was given on the command line. It
+// routes by the kind of stdin: an interactive terminal opens the editor; piped
+// or redirected input is read directly; anything else (e.g. /dev/null, or a
+// non-interactive context with no input) is a clear error rather than a hung
+// read or an editor launched without a terminal.
 func composeNote(cfg *config.Config) (string, error) {
-	if stdinIsPiped() {
+	switch {
+	case stdinIsTerminal():
+		text, err := openEditor(editor.Resolve(cfg.Editor))
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(text) == "" {
+			return "", fmt.Errorf("aborting capture: empty note (nothing saved in the editor)")
+		}
+		return text, nil
+	case stdinIsPiped():
 		data, err := readStdin()
 		if err != nil {
 			return "", fmt.Errorf("reading note from stdin: %w", err)
 		}
 		return string(data), nil
+	default:
+		return "", fmt.Errorf("no note text given and not running in a terminal; " +
+			"pass the note as an argument, pipe it on stdin, or run in a terminal to use the editor")
 	}
-	text, err := openEditor(editor.Resolve(cfg.Editor))
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(text) == "" {
-		return "", fmt.Errorf("aborting capture: empty note (nothing saved in the editor)")
-	}
-	return text, nil
 }
 
 var (

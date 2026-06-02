@@ -157,11 +157,19 @@ func TestAutoCommitCaptureOutsideGitRepoIsNoOp(t *testing.T) {
 	}
 }
 
+// resetComposeSeams restores the stdin/editor seams after a test tweaks them.
+func resetComposeSeams() {
+	stdinIsTerminal = defaultStdinIsTerminal
+	stdinIsPiped = defaultStdinIsPiped
+	openEditor = editorOpenDefault
+	readStdin = readStdinDefault
+}
+
 func TestComposeNoteFromEditor(t *testing.T) {
-	// Not piped -> editor path. Inject a fake editor.
-	stdinIsPiped = func() bool { return false }
+	// Interactive terminal -> editor path. Inject a fake editor.
+	stdinIsTerminal = func() bool { return true }
 	openEditor = func(cmd string) (string, error) { return "note from the editor\n", nil }
-	t.Cleanup(func() { stdinIsPiped = defaultStdinIsPiped; openEditor = editorOpenDefault })
+	t.Cleanup(resetComposeSeams)
 
 	cfg := config.Default()
 	got, err := composeNote(&cfg)
@@ -174,9 +182,9 @@ func TestComposeNoteFromEditor(t *testing.T) {
 }
 
 func TestComposeNoteEmptyEditorAborts(t *testing.T) {
-	stdinIsPiped = func() bool { return false }
+	stdinIsTerminal = func() bool { return true }
 	openEditor = func(cmd string) (string, error) { return "   \n", nil }
-	t.Cleanup(func() { stdinIsPiped = defaultStdinIsPiped; openEditor = editorOpenDefault })
+	t.Cleanup(resetComposeSeams)
 
 	cfg := config.Default()
 	if _, err := composeNote(&cfg); err == nil {
@@ -185,9 +193,10 @@ func TestComposeNoteEmptyEditorAborts(t *testing.T) {
 }
 
 func TestComposeNoteFromPipedStdin(t *testing.T) {
+	stdinIsTerminal = func() bool { return false }
 	stdinIsPiped = func() bool { return true }
 	readStdin = func() ([]byte, error) { return []byte("piped note #cabot\n"), nil }
-	t.Cleanup(func() { stdinIsPiped = defaultStdinIsPiped; readStdin = readStdinDefault })
+	t.Cleanup(resetComposeSeams)
 
 	cfg := config.Default()
 	got, err := composeNote(&cfg)
@@ -196,6 +205,27 @@ func TestComposeNoteFromPipedStdin(t *testing.T) {
 	}
 	if got != "piped note #cabot\n" {
 		t.Errorf("composeNote(stdin) = %q", got)
+	}
+}
+
+// Neither a terminal nor piped input (e.g. stdin is /dev/null) must be a clear
+// error, not a hung read or an editor launched without a TTY.
+func TestComposeNoteNonInteractiveNoInputErrors(t *testing.T) {
+	stdinIsTerminal = func() bool { return false }
+	stdinIsPiped = func() bool { return false }
+	openEditor = func(cmd string) (string, error) {
+		t.Fatal("editor must not be launched without a terminal")
+		return "", nil
+	}
+	readStdin = func() ([]byte, error) {
+		t.Fatal("stdin must not be read when there is no piped input")
+		return nil, nil
+	}
+	t.Cleanup(resetComposeSeams)
+
+	cfg := config.Default()
+	if _, err := composeNote(&cfg); err == nil {
+		t.Error("expected an error when stdin is neither a terminal nor piped")
 	}
 }
 
