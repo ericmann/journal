@@ -18,7 +18,8 @@ reflections/   AI synthesis output (excluded from indexing)
 
 ```sh
 journal capture "shipped the sync cron; remote backup now hourly"   # add a note (auto-commits)
-journal capture                       # opens $EDITOR for a longer entry
+journal capture                       # no text: compose in your editor (like git commit)
+journal capture < note.md             # or pipe the note in on stdin
 journal search "how did we handle X"  # semantic search across all notes
 journal recent                        # show the latest notes
 journal index                         # (re)build the search index
@@ -27,7 +28,9 @@ journal synth weekly                  # AI synthesis of a time window
 journal doctor                        # check config, models, and index health
 ```
 
-Captures and indexing auto-commit your notes locally (toggle with
+Composing in the editor follows the `editor` key in `.journal/config.yaml`
+(then `$JOURNAL_EDITOR`, `$VISUAL`, `$EDITOR`, then `nano`) — set e.g.
+`editor: vim`. Captures and indexing auto-commit your notes locally (toggle with
 `git_autocommit` in `.journal/config.yaml`). To get notes off this machine —
 and pull in notes captured elsewhere — add a git remote and run `journal sync`.
 
