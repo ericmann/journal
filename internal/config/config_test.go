@@ -3,8 +3,23 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestEditorDefaultsEmptyAndMarshals(t *testing.T) {
+	c := Default()
+	if c.Editor != "" {
+		t.Errorf("default editor = %q, want \"\" (fall back to env/nano)", c.Editor)
+	}
+	data, err := c.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "editor:") {
+		t.Errorf("marshaled config missing editor key:\n%s", data)
+	}
+}
 
 func TestDefaultConfigIsValid(t *testing.T) {
 	c := Default()

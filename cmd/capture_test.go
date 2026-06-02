@@ -157,6 +157,48 @@ func TestAutoCommitCaptureOutsideGitRepoIsNoOp(t *testing.T) {
 	}
 }
 
+func TestComposeNoteFromEditor(t *testing.T) {
+	// Not piped -> editor path. Inject a fake editor.
+	stdinIsPiped = func() bool { return false }
+	openEditor = func(cmd string) (string, error) { return "note from the editor\n", nil }
+	t.Cleanup(func() { stdinIsPiped = defaultStdinIsPiped; openEditor = editorOpenDefault })
+
+	cfg := config.Default()
+	got, err := composeNote(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "note from the editor\n" {
+		t.Errorf("composeNote = %q", got)
+	}
+}
+
+func TestComposeNoteEmptyEditorAborts(t *testing.T) {
+	stdinIsPiped = func() bool { return false }
+	openEditor = func(cmd string) (string, error) { return "   \n", nil }
+	t.Cleanup(func() { stdinIsPiped = defaultStdinIsPiped; openEditor = editorOpenDefault })
+
+	cfg := config.Default()
+	if _, err := composeNote(&cfg); err == nil {
+		t.Error("expected an abort error on empty editor content")
+	}
+}
+
+func TestComposeNoteFromPipedStdin(t *testing.T) {
+	stdinIsPiped = func() bool { return true }
+	readStdin = func() ([]byte, error) { return []byte("piped note #cabot\n"), nil }
+	t.Cleanup(func() { stdinIsPiped = defaultStdinIsPiped; readStdin = readStdinDefault })
+
+	cfg := config.Default()
+	got, err := composeNote(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "piped note #cabot\n" {
+		t.Errorf("composeNote(stdin) = %q", got)
+	}
+}
+
 func haveGit(t *testing.T) bool {
 	t.Helper()
 	_, err := execLook("git")

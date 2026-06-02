@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/ericmann/journal/internal/config"
+	"github.com/ericmann/journal/internal/editor"
 	"github.com/ericmann/journal/internal/index"
 	"github.com/ericmann/journal/internal/note"
 	"github.com/ericmann/journal/internal/vcs"
@@ -15,6 +18,51 @@ import (
 // now is the clock, overridable in tests.
 var now = time.Now
 
+// Seams for composing a note without inline text, overridable in tests so the
+// editor/stdin paths can run without a real terminal.
+var (
+	// openEditor composes a note in the user's editor and returns its contents.
+	openEditor = editorOpenDefault
+	// stdinIsPiped reports whether stdin has piped/redirected data (vs a TTY).
+	stdinIsPiped = defaultStdinIsPiped
+	// readStdin reads the whole of stdin (used when input is piped).
+	readStdin = readStdinDefault
+)
+
+func editorOpenDefault(cmd string) (string, error) { return editor.Open(cmd) }
+
+func readStdinDefault() ([]byte, error) { return io.ReadAll(os.Stdin) }
+
+// defaultStdinIsPiped is true when stdin is not a character device — i.e. it is
+// a pipe or a redirected file, so a note can be read from it directly.
+func defaultStdinIsPiped() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice == 0
+}
+
+// composeNote obtains note text when none was given on the command line: it
+// reads piped stdin if present, otherwise opens the configured editor.
+func composeNote(cfg *config.Config) (string, error) {
+	if stdinIsPiped() {
+		data, err := readStdin()
+		if err != nil {
+			return "", fmt.Errorf("reading note from stdin: %w", err)
+		}
+		return string(data), nil
+	}
+	text, err := openEditor(editor.Resolve(cfg.Editor))
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(text) == "" {
+		return "", fmt.Errorf("aborting capture: empty note (nothing saved in the editor)")
+	}
+	return text, nil
+}
+
 var (
 	captureTags    []string
 	captureProject string
@@ -22,13 +70,17 @@ var (
 )
 
 var captureCmd = &cobra.Command{
-	Use:   "capture <text>",
+	Use:   "capture [text]",
 	Short: "Append a timestamped note to today's journal (no embedding)",
 	Long: "capture appends a timestamped, tagged block to today's daily file (or to a\n" +
 		"project's notes with --project). It is append-only and returns immediately\n" +
 		"(embedding happens later in `journal index`). When the repo is a git work\n" +
-		"tree it also auto-commits the note (git_autocommit, unsigned by default).",
-	Args: cobra.MinimumNArgs(1),
+		"tree it also auto-commits the note (git_autocommit, unsigned by default).\n\n" +
+		"With no text it opens your editor to compose the note (like `git commit`),\n" +
+		"or reads the note from stdin when input is piped (e.g. `journal capture <\n" +
+		"note.md`). The editor follows the `editor` config key, then $JOURNAL_EDITOR,\n" +
+		"$VISUAL, $EDITOR, then nano.",
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		root, err := config.FindRepoRoot(".")
 		if err != nil {
@@ -39,6 +91,11 @@ var captureCmd = &cobra.Command{
 			return err
 		}
 		text := strings.Join(args, " ")
+		if len(args) == 0 {
+			if text, err = composeNote(cfg); err != nil {
+				return err
+			}
+		}
 		path, err := capture(root, now(), text, captureTags, captureProject, captureMarker)
 		if err != nil {
 			return err

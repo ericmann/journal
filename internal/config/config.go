@@ -61,6 +61,11 @@ type Config struct {
 	// GitAutocommitSign signs auto-commits using the repo's git config. Off by
 	// default so an unattended watcher doesn't trigger a signing prompt per note.
 	GitAutocommitSign bool `yaml:"git_autocommit_sign"`
+	// Editor is the command used to compose a note when `journal capture` is run
+	// with no text (like git's core.editor). It is run as a shell command so
+	// flags work (e.g. "code --wait"). Empty falls back to $JOURNAL_EDITOR,
+	// $VISUAL, $EDITOR, then nano.
+	Editor string `yaml:"editor"`
 
 	// root is the absolute repo root; not serialized.
 	root string
@@ -93,6 +98,8 @@ func Default() Config {
 		// unsigned by default to avoid signing prompts in an unattended watcher.
 		GitAutocommit:     true,
 		GitAutocommitSign: false,
+		// Empty: fall back to $JOURNAL_EDITOR/$VISUAL/$EDITOR, then nano.
+		Editor: "",
 	}
 }
 
