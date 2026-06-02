@@ -29,6 +29,14 @@ func TestParseTags(t *testing.T) {
 		{"not#atag midword", nil}, // must follow boundary
 		{"email a@b#c should not eat", nil},
 		{"#hyphen-tag and #under_score ok", []string{"hyphen-tag", "under_score"}},
+		// URL hash fragments must not be extracted as tags, even when the char
+		// before "#" is a non-word URL char like "/".
+		{"see https://example.com/post/#comment-9835 about it", nil},
+		{"anchor https://x.com/edit?tab=t.0#heading=h.74517 ref", nil},
+		// Markdown anchor links are not tags either.
+		{"jump to [the summary](#summary) below", nil},
+		// A real hashtag right after a newline still counts.
+		{"line one\n#cabot on the next line", []string{"cabot"}},
 	}
 	for _, c := range cases {
 		got := ParseTags(c.in)
@@ -49,6 +57,8 @@ func TestParseMarkers(t *testing.T) {
 		{"@notamarker is ignored", nil},        // only the known set
 		{"dupe @todo @todo", []string{"todo"}}, // deduped
 		{"email user@todo.com is not a marker", nil},
+		{"path /@todo in a url is not a marker", nil},
+		{"newline then\n@decision counts", []string{"decision"}},
 	}
 	for _, c := range cases {
 		got := ParseMarkers(c.in)

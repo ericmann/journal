@@ -38,10 +38,15 @@ const timeLayout = "15:04"
 const dateLayout = "2006-01-02"
 
 var (
-	// A tag is "#" at a non-word boundary followed by word chars or hyphens.
-	tagRe = regexp.MustCompile(`(?:^|[^0-9A-Za-z_])#([0-9A-Za-z_-]+)`)
-	// A marker is "@" at a non-word boundary followed by one of the known set.
-	markerRe = regexp.MustCompile(`(?:^|[^0-9A-Za-z_])@(decision|question|todo)\b`)
+	// A tag is "#" at the start of the text or after whitespace, followed by word
+	// chars or hyphens. The whitespace boundary (not merely "non-word char")
+	// keeps URL fragments (".../page/#comment-9835") and markdown anchor links
+	// ("[see](#summary)") from being mis-extracted as tags.
+	tagRe = regexp.MustCompile(`(?:^|\s)#([0-9A-Za-z_-]+)`)
+	// A marker is "@" at the start of the text or after whitespace, followed by
+	// one of the known set — same whitespace boundary as tags so URL/path "@"s
+	// are not mistaken for markers.
+	markerRe = regexp.MustCompile(`(?:^|\s)@(decision|question|todo)\b`)
 	// Block header: exactly "## HH:MM" then optional tags/markers.
 	blockTimeRe = regexp.MustCompile(`^\d{2}:\d{2}$`)
 	// Slug normalization.
