@@ -173,8 +173,8 @@ run `journal index` (or the watcher) to make new notes searchable.
 ### Command surface
 
 ```
-journal init    [path]                          # bootstrap a repo
-journal capture <text> [--tags a,b] [--project slug] [--marker decision|question|todo]
+journal init    [path]                          # bootstrap (or upgrade) a repo
+journal capture [text] [--tags a,b] [--project slug] [--marker decision|question|todo]
 journal index   [--rebuild] [--since 2w]        # embed changed notes (one-shot)
 journal search  <query> [--k 5] [--tag t] [--project slug] [--since 2w] [--json]
 journal recent  [--tag t] [--project slug] [--since 1w] [--json]
@@ -184,10 +184,16 @@ journal threads [--stale] [--days 14] [--json]
 
 ```
 journal index --watch                           # continuous, debounced re-index
+journal sync    [--dry-run]                      # back up notes to/from the git remote
 journal doctor [--json]                          # health checks
 journal synth weekly|decisions|stale [--dry-run] [--write] [--project slug] [--days 14]
 journal mcp [--repo path]                        # MCP server (stdio) for Claude Desktop
 ```
+
+With **no text**, `journal capture` opens your editor to compose the note (like
+`git commit`), or reads it from **stdin** when input is piped
+(`journal capture < note.md`). The editor follows `$JOURNAL_EDITOR`, the
+`editor` config key, `$VISUAL`, `$EDITOR`, then `nano`.
 
 `journal mcp` exposes `search`/`recent`/`decisions`/`threads`/`capture` as MCP
 tools (same JSON as `--json`) for the Claude desktop app — see
@@ -291,6 +297,24 @@ You can't forget. Details:
 
 Set `git_autocommit: false` to manage commits yourself.
 
+### Remote backup (`journal sync`)
+
+Auto-commit keeps your notes safe *locally*; `journal sync` gets them off the
+machine. Point the repo at a git remote once (`git remote add origin …` and
+`git push -u origin HEAD`), then `journal sync` reconciles the branch with its
+upstream:
+
+- **ahead** → push; **behind** → pull and re-index; **diverged** → auto-merge,
+  preferring the upstream copy on conflict; **no upstream** → clean no-op.
+- It commits any pending notes first, so nothing is left behind. A failed
+  re-index (e.g. Ollama down) is non-fatal — the backup still completes.
+- `--dry-run` reports what it would do without pushing, pulling, or committing.
+
+`journal init` drops a cron wrapper at **`.journal/sync.sh`** and a README with
+copy-paste **cron** (Linux/macOS) and **launchd** (macOS) setup, so an hourly
+job keeps backups flowing hands-off. Re-running `init` upgrades an existing repo
+with the latest script and docs without touching your `config.yaml`.
+
 ---
 
 ## Synthesis (cloud Claude)
@@ -340,12 +364,14 @@ embed_dim: 2560                       # must match the embed model (doctor verif
 excludes:
   - reflections/**
   - .journal/**
+  - README.md                         # the init-generated usage/cron guide
 store_path: .journal/index/journal.db
 synth_model: claude-sonnet-4-6        # Anthropic model for `journal synth`
 synth_max_tokens: 4096
 voice_profile: docs/VOICE_PROFILE.md  # optional; injected into synth prompts
 git_autocommit: true                  # auto-commit notes during index/watch (if a git repo)
 git_autocommit_sign: false            # sign those commits (off avoids watcher signing prompts)
+editor: ""                            # `journal capture` (no text) editor; else $JOURNAL_EDITOR/$VISUAL/$EDITOR, then nano
 ```
 
 **Secrets never go in config.** The Anthropic API key for synthesis is read from
