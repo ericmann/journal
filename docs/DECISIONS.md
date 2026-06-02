@@ -1,7 +1,7 @@
 # Build decisions & deviations
 
 A running log of decisions made while building `journal` against
-[`TDD.md`](TDD.md) — especially anything that deviates from or extends the TDD,
+[`_internal/TDD.md`](_internal/TDD.md) — especially anything that deviates from or extends the TDD,
 so future-you doesn't have to reverse-engineer the "why".
 
 Format: newest first. Each entry notes the decision, the rationale, and (if

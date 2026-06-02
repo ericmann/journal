@@ -30,7 +30,7 @@ zero-friction and retrieval excellent, without a server, daemon, or cloud store.
 
 **Docs:** [Configuration reference](docs/CONFIGURATION.md) ·
 [Remote backup](docs/SYNC.md) · [Integrations](docs/INTEGRATIONS.md) ·
-[Design decisions](docs/DECISIONS.md) · [Technical design](docs/TDD.md).
+[Design decisions](docs/DECISIONS.md).
 
 ---
 
@@ -409,14 +409,20 @@ journal synth stale --days 21        # surface threads idle > 21 days
 
 ### Writing in your voice
 
-If `docs/VOICE_PROFILE.md` exists (path configurable via `voice_profile`), its
-contents are injected into every synthesis prompt as a **style reference** so
+If a voice-profile file exists (path set by `voice_profile`, default
+`docs/VOICE_PROFILE.md`), `journal synth` reads it **from your journal repo at
+generation time** and injects it into the prompt as a **style reference** so
 drafts sound like you — matching your language patterns and honoring any
-anti-AI word/phrase guardrails it lists. The profile is treated as style only:
-the prompt explicitly tells the model to ignore meta-instructions in it (e.g.
-"ask which platform") since the destination is fixed. Evolve the profile over
-time; it's plain markdown. Omit the file and synthesis still works, just without
-the voice section.
+anti-AI word/phrase guardrails it lists. It's read from disk, not baked into the
+binary; each repo uses its own. The profile is treated as style only: the prompt
+explicitly tells the model to ignore meta-instructions in it (e.g. "ask which
+platform") since the destination is fixed. Evolve it over time; it's plain
+markdown. Omit the file and synthesis still works, just without the voice
+section.
+
+A starter template is in [`docs/VOICE_PROFILE.example.md`](docs/VOICE_PROFILE.example.md) —
+copy it to `docs/VOICE_PROFILE.md` and make it yours. (That path is gitignored in
+this repo so a personal profile is never committed here.)
 
 ## Configuration & secrets
 
@@ -498,6 +504,6 @@ interfaces with deterministic fakes, and integration tests use a temp-file
 ## License
 
 MIT © Displace Technologies, LLC ([displace.tech](https://displace.tech)). See
-[`LICENSE`](LICENSE). The architecture and per-story acceptance criteria are
-documented in [`docs/TDD.md`](docs/TDD.md); notable build-time decisions in
-[`docs/DECISIONS.md`](docs/DECISIONS.md).
+[`LICENSE`](LICENSE). Notable build-time decisions are in
+[`docs/DECISIONS.md`](docs/DECISIONS.md); the original technical design and build
+prompt live in [`docs/_internal/`](docs/_internal).

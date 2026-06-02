@@ -1,12 +1,12 @@
 # Build prompt for Claude Code — `journal`
 
-Paste this into Claude Code at the root of a fresh, empty git repo on the MacBook. The companion design doc is `docs/TDD.md` — read it first; it is the source of truth for behavior, schema, command surface, and acceptance criteria.
+Paste this into Claude Code at the root of a fresh, empty git repo on the MacBook. The companion design doc is `docs/_internal/TDD.md` — read it first; it is the source of truth for behavior, schema, command surface, and acceptance criteria.
 
 ---
 
 ## Your task
 
-Build `journal`, a single-binary Go CLI for a local-first developer journal with semantic retrieval and AI-assisted synthesis, exactly as specified in `docs/TDD.md`. Implement it phase by phase. Do not skip ahead. After each phase: everything builds, `make test` passes, and you stop and summarize what shipped before starting the next phase.
+Build `journal`, a single-binary Go CLI for a local-first developer journal with semantic retrieval and AI-assisted synthesis, exactly as specified in `docs/_internal/TDD.md`. Implement it phase by phase. Do not skip ahead. After each phase: everything builds, `make test` passes, and you stop and summarize what shipped before starting the next phase.
 
 ## Ground rules
 
@@ -50,4 +50,4 @@ Use `qwen3-embedding:4b` as the default embed model and `qwen3-reranker` as the 
 
 Stop. Print: what shipped, test results, coverage on the logic packages, and anything in the TDD's Open Questions you hit that needs my decision. Wait for me before the next phase.
 
-Start by reading `docs/TDD.md`, then confirm your Phase 1 plan back to me in a few bullets before writing code.
+Start by reading `docs/_internal/TDD.md`, then confirm your Phase 1 plan back to me in a few bullets before writing code.
