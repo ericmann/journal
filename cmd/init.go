@@ -21,6 +21,12 @@ var syncScript string
 //go:embed templates/README.md
 var readmeTemplate string
 
+// voiceProfileExample is dropped into docs/ so `journal synth`'s voice feature
+// is discoverable; the user copies it to docs/VOICE_PROFILE.md and edits.
+//
+//go:embed templates/VOICE_PROFILE.example.md
+var voiceProfileExample string
+
 var initCmd = &cobra.Command{
 	Use:   "init [path]",
 	Short: "Initialize a new journal repo (config + directory skeleton)",
@@ -50,6 +56,8 @@ var initCmd = &cobra.Command{
 		}
 		fmt.Fprintf(out, "  sync script: %s\n", filepath.Join(config.JournalDir, syncScriptName))
 		fmt.Fprintf(out, "  see %s to wire it to an hourly cron (back up notes to a git remote)\n", rel)
+		fmt.Fprintf(out, "  voice profile: copy %s → %s to shape `journal synth` drafts\n",
+			filepath.Join("docs", voiceExampleName), filepath.Join("docs", "VOICE_PROFILE.md"))
 		if res.created {
 			def := config.Default()
 			fmt.Fprintf(out, "\nNext steps (indexing & search need a local Ollama):\n")
@@ -64,6 +72,9 @@ var initCmd = &cobra.Command{
 
 // syncScriptName is the cron wrapper written into .journal/.
 const syncScriptName = "sync.sh"
+
+// voiceExampleName is the voice-profile template written into docs/.
+const voiceExampleName = "VOICE_PROFILE.example.md"
 
 // initResult reports what initRepo did. created is true only on a fresh repo
 // (config newly written); readmePath is where the usage/cron README landed.
@@ -85,6 +96,7 @@ func initRepo(root string) (initResult, error) {
 		filepath.Join(root, "daily"),
 		filepath.Join(root, "projects"),
 		filepath.Join(root, "reflections"),
+		filepath.Join(root, "docs"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return initResult{}, fmt.Errorf("creating %s: %w", dir, err)
@@ -95,10 +107,14 @@ func initRepo(root string) (initResult, error) {
 		return initResult{}, err
 	}
 
-	// The sync script and README are generated, managed files: always refresh
-	// them so an upgrade picks up the latest version.
+	// The sync script, README, and voice-profile example are generated, managed
+	// files: always refresh them so an upgrade picks up the latest version. (The
+	// example never clobbers the user's real docs/VOICE_PROFILE.md.)
 	if err := os.WriteFile(filepath.Join(jdir, syncScriptName), []byte(syncScript), 0o755); err != nil {
 		return initResult{}, fmt.Errorf("writing sync script: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", voiceExampleName), []byte(voiceProfileExample), 0o644); err != nil {
+		return initResult{}, fmt.Errorf("writing voice profile example: %w", err)
 	}
 	readmePath, err := writeReadme(root)
 	if err != nil {

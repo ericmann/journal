@@ -259,6 +259,7 @@ func TestInitRepoCreatesSkeletonAndConfig(t *testing.T) {
 		filepath.Join(".journal", "config.yaml"),
 		filepath.Join(".journal", "index"),
 		filepath.Join(".journal", "sync.sh"),
+		filepath.Join("docs", "VOICE_PROFILE.example.md"),
 		"daily", "projects", "reflections", ".gitignore",
 	} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {

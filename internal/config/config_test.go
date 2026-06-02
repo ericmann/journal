@@ -67,7 +67,7 @@ func TestDefaultConfigIsValid(t *testing.T) {
 	if c.EmbedDim <= 0 {
 		t.Errorf("embed dim = %d, want > 0", c.EmbedDim)
 	}
-	for _, want := range []string{"reflections/**", ".journal/**", "README.md"} {
+	for _, want := range []string{"reflections/**", ".journal/**", "docs/**", "README.md"} {
 		found := false
 		for _, e := range c.Excludes {
 			if e == want {

@@ -420,9 +420,11 @@ platform") since the destination is fixed. Evolve it over time; it's plain
 markdown. Omit the file and synthesis still works, just without the voice
 section.
 
-A starter template is in [`docs/VOICE_PROFILE.example.md`](docs/VOICE_PROFILE.example.md) —
-copy it to `docs/VOICE_PROFILE.md` and make it yours. (That path is gitignored in
-this repo so a personal profile is never committed here.)
+`journal init` drops a starter template at `docs/VOICE_PROFILE.example.md` in
+your repo ([source](cmd/templates/VOICE_PROFILE.example.md)) — copy it to
+`docs/VOICE_PROFILE.md` and make it yours. (In this source repo,
+`docs/VOICE_PROFILE.md` is gitignored so a personal profile is never committed
+here.)
 
 ## Configuration & secrets
 
@@ -437,6 +439,7 @@ embed_dim: 2560                       # must match the embed model (doctor verif
 excludes:
   - reflections/**
   - .journal/**
+  - docs/**                           # meta (e.g. your voice profile), not entries
   - README.md                         # the init-generated usage/cron guide
 store_path: .journal/index/journal.db
 synth_model: claude-sonnet-4-6        # Anthropic model for `journal synth`

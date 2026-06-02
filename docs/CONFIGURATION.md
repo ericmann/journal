@@ -22,6 +22,7 @@ store_path: .journal/index/journal.db  # disposable, gitignored vector index
 excludes:                              # repo-relative globs skipped by the indexer
   - reflections/**
   - .journal/**
+  - docs/**
   - README.md
 
 # --- Capture ---
@@ -52,7 +53,7 @@ sync_conflict: manual                  # manual | prefer-upstream | prefer-local
 | `chunk_strategy` | `heading` | How notes split into chunks. Only `heading` is supported. |
 | `retrieval_instruction` | _(see above)_ | Prefix added to queries when embedding for search. |
 | `store_path` | `.journal/index/journal.db` | Path to the sqlite-vec index. Disposable and gitignored — rebuild any time with `journal index --rebuild`. |
-| `excludes` | `reflections/**`, `.journal/**`, `README.md` | Repo-relative globs the indexer skips. `reflections/` holds synthesis output; `README.md` is the generated guide. |
+| `excludes` | `reflections/**`, `.journal/**`, `docs/**`, `README.md` | Repo-relative globs the indexer skips. `reflections/` holds synthesis output; `docs/` holds meta like the voice profile; `README.md` is the generated guide. |
 | `editor` | `""` | Command for `journal capture` with no text. Run as a shell string (so `code --wait` works). Empty falls back to `$JOURNAL_EDITOR`, `$VISUAL`, `$EDITOR`, then `nano`. |
 | `synth_model` | `claude-sonnet-4-6` | Anthropic model for `journal synth`. |
 | `synth_max_tokens` | `4096` | Cap on synthesis response length. |
