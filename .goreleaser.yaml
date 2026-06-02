@@ -1,0 +1,102 @@
+# GoReleaser config for journal. Produces, from a `vX.Y.Z` tag:
+#   - static, version-stamped binaries (darwin/linux × amd64/arm64)
+#   - tar.gz archives + checksums.txt (cosign-keyless signed)
+#   - .deb/.rpm/.apk Linux packages (nfpm)
+#   - the Homebrew formula, pushed to DisplaceTech/homebrew-tap
+# Run by .github/workflows/release.yml. Validate locally with `make snapshot`.
+version: 2
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: journal
+    main: .
+    binary: journal
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # Stamp the same var the Makefile uses (cmd/root.go: var version).
+    ldflags:
+      - -s -w -X github.com/ericmann/journal/cmd.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: journal
+    formats: [tar.gz]
+    name_template: "journal_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# Keyless cosign signature over the checksums file. Requires the GitHub Actions
+# OIDC token (id-token: write) — only runs on a real release, not snapshots.
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - --yes
+    artifacts: checksum
+    output: true
+
+nfpms:
+  - id: packages
+    package_name: journal
+    vendor: Displace Technologies, LLC
+    homepage: https://displace.tech
+    maintainer: Displace Technologies, LLC <oss@displace.tech>
+    description: Local-first developer journal with semantic search and AI synthesis.
+    license: MIT
+    formats: [deb, rpm, apk]
+    bindir: /usr/bin
+
+# Homebrew (macOS) via a cask — GoReleaser's recommended path for prebuilt
+# binaries, and consistent with the tap's existing Casks/. Linux installs use
+# the nfpm packages or install.sh above/below.
+homebrew_casks:
+  - name: journal
+    repository:
+      owner: DisplaceTech
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: https://displace.tech
+    description: Local-first developer journal with semantic search and AI synthesis
+    caveats: |
+      journal needs a local Ollama for indexing and search:
+        1. install Ollama:        https://ollama.com
+        2. pull the embed model:  ollama pull qwen3-embedding:4b
+        3. verify your setup:     journal doctor
+
+      An ANTHROPIC_API_KEY in your environment is only needed for `journal synth`.
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: ericmann
+    name: journal
+  draft: false
+  prerelease: auto

@@ -53,23 +53,52 @@ features (index, search, synth) need it.
 `journal` is a single static binary. (Embeddings and synthesis talk to
 Ollama/Anthropic over HTTP — see [Requirements](#requirements).)
 
-**Option A — Homebrew** (macOS/Linux):
+**Option A — Homebrew** (macOS):
 
 ```sh
 brew install displacetech/tap/journal
 journal --version
 ```
 
-**Option B — download a release binary.** Grab the static binary for your
-platform from the [releases page](https://github.com/ericmann/journal/releases)
-(darwin/linux, arm64/amd64) and put it on your `PATH`:
+**Option B — install script** (Linux/macOS, no package manager). Downloads the
+latest release, **verifies its SHA-256**, and installs it on your `PATH`:
 
 ```sh
-install -m 0755 ./journal_v1.4.0_darwin_arm64 /usr/local/bin/journal
-journal --version
+curl -fsSL https://raw.githubusercontent.com/ericmann/journal/main/install.sh | sh
 ```
 
-**Option C — build from source** (Go 1.26+, `brew install go`):
+Prefer to read before running? Download, inspect, then run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ericmann/journal/main/install.sh -o install.sh
+less install.sh && sh install.sh
+```
+
+Pin a version with `JOURNAL_VERSION=v1.4.1`, or change the location with
+`PREFIX=$HOME/.local`.
+
+**Option C — Linux packages.** Each release attaches `.deb`, `.rpm`, and `.apk`
+artifacts (amd64/arm64) on the [releases page](https://github.com/ericmann/journal/releases):
+
+```sh
+sudo dpkg -i journal_*_linux_amd64.deb     # Debian/Ubuntu
+sudo rpm -i journal_*_linux_amd64.rpm      # Fedora/RHEL
+sudo apk add --allow-untrusted journal_*_linux_amd64.apk
+```
+
+**Option D — download an archive directly.** Grab the `tar.gz` for your platform
+from the [releases page](https://github.com/ericmann/journal/releases), verify it
+against `checksums.txt`, and put the binary on your `PATH`. The checksums file is
+signed with [cosign](https://docs.sigstore.dev/) (keyless), so you can verify
+provenance:
+
+```sh
+cosign verify-blob --signature checksums.txt.sig --certificate checksums.txt.pem \
+  --certificate-identity-regexp 'https://github.com/ericmann/journal' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+```
+
+**Option E — build from source** (Go 1.26+, `brew install go`):
 
 ```sh
 git clone git@github.com:ericmann/journal.git
@@ -95,8 +124,11 @@ ln -sf "$PWD/journal" /usr/local/bin/journal   # then just `make build` to updat
 (Caveat: `make clean` removes `./journal` and breaks the symlink; use `make
 install` for a stable setup.)
 
-Cross-compile all platforms with `make release VERSION=v1.4.0` (output in
-`dist/`). The binary is fully static (`CGO_ENABLED=0`) — no runtime deps.
+Release artifacts (all platforms, packages, checksums, signatures, and the
+Homebrew cask) are produced by [GoReleaser](https://goreleaser.com) on each tag
+via [`.github/workflows/release.yml`](.github/workflows/release.yml); build them
+locally without publishing using `make snapshot`. The binary is fully static
+(`CGO_ENABLED=0`) — no runtime deps.
 
 Confirm:
 

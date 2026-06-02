@@ -290,6 +290,14 @@ and keep the search index fresh.
   editor.
 - **Distribution (v1.4.0).** Homebrew via `displacetech/tap`; copyright is
   Displace Technologies, LLC. Code repo stays at `ericmann/journal`.
+- **GoReleaser release pipeline (v1.4.1).** Replaced the hand-rolled `make
+  release` with GoReleaser (`.goreleaser.yaml` + tag-triggered
+  `release.yml`): tar.gz archives, `checksums.txt` **cosign-keyless** signed via
+  GitHub OIDC, nfpm `.deb/.rpm/.apk`, and the Homebrew **cask** pushed to
+  `DisplaceTech/homebrew-tap` (cask, not formula — GoReleaser deprecated `brews`,
+  and casks are the recommended path for prebuilt binaries). A checksum-verifying
+  `install.sh` covers Linux/macOS without a package manager. The repo went public
+  to make release assets downloadable unauthenticated.
 
 ## Tooling / process
 

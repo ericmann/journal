@@ -5,14 +5,11 @@ PKG := ./...
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/ericmann/journal/cmd.version=$(VERSION)
 
-# Platforms for `make release` (all pure-Go, CGO_ENABLED=0 cross-compiles).
-PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
-
 # Install location. Override e.g. `make install PREFIX=$HOME/.local`.
 PREFIX ?= /usr/local
 BINDIR := $(PREFIX)/bin
 
-.PHONY: build install uninstall test lint fmt vet tidy clean cover release
+.PHONY: build install uninstall test lint fmt vet tidy clean cover release snapshot
 
 # CGO_ENABLED=0 yields a fully static binary; all deps (incl. the ncruces
 # sqlite-vec driver, which runs SQLite as WASM via wazero) are pure Go.
@@ -29,16 +26,16 @@ install: build
 uninstall:
 	@rm -f "$(BINDIR)/$(BINARY)" && echo "removed $(BINDIR)/$(BINARY)"
 
-# release cross-compiles a versioned static binary per platform into dist/.
+# release runs the full GoReleaser pipeline (archives, checksums, signatures,
+# Linux packages, Homebrew cask). Normally invoked by CI on a vX.Y.Z tag — see
+# .github/workflows/release.yml; run by hand only with the right tokens set.
 release:
-	@rm -rf dist && mkdir -p dist
-	@for p in $(PLATFORMS); do \
-		os=$${p%/*}; arch=$${p#*/}; \
-		out=dist/$(BINARY)_$(VERSION)_$${os}_$${arch}; \
-		echo "building $$out"; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -ldflags "$(LDFLAGS)" -o $$out . || exit 1; \
-	done
-	@echo "artifacts:" && ls -1 dist/
+	goreleaser release --clean
+
+# snapshot builds the full set of release artifacts into dist/ WITHOUT publishing
+# or signing — use it to validate .goreleaser.yaml locally.
+snapshot:
+	goreleaser release --snapshot --clean --skip=sign
 
 test:
 	go test $(PKG)
