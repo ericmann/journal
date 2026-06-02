@@ -30,6 +30,13 @@ func CaptureCommitMessage(t time.Time) string {
 	return fmt.Sprintf("📓 %s a note · %s", verb, t.Format("Mon 2006-01-02 15:04"))
 }
 
+// SyncCommitMessage is the auto-commit message for pending changes swept up by
+// `journal sync` before it pushes (e.g. notes edited by hand while the watcher
+// was not running).
+func SyncCommitMessage(t time.Time) string {
+	return fmt.Sprintf("📓 backed up pending notes · %s", t.Format("Mon 2006-01-02 15:04"))
+}
+
 // AutoCommit commits note changes under root, but only if root is the top level
 // of a git work tree (never committing into a parent repo). It returns
 // committed=false when not a git repo or nothing changed. Callers treat any
