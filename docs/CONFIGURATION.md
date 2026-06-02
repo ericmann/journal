@@ -1,0 +1,70 @@
+# Configuration
+
+All non-secret settings live in `.journal/config.yaml`, which `journal init`
+creates with the defaults below. The file is committed with your notes. The one
+secret — the Anthropic API key for synthesis — is **never** stored here; it is
+read from the `ANTHROPIC_API_KEY` environment variable only.
+
+Run `journal doctor` after changing models or dimensions; it validates the
+config against your live Ollama and tells you exactly what to fix.
+
+## Full default `config.yaml`
+
+```yaml
+# --- Embedding & retrieval (local, via Ollama) ---
+embed_model: qwen3-embedding:4b        # Ollama embedding model (required)
+embed_dim: 2560                        # vector dimension; MUST match embed_model
+reranker: ""                           # optional generate model for LLM-as-reranker
+ollama_base_url: http://localhost:11434
+chunk_strategy: heading                # only "heading" is supported
+retrieval_instruction: "Represent this query for retrieving relevant developer journal notes:"
+store_path: .journal/index/journal.db  # disposable, gitignored vector index
+excludes:                              # repo-relative globs skipped by the indexer
+  - reflections/**
+  - .journal/**
+  - README.md
+
+# --- Capture ---
+editor: ""                             # editor for `journal capture` with no text
+
+# --- Synthesis (cloud Claude) ---
+synth_model: claude-sonnet-4-6
+synth_max_tokens: 4096
+voice_profile: docs/VOICE_PROFILE.md   # optional style reference for synth
+
+# --- Git integration ---
+git_autocommit: true                   # auto-commit notes during capture/index/watch
+git_autocommit_sign: false             # sign those commits
+
+# --- Remote backup (opt-in; see docs/SYNC.md) ---
+sync_enabled: false                    # `journal sync` does nothing until true
+sync_conflict: manual                  # manual | prefer-upstream | prefer-local
+```
+
+## Key reference
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `embed_model` | `qwen3-embedding:4b` | Ollama model used to embed notes and queries. **Required** — pull it with `ollama pull`. |
+| `embed_dim` | `2560` | Embedding vector dimension. **Must match `embed_model`'s output** (the vec table is declared `float[embed_dim]`). `journal doctor` probes the model and prints the right value; after changing it, run `journal index --rebuild`. |
+| `reranker` | `""` (off) | Optional generate model (e.g. `qwen3:4b`) for LLM-as-reranker precision. Empty = vector-KNN order, which is strong on its own. |
+| `ollama_base_url` | `http://localhost:11434` | Where Ollama is reached. Change it if Ollama runs on another host/port. |
+| `chunk_strategy` | `heading` | How notes split into chunks. Only `heading` is supported. |
+| `retrieval_instruction` | _(see above)_ | Prefix added to queries when embedding for search. |
+| `store_path` | `.journal/index/journal.db` | Path to the sqlite-vec index. Disposable and gitignored — rebuild any time with `journal index --rebuild`. |
+| `excludes` | `reflections/**`, `.journal/**`, `README.md` | Repo-relative globs the indexer skips. `reflections/` holds synthesis output; `README.md` is the generated guide. |
+| `editor` | `""` | Command for `journal capture` with no text. Run as a shell string (so `code --wait` works). Empty falls back to `$JOURNAL_EDITOR`, `$VISUAL`, `$EDITOR`, then `nano`. |
+| `synth_model` | `claude-sonnet-4-6` | Anthropic model for `journal synth`. |
+| `synth_max_tokens` | `4096` | Cap on synthesis response length. |
+| `voice_profile` | `docs/VOICE_PROFILE.md` | Optional markdown style reference injected into synth prompts. |
+| `git_autocommit` | `true` | Auto-commit note changes during `capture`/`index`/`index --watch` when the repo root is a git work tree. No-op outside git. |
+| `git_autocommit_sign` | `false` | Sign auto-commits. Off avoids signing prompts in an unattended watcher. |
+| `sync_enabled` | `false` | Gates `journal sync`. **Opt-in** — see [SYNC.md](SYNC.md). |
+| `sync_conflict` | `manual` | How `sync` resolves a divergence: `manual` aborts and asks you to resolve (never discards work), `prefer-upstream` takes the remote on conflict, `prefer-local` keeps local. See [SYNC.md](SYNC.md). |
+
+## Secrets
+
+The Anthropic API key is read from `ANTHROPIC_API_KEY` and is needed only for
+`journal synth --write`. It is never written to config or logged. To keep
+personal and work journals separate, clone the repo into different directories
+and export a different key in each.

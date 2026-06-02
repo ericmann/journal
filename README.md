@@ -8,10 +8,16 @@ corpus. Capture is frictionless and append-only; retrieval is a local RAG stack
 backed by cloud Claude. **Markdown in git is the single source of truth** — the
 vector index is a disposable, rebuildable cache and is never committed.
 
-> **Status:** all six build phases (capture, store, index+search, watch+doctor,
-> synthesis, and the Claude Code skill) are complete — see [Roadmap](#roadmap).
-> Built phase by phase against [`docs/TDD.md`](docs/TDD.md); build decisions in
-> [`docs/DECISIONS.md`](docs/DECISIONS.md).
+**What you get**
+
+- 📝 **Frictionless capture** — `journal capture` appends a timestamped note (inline, in your editor, or from stdin) and auto-commits it.
+- 🔎 **Local semantic search** — Ollama embeddings + `sqlite-vec`, optional LLM reranking. No data leaves your machine.
+- 🤖 **AI synthesis** — weekly rollups and decision digests via cloud Claude, on demand and in your own voice.
+- 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step for off-machine backup.
+- 🔌 **Integrations** — an MCP server exposes search/recent/decisions to the Claude desktop app and Claude Code.
+
+Everything is a single static binary. **Markdown in git is the source of truth;**
+the vector index is a disposable, rebuildable cache that's never committed.
 
 ---
 
@@ -22,29 +28,48 @@ paper — none of it discoverable or reusable. `journal` keeps one durable
 substrate (markdown in git) and adds a thin tool layer that makes capture
 zero-friction and retrieval excellent, without a server, daemon, or cloud store.
 
-The full rationale, architecture, and acceptance criteria live in
-[`docs/TDD.md`](docs/TDD.md). Build-time decisions and deviations are tracked in
-[`docs/DECISIONS.md`](docs/DECISIONS.md). For wiring `journal` into **Claude
-Code**, the **Claude desktop app**, and **Ollama**, see
-[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
+**Docs:** [Configuration reference](docs/CONFIGURATION.md) ·
+[Remote backup](docs/SYNC.md) · [Integrations](docs/INTEGRATIONS.md) ·
+[Design decisions](docs/DECISIONS.md) · [Technical design](docs/TDD.md).
+
+---
+
+## Requirements
+
+- **git** — notes live in a git repo; capture/index auto-commit.
+- **[Ollama](https://ollama.com) + an embedding model** — required for indexing
+  and search (all local). The default model is `qwen3-embedding:4b`:
+  `ollama pull qwen3-embedding:4b`. Run `journal doctor` to verify.
+- **An Anthropic API key** — *only* for `journal synth` (cloud Claude). Set
+  `ANTHROPIC_API_KEY`; never stored in config. Skip it if you don't use synthesis.
+
+Capture, the watcher, and backup work without Ollama; only embedding-backed
+features (index, search, synth) need it.
 
 ---
 
 ## Install
 
-`journal` is a single static binary with no runtime dependencies (the binary
-itself; embeddings and synthesis talk to Ollama/Anthropic over HTTP).
+`journal` is a single static binary. (Embeddings and synthesis talk to
+Ollama/Anthropic over HTTP — see [Requirements](#requirements).)
 
-**Option A — download a release binary.** Grab the static binary for your
+**Option A — Homebrew** (macOS/Linux):
+
+```sh
+brew install displacetech/tap/journal
+journal --version
+```
+
+**Option B — download a release binary.** Grab the static binary for your
 platform from the [releases page](https://github.com/ericmann/journal/releases)
 (darwin/linux, arm64/amd64) and put it on your `PATH`:
 
 ```sh
-install -m 0755 ./journal_v1.0.0_darwin_arm64 /usr/local/bin/journal
+install -m 0755 ./journal_v1.4.0_darwin_arm64 /usr/local/bin/journal
 journal --version
 ```
 
-**Option B — build from source** (Go 1.26+, `brew install go`):
+**Option C — build from source** (Go 1.26+, `brew install go`):
 
 ```sh
 git clone git@github.com:ericmann/journal.git
@@ -70,7 +95,7 @@ ln -sf "$PWD/journal" /usr/local/bin/journal   # then just `make build` to updat
 (Caveat: `make clean` removes `./journal` and breaks the symlink; use `make
 install` for a stable setup.)
 
-Cross-compile all platforms with `make release VERSION=v1.1.0` (output in
+Cross-compile all platforms with `make release VERSION=v1.4.0` (output in
 `dist/`). The binary is fully static (`CGO_ENABLED=0`) — no runtime deps.
 
 Confirm:
@@ -79,7 +104,7 @@ Confirm:
 journal --help
 ```
 
-### Local models (for indexing & search — coming in Phases 2–3)
+### Local models (for indexing & search)
 
 Retrieval runs entirely on your machine via [Ollama](https://ollama.com). Only
 the embedding model is required:
@@ -297,23 +322,29 @@ You can't forget. Details:
 
 Set `git_autocommit: false` to manage commits yourself.
 
-### Remote backup (`journal sync`)
+### Remote backup (`journal sync`, opt-in)
 
 Auto-commit keeps your notes safe *locally*; `journal sync` gets them off the
-machine. Point the repo at a git remote once (`git remote add origin …` and
-`git push -u origin HEAD`), then `journal sync` reconciles the branch with its
-upstream:
+machine to a git remote (and pulls in notes captured elsewhere). It is **off by
+default** — it pushes, pulls, and can rewrite local history on a divergence, so
+it's strictly opt-in.
 
-- **ahead** → push; **behind** → pull and re-index; **diverged** → auto-merge,
-  preferring the upstream copy on conflict; **no upstream** → clean no-op.
-- It commits any pending notes first, so nothing is left behind. A failed
-  re-index (e.g. Ollama down) is non-fatal — the backup still completes.
-- `--dry-run` reports what it would do without pushing, pulling, or committing.
+Enable it after pointing the repo at a remote:
 
-`journal init` drops a cron wrapper at **`.journal/sync.sh`** and a README with
-copy-paste **cron** (Linux/macOS) and **launchd** (macOS) setup, so an hourly
-job keeps backups flowing hands-off. Re-running `init` upgrades an existing repo
-with the latest script and docs without touching your `config.yaml`.
+```sh
+git remote add origin git@github.com:you/your-journal.git && git push -u origin HEAD
+# then in .journal/config.yaml:  sync_enabled: true
+journal sync --dry-run      # preview ahead/behind + planned action
+```
+
+Once enabled, each run commits pending notes, then **pushes** when ahead,
+**pulls + re-indexes** when behind, and handles a **divergence** per
+`sync_conflict` (`manual` — the safe default — aborts and asks you to resolve;
+`prefer-upstream`/`prefer-local` auto-resolve toward one side). With no upstream
+it's a no-op. `journal init` drops a cron wrapper at **`.journal/sync.sh`** plus
+**cron**/**launchd** setup so an hourly backup runs hands-off.
+
+→ Full guide, conflict-mode trade-offs, and the data-loss warning: **[docs/SYNC.md](docs/SYNC.md)**.
 
 ---
 
@@ -372,13 +403,16 @@ voice_profile: docs/VOICE_PROFILE.md  # optional; injected into synth prompts
 git_autocommit: true                  # auto-commit notes during index/watch (if a git repo)
 git_autocommit_sign: false            # sign those commits (off avoids watcher signing prompts)
 editor: ""                            # `journal capture` (no text) editor; else $JOURNAL_EDITOR/$VISUAL/$EDITOR, then nano
+sync_enabled: false                   # opt-in remote backup (see docs/SYNC.md)
+sync_conflict: manual                 # manual | prefer-upstream | prefer-local
 ```
+
+→ Every key, with defaults and guidance: **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
 
 **Secrets never go in config.** The Anthropic API key for synthesis is read from
 the `ANTHROPIC_API_KEY` environment variable only, and is never written to disk
-or logged. Workspace separation (personal vs. A8c) is enforced by which repo
-you're in and which env is loaded — clone the repo elsewhere and export a
-different key.
+or logged. Keep separate journals (e.g. personal vs. work) by cloning the repo
+into different directories and exporting a different key in each.
 
 ---
 
@@ -425,15 +459,9 @@ interfaces with deterministic fakes, and integration tests use a temp-file
 
 ---
 
-## Roadmap
+## License
 
-| Phase | Scope | Status |
-|-------|-------|--------|
-| 1 | Repo skeleton, config, note format, `capture`, `init` | ✅ done |
-| 2 | `sqlite-vec` store: schema, migrations, CRUD/KNN | ✅ done |
-| 3 | Chunking + hashing, embed client, `index`, `search`, structured queries | ✅ done (MVP) |
-| 4 | `index --watch` (debounced), `doctor` | ✅ done |
-| 5 | Synthesis: Anthropic client, prompt assembly, `synth` | ✅ done |
-| 6 | `skills/journal/SKILL.md`, second-workspace validation | ✅ done |
-
-See [`docs/TDD.md`](docs/TDD.md) §7 for the per-story acceptance criteria.
+MIT © Displace Technologies, LLC ([displace.tech](https://displace.tech)). See
+[`LICENSE`](LICENSE). The architecture and per-story acceptance criteria are
+documented in [`docs/TDD.md`](docs/TDD.md); notable build-time decisions in
+[`docs/DECISIONS.md`](docs/DECISIONS.md).

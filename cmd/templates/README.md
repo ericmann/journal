@@ -34,13 +34,16 @@ Composing in the editor follows the `editor` key in `.journal/config.yaml`
 `git_autocommit` in `.journal/config.yaml`). To get notes off this machine —
 and pull in notes captured elsewhere — add a git remote and run `journal sync`.
 
-## Backing up to a remote
+## Backing up to a remote (opt-in)
 
-Point the repo at a remote once:
+`journal sync` backs your notes up to a git remote. It is **off by default** —
+it pushes, pulls, and can rewrite local history on a divergence, so you enable it
+deliberately. Point the repo at a remote, then turn sync on:
 
 ```sh
 git remote add origin git@github.com:you/journal.git
 git push -u origin HEAD          # sets the upstream sync tracks
+# then in .journal/config.yaml:  sync_enabled: true
 ```
 
 Then `journal sync` keeps the two in step. It commits any pending notes, then:
@@ -54,12 +57,15 @@ flowchart TD
     D --> E{ahead / behind?}
     E -- ahead only --> F[push]
     E -- behind only --> G[merge upstream, re-index]
-    E -- diverged --> H[merge preferring upstream on conflict, re-index]
+    E -- diverged --> H[resolve per sync_conflict, re-index]
     G --> I[push if anything to send]
     H --> I
 ```
 
-Preview what it would do without touching anything:
+A divergence is handled per the `sync_conflict` config key: `manual` (default)
+aborts and asks you to resolve by hand; `prefer-upstream`/`prefer-local`
+auto-resolve toward one side. Preview what sync would do without touching
+anything:
 
 ```sh
 journal sync --dry-run

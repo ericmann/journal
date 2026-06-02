@@ -263,6 +263,34 @@ perf unit test and the function contract are unchanged. Result: your words are
 committed the instant you capture; `index`/`watch` commit any direct file edits
 and keep the search index fresh.
 
+## v1.2.0–v1.4.0 — backup, editor capture, public hardening
+
+- **`journal sync` for remote backup (v1.2.0).** Auto-commit protects notes
+  locally; sync gets them to a git remote. The git logic lives in a testable Go
+  command (`internal/vcs` + `cmd/sync`), with `.journal/sync.sh` as a thin cron
+  wrapper — not bash git-plumbing.
+- **Editor/stdin capture (v1.3.0).** `journal capture` with no text opens an
+  editor (git-style precedence: `$JOURNAL_EDITOR` → `editor` config → `$VISUAL` →
+  `$EDITOR` → `nano`) or reads piped stdin. Empty file aborts.
+- **Tag/marker boundary tightened (v1.3.1).** Extraction required only a non-word
+  char before `#`/`@`, so URL fragments (`/#comment-9835`) and markdown anchor
+  links (`[x](#summary)`) were mis-parsed as tags. Boundary is now
+  start-of-text-or-whitespace, matching hashtag convention.
+- **Sync is off by default + `sync_conflict` (v1.4.0).** Because sync can rewrite
+  local history on a divergence, it is opt-in (`sync_enabled`, default false) and
+  the default conflict mode is **`manual`** — abort and let the user resolve,
+  never silently discard work. `prefer-upstream`/`prefer-local` auto-resolve only
+  when explicitly chosen.
+- **Friendly Ollama guidance (v1.4.0).** A typed `embed.ErrUnreachable` lets
+  `index`/`search`/`synth` append actionable setup steps instead of a raw
+  "connection refused"; fresh `init` prints first-run next steps.
+- **Capture stdin hardening (v1.4.0).** `golang.org/x/term` distinguishes a TTY
+  (editor) from piped input (read it) from neither (e.g. `/dev/null` → clear
+  error), instead of a char-device heuristic that could hang or launch a doomed
+  editor.
+- **Distribution (v1.4.0).** Homebrew via `displacetech/tap`; copyright is
+  Displace Technologies, LLC. Code repo stays at `ericmann/journal`.
+
 ## Tooling / process
 
 ### Commit signing
