@@ -335,6 +335,36 @@ launchctl unload ~/Library/LaunchAgents/com.ericmann.journal-watch.plist   # to 
 The **tmux pane is the documented default**; launchd is there if you want it
 hands-off.
 
+### Optional: run it unattended via systemd (Linux)
+
+systemd is the Linux equivalent. Create a per-user service at
+`~/.config/systemd/user/journal-watch.service`:
+
+```ini
+[Unit]
+Description=journal watcher (re-index notes on change)
+
+[Service]
+Type=simple
+WorkingDirectory=%h/notes                  # your journal repo
+ExecStart=/usr/local/bin/journal index --watch
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now journal-watch.service
+loginctl enable-linger "$USER"   # keep it running without an active login (servers/headless)
+journalctl --user -u journal-watch -f   # tail its logs
+```
+
+User services run with a **minimal PATH**, so use an absolute `ExecStart`. For
+the periodic backup (`journal sync`), a systemd **timer** is the native
+alternative to cron — see [docs/SYNC.md](docs/SYNC.md).
+
 ### Auto-commit (never lose a day's work)
 
 When the repo is a git repository, `journal capture`, `journal index`, and

@@ -119,6 +119,45 @@ cron works on macOS, but `launchd` is the native choice. Save this as
 Unload it later with
 `launchctl unload ~/Library/LaunchAgents/com.journal.sync.plist`.
 
+### Linux — systemd timer
+
+The native Linux alternative to cron. Create a oneshot service at
+`~/.config/systemd/user/journal-sync.service`:
+
+```ini
+[Unit]
+Description=journal remote backup
+
+[Service]
+Type=oneshot
+Environment=JOURNAL_BIN=/usr/local/bin/journal
+ExecStart={{ROOT}}/.journal/sync.sh
+```
+
+and an hourly timer at `~/.config/systemd/user/journal-sync.timer`:
+
+```ini
+[Unit]
+Description=Hourly journal backup
+
+[Timer]
+OnCalendar=hourly
+Persistent=true        # run a missed backup after the machine was off
+
+[Install]
+WantedBy=timers.target
+```
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now journal-sync.timer
+loginctl enable-linger "$USER"     # run without an active login (servers/headless)
+```
+
+(`JOURNAL_BIN` is set because user services run with a minimal PATH.) To run the
+watcher unattended too, use a `Type=simple` service running
+`journal index --watch` — see the project README.
+
 ---
 
 `journal init` regenerates `.journal/sync.sh` and this file, so re-running it

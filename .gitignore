@@ -44,3 +44,6 @@ dist/
 # personal voice profile for `journal synth` — read from your notes repo at
 # generation time; keep your own copy out of this public source repo.
 docs/VOICE_PROFILE.md
+
+# generated shell completions (GoReleaser before-hook output)
+completions/

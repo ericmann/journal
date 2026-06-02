@@ -9,6 +9,12 @@ version: 2
 before:
   hooks:
     - go mod download
+    # Generate shell completions to bundle into the Linux packages. `go run .`
+    # is fine here — completion output doesn't depend on the stamped version.
+    - sh -c "mkdir -p completions"
+    - sh -c "go run . completion bash > completions/journal.bash"
+    - sh -c "go run . completion zsh  > completions/journal.zsh"
+    - sh -c "go run . completion fish > completions/journal.fish"
 
 builds:
   - id: journal
@@ -61,6 +67,17 @@ nfpms:
     license: MIT
     formats: [deb, rpm, apk]
     bindir: /usr/bin
+    # Bundle shell completions so package installs wire them up automatically.
+    contents:
+      - src: ./completions/journal.bash
+        dst: /usr/share/bash-completion/completions/journal
+        file_info: { mode: 0o644 }
+      - src: ./completions/journal.zsh
+        dst: /usr/share/zsh/site-functions/_journal
+        file_info: { mode: 0o644 }
+      - src: ./completions/journal.fish
+        dst: /usr/share/fish/vendor_completions.d/journal.fish
+        file_info: { mode: 0o644 }
 
 # Homebrew (macOS) via a cask — GoReleaser's recommended path for prebuilt
 # binaries, and consistent with the tap's existing Casks/. Linux installs use

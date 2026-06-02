@@ -88,3 +88,44 @@ wire it to an hourly job:
 See `.journal/README.md` in your repo for the full cron and macOS `launchd`
 recipes. While sync is disabled, the cron job is harmless — each run just prints
 the "disabled" notice and exits.
+
+### Linux — systemd timer
+
+The native Linux alternative to cron/launchd. Two per-user units — a oneshot
+service and an hourly timer:
+
+`~/.config/systemd/user/journal-sync.service`:
+
+```ini
+[Unit]
+Description=journal remote backup
+
+[Service]
+Type=oneshot
+Environment=JOURNAL_BIN=/usr/local/bin/journal
+ExecStart=%h/notes/.journal/sync.sh
+```
+
+`~/.config/systemd/user/journal-sync.timer`:
+
+```ini
+[Unit]
+Description=Hourly journal backup
+
+[Timer]
+OnCalendar=hourly
+Persistent=true        # run a missed backup after the machine was off
+
+[Install]
+WantedBy=timers.target
+```
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now journal-sync.timer
+loginctl enable-linger "$USER"        # run without an active login (servers/headless)
+systemctl --user list-timers journal-sync.timer
+```
+
+`JOURNAL_BIN` is set because user services run with a minimal PATH. Until
+`sync_enabled: true`, each run just prints the disabled notice — harmless.
