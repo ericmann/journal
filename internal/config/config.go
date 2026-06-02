@@ -79,8 +79,11 @@ func Default() Config {
 		ChunkStrategy: "heading",
 		// qwen3-embedding:4b outputs 2560-dim vectors. MUST match the model;
 		// `journal doctor` reports the model's actual dimension.
-		EmbedDim:             2560,
-		Excludes:             []string{"reflections/**", ".journal/**"},
+		EmbedDim: 2560,
+		// README.md is excluded because `journal init` generates one (usage + cron
+		// setup); it is tooling docs, not a journal entry, and would otherwise
+		// pollute search results.
+		Excludes:             []string{"reflections/**", ".journal/**", "README.md"},
 		StorePath:            filepath.Join(JournalDir, "index", "journal.db"),
 		RetrievalInstruction: "Represent this query for retrieving relevant developer journal notes:",
 		SynthModel:           "claude-sonnet-4-6",

@@ -176,16 +176,17 @@ func TestCaptureIsFast(t *testing.T) {
 
 func TestInitRepoCreatesSkeletonAndConfig(t *testing.T) {
 	root := t.TempDir()
-	created, err := initRepo(root)
+	res, err := initRepo(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !created {
+	if !res.created {
 		t.Error("expected created=true on fresh repo")
 	}
 	for _, p := range []string{
 		filepath.Join(".journal", "config.yaml"),
 		filepath.Join(".journal", "index"),
+		filepath.Join(".journal", "sync.sh"),
 		"daily", "projects", "reflections", ".gitignore",
 	} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
@@ -195,6 +196,42 @@ func TestInitRepoCreatesSkeletonAndConfig(t *testing.T) {
 	gi, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if !strings.Contains(string(gi), ".journal/index/") {
 		t.Errorf("gitignore missing index entry:\n%s", gi)
+	}
+	// The sync script is executable and the README is the fresh repo's top-level
+	// README with the repo path templated into its cron examples.
+	if fi, err := os.Stat(filepath.Join(root, ".journal", "sync.sh")); err != nil {
+		t.Fatal(err)
+	} else if fi.Mode().Perm()&0o100 == 0 {
+		t.Errorf("sync.sh is not executable: %v", fi.Mode())
+	}
+	if res.readmePath != filepath.Join(root, "README.md") {
+		t.Errorf("expected top-level README on fresh repo, got %s", res.readmePath)
+	}
+	readme, _ := os.ReadFile(res.readmePath)
+	if strings.Contains(string(readme), "{{ROOT}}") {
+		t.Error("README still contains unreplaced {{ROOT}} placeholder")
+	}
+	if !strings.Contains(string(readme), root) {
+		t.Error("README cron examples do not reference the repo path")
+	}
+}
+
+func TestInitRepoUpgradePreservesExistingReadme(t *testing.T) {
+	root := t.TempDir()
+	// A pre-existing top-level README must never be clobbered; the guide then
+	// lands in .journal/README.md instead.
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("my own readme\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := initRepo(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.readmePath != filepath.Join(root, ".journal", "README.md") {
+		t.Errorf("expected .journal/README.md fallback, got %s", res.readmePath)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "README.md")); string(data) != "my own readme\n" {
+		t.Errorf("hand-written README was clobbered: %q", data)
 	}
 }
 
@@ -207,11 +244,11 @@ func TestInitRepoDoesNotClobberConfig(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte("embed_dim: 999\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	created, err := initRepo(root)
+	res, err := initRepo(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created {
+	if res.created {
 		t.Error("expected created=false when config already exists")
 	}
 	data, _ := os.ReadFile(cfgPath)

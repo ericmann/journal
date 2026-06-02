@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,16 @@ import (
 	"github.com/ericmann/journal/internal/config"
 	"github.com/spf13/cobra"
 )
+
+// syncScript is the cron-friendly wrapper dropped into .journal/. readmeTemplate
+// documents usage + cron setup; {{ROOT}} is replaced with the repo's absolute
+// path so the cron/launchd examples are copy-paste ready.
+//
+//go:embed templates/sync.sh
+var syncScript string
+
+//go:embed templates/README.md
+var readmeTemplate string
 
 var initCmd = &cobra.Command{
 	Use:   "init [path]",
@@ -23,24 +34,43 @@ var initCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		created, err := initRepo(root)
+		res, err := initRepo(root)
 		if err != nil {
 			return err
 		}
-		if created {
-			fmt.Fprintf(cmd.OutOrStdout(), "initialized journal repo at %s\n", root)
+		out := cmd.OutOrStdout()
+		if res.created {
+			fmt.Fprintf(out, "initialized journal repo at %s\n", root)
 		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "journal repo already initialized at %s (left config untouched)\n", root)
+			fmt.Fprintf(out, "upgraded journal repo at %s (config left untouched)\n", root)
 		}
+		rel, err := filepath.Rel(root, res.readmePath)
+		if err != nil {
+			rel = res.readmePath
+		}
+		fmt.Fprintf(out, "  sync script: %s\n", filepath.Join(config.JournalDir, syncScriptName))
+		fmt.Fprintf(out, "  see %s to wire it to an hourly cron (back up notes to a git remote)\n", rel)
 		return nil
 	},
 }
 
-// initRepo creates the .journal directory with a default config.yaml and the
-// daily/projects/reflections skeleton, plus a .gitignore entry for the index.
-// It never overwrites an existing config.yaml. created is false if config
-// already existed.
-func initRepo(root string) (bool, error) {
+// syncScriptName is the cron wrapper written into .journal/.
+const syncScriptName = "sync.sh"
+
+// initResult reports what initRepo did. created is true only on a fresh repo
+// (config newly written); readmePath is where the usage/cron README landed.
+type initResult struct {
+	created    bool
+	readmePath string
+}
+
+// initRepo creates (or upgrades) a journal repo: the .journal directory with a
+// default config.yaml and the daily/projects/reflections skeleton, a .gitignore
+// entry for the index, the cron sync wrapper, and a usage README. It never
+// overwrites an existing config.yaml, so re-running it on an initialized repo
+// safely "upgrades" it with the latest script and docs. created is false when
+// config already existed.
+func initRepo(root string) (initResult, error) {
 	jdir := filepath.Join(root, config.JournalDir)
 	for _, dir := range []string{
 		filepath.Join(jdir, "index"),
@@ -49,27 +79,62 @@ func initRepo(root string) (bool, error) {
 		filepath.Join(root, "reflections"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return false, fmt.Errorf("creating %s: %w", dir, err)
+			return initResult{}, fmt.Errorf("creating %s: %w", dir, err)
 		}
 	}
 
 	if err := ensureGitignore(root); err != nil {
-		return false, err
+		return initResult{}, err
 	}
 
+	// The sync script and README are generated, managed files: always refresh
+	// them so an upgrade picks up the latest version.
+	if err := os.WriteFile(filepath.Join(jdir, syncScriptName), []byte(syncScript), 0o755); err != nil {
+		return initResult{}, fmt.Errorf("writing sync script: %w", err)
+	}
+	readmePath, err := writeReadme(root)
+	if err != nil {
+		return initResult{}, err
+	}
+
+	res := initResult{readmePath: readmePath}
 	cfgPath := filepath.Join(jdir, config.ConfigFile)
 	if _, err := os.Stat(cfgPath); err == nil {
-		return false, nil // do not clobber an existing committed config
+		return res, nil // do not clobber an existing committed config
 	}
 	def := config.Default()
 	data, err := def.Marshal()
 	if err != nil {
-		return false, err
+		return initResult{}, err
 	}
 	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
-		return false, fmt.Errorf("writing config: %w", err)
+		return initResult{}, fmt.Errorf("writing config: %w", err)
 	}
-	return true, nil
+	res.created = true
+	return res, nil
+}
+
+// writeReadme writes the usage/cron guide. It prefers a discoverable top-level
+// README.md, but only creates one when none exists — never clobbering a
+// hand-written README. Otherwise it writes .journal/README.md (always managed).
+// {{ROOT}} in the template is replaced with the repo's absolute path so the
+// cron and launchd examples are copy-paste ready. It returns the path written.
+func writeReadme(root string) (string, error) {
+	content := strings.ReplaceAll(readmeTemplate, "{{ROOT}}", root)
+	rootReadme := filepath.Join(root, "README.md")
+	if _, err := os.Stat(rootReadme); os.IsNotExist(err) {
+		if err := os.WriteFile(rootReadme, []byte(content), 0o644); err != nil {
+			return "", fmt.Errorf("writing README: %w", err)
+		}
+		return rootReadme, nil
+	} else if err != nil {
+		return "", err
+	}
+	jdirReadme := filepath.Join(root, config.JournalDir, "README.md")
+	if err := os.WriteFile(jdirReadme, []byte(content), 0o644); err != nil {
+		return "", fmt.Errorf("writing README: %w", err)
+	}
+	return jdirReadme, nil
 }
 
 // ensureGitignore makes sure the disposable index is ignored.
