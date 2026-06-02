@@ -1,10 +1,16 @@
 package vcs
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 )
+
+// ErrMergeConflict is returned by Merge when a divergence cannot be merged
+// without conflicts and no resolution strategy was given (manual mode). The
+// merge is aborted first, so the working tree is left clean.
+var ErrMergeConflict = errors.New("merge has conflicts that need manual resolution")
 
 // Upstream returns the configured upstream tracking branch for the current
 // branch (e.g. "origin/main") and ok=true. It returns ok=false when the branch
@@ -63,19 +69,34 @@ func Push(root string) error {
 	return nil
 }
 
-// MergePreferUpstream merges the upstream branch into the current branch,
-// resolving any conflicts in favour of the upstream (`-X theirs`). A clean
-// fast-forward or auto-merge proceeds normally; only genuine conflicts defer to
-// the upstream copy. This implements the "prefer the remote backup" policy for
-// unattended cron syncs. Signing is force-disabled so an unattended merge commit
-// never blocks on a GPG/SSH key, matching CommitAll.
-func MergePreferUpstream(root string) error {
-	args := []string{
-		"-c", "commit.gpgsign=false",
-		"merge", "--no-edit", "-X", "theirs", "@{u}",
+// Merge merges the upstream branch into the current branch. strategy controls
+// conflict resolution: "theirs" resolves conflicts toward the upstream copy,
+// "ours" toward the local copy, and "" (manual) uses no strategy option — a
+// clean fast-forward or auto-merge still succeeds, but a genuine conflict aborts
+// the merge (leaving the tree clean) and returns ErrMergeConflict. Signing is
+// force-disabled so an unattended merge commit never blocks on a GPG/SSH key,
+// matching CommitAll.
+func Merge(root, strategy string) error {
+	args := []string{"-c", "commit.gpgsign=false", "merge", "--no-edit"}
+	switch strategy {
+	case "theirs", "ours":
+		args = append(args, "-X", strategy)
+	case "":
+		// no strategy: a real conflict should fail rather than auto-resolve.
+	default:
+		return fmt.Errorf("unknown merge strategy %q", strategy)
 	}
-	if out, err := run(root, args...); err != nil {
-		return fmt.Errorf("git merge: %w\n%s", err, out)
+	args = append(args, "@{u}")
+
+	out, err := run(root, args...)
+	if err == nil {
+		return nil
 	}
-	return nil
+	// In manual mode a conflict leaves the merge in progress; abort it so the
+	// working tree is clean and surface a typed error the caller can explain.
+	if strategy == "" {
+		_, _ = run(root, "merge", "--abort")
+		return ErrMergeConflict
+	}
+	return fmt.Errorf("git merge: %w\n%s", err, out)
 }

@@ -1,6 +1,7 @@
 package vcs
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,7 +108,7 @@ func TestAheadBehindAndPush(t *testing.T) {
 	}
 }
 
-func TestMergePreferUpstreamFastForward(t *testing.T) {
+func TestMergeFastForward(t *testing.T) {
 	remote, primary := setupRemote(t)
 	other := cloneFrom(t, remote)
 
@@ -117,14 +118,15 @@ func TestMergePreferUpstreamFastForward(t *testing.T) {
 	git(t, other, "commit", "-q", "-m", "from other")
 	git(t, other, "push", "-q")
 
-	// Primary is now behind; fetch + merge fast-forwards cleanly.
+	// Primary is now behind; fetch + merge fast-forwards cleanly even in manual
+	// mode (no conflict).
 	if err := Fetch(primary); err != nil {
 		t.Fatal(err)
 	}
 	if a, b, _ := AheadBehind(primary); a != 0 || b != 1 {
 		t.Fatalf("expected ahead=0 behind=1, got %d/%d", a, b)
 	}
-	if err := MergePreferUpstream(primary); err != nil {
+	if err := Merge(primary, ""); err != nil {
 		t.Fatal(err)
 	}
 	if a, b, _ := AheadBehind(primary); a != 0 || b != 0 {
@@ -135,19 +137,21 @@ func TestMergePreferUpstreamFastForward(t *testing.T) {
 	}
 }
 
-func TestMergePreferUpstreamResolvesConflictTowardUpstream(t *testing.T) {
+// setupConflict creates a divergence on daily/d.md: the remote sets it to
+// remoteContent (pushed), the primary sets it to localContent (committed), and
+// the primary fetches so it is diverged ahead=1 behind=1.
+func setupConflict(t *testing.T, remoteContent, localContent string) (primary string) {
+	t.Helper()
 	remote, primary := setupRemote(t)
 	other := cloneFrom(t, remote)
 
 	const conflicted = "daily/d.md"
-
-	// Both clones edit the same line; the remote wins on conflict.
-	writeFile(t, other, conflicted, "REMOTE WINS\n")
+	writeFile(t, other, conflicted, remoteContent)
 	git(t, other, "add", "-A")
 	git(t, other, "commit", "-q", "-m", "remote edit")
 	git(t, other, "push", "-q")
 
-	writeFile(t, primary, conflicted, "local edit\n")
+	writeFile(t, primary, conflicted, localContent)
 	git(t, primary, "add", "-A")
 	git(t, primary, "commit", "-q", "-m", "local edit")
 
@@ -157,14 +161,44 @@ func TestMergePreferUpstreamResolvesConflictTowardUpstream(t *testing.T) {
 	if a, b, _ := AheadBehind(primary); a != 1 || b != 1 {
 		t.Fatalf("expected diverged ahead=1 behind=1, got %d/%d", a, b)
 	}
-	if err := MergePreferUpstream(primary); err != nil {
-		t.Fatalf("merge should auto-resolve, not fail: %v", err)
+	return primary
+}
+
+func TestMergePreferUpstreamResolvesTowardUpstream(t *testing.T) {
+	primary := setupConflict(t, "REMOTE WINS\n", "local edit\n")
+	if err := Merge(primary, "theirs"); err != nil {
+		t.Fatalf("prefer-upstream should auto-resolve, not fail: %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(primary, conflicted))
-	if err != nil {
-		t.Fatal(err)
-	}
+	got, _ := os.ReadFile(filepath.Join(primary, "daily/d.md"))
 	if string(got) != "REMOTE WINS\n" {
 		t.Errorf("conflict should resolve to upstream, got %q", got)
+	}
+}
+
+func TestMergePreferLocalResolvesTowardLocal(t *testing.T) {
+	primary := setupConflict(t, "remote edit\n", "LOCAL WINS\n")
+	if err := Merge(primary, "ours"); err != nil {
+		t.Fatalf("prefer-local should auto-resolve, not fail: %v", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(primary, "daily/d.md"))
+	if string(got) != "LOCAL WINS\n" {
+		t.Errorf("conflict should resolve to local, got %q", got)
+	}
+}
+
+func TestMergeManualAbortsOnConflict(t *testing.T) {
+	primary := setupConflict(t, "REMOTE\n", "LOCAL\n")
+	err := Merge(primary, "")
+	if !errors.Is(err, ErrMergeConflict) {
+		t.Fatalf("manual mode should return ErrMergeConflict, got %v", err)
+	}
+	// The merge must be aborted, leaving a clean tree (no conflict markers, no
+	// MERGE_HEAD) so an unattended cron isn't left half-merged.
+	if out, _ := run(primary, "status", "--porcelain"); out != "" {
+		t.Errorf("working tree not clean after aborted merge:\n%s", out)
+	}
+	got, _ := os.ReadFile(filepath.Join(primary, "daily/d.md"))
+	if string(got) != "LOCAL\n" {
+		t.Errorf("local copy should be intact after abort, got %q", got)
 	}
 }

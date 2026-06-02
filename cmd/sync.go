@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -17,12 +18,14 @@ var syncDryRun bool
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Back up notes to (and from) the configured git remote",
+	Short: "Back up notes to (and from) the configured git remote (opt-in)",
 	Long: "sync commits any pending note changes, then reconciles the current branch\n" +
 		"with its upstream: it pushes when ahead, pulls and re-indexes when behind, and\n" +
-		"auto-merges a divergence preferring the upstream copy on conflict. With no\n" +
-		"upstream configured it is a no-op. Designed to be run from an hourly cron via\n" +
-		"the generated .journal/sync.sh — see the repo README.",
+		"handles a divergence per the sync_conflict setting. With no upstream configured\n" +
+		"it is a no-op.\n\n" +
+		"sync is OFF by default — set `sync_enabled: true` in .journal/config.yaml to use\n" +
+		"it. Designed to be run from an hourly cron via the generated .journal/sync.sh.\n" +
+		"See docs/SYNC.md for setup and conflict tuning.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -32,12 +35,31 @@ var syncCmd = &cobra.Command{
 	},
 }
 
+// conflictStrategy maps a sync_conflict config value to a vcs.Merge strategy.
+func conflictStrategy(mode string) string {
+	switch mode {
+	case config.SyncConflictPreferUpstream:
+		return "theirs"
+	case config.SyncConflictPreferLocal:
+		return "ours"
+	default: // SyncConflictManual
+		return ""
+	}
+}
+
 // runSync reconciles the repo with its upstream. It is embedder-agnostic so the
 // re-index after a pull can use a fake in tests. Push/merge failures are
 // returned as errors so an unattended cron run exits non-zero and is noticed;
 // having no upstream is a clean no-op.
 func runSync(ctx context.Context, cfg *config.Config, e embed.Embedder, dryRun bool, out io.Writer) error {
 	root := cfg.Root()
+	if !cfg.SyncEnabled {
+		fmt.Fprintln(out, "sync is disabled (sync_enabled: false in .journal/config.yaml).")
+		fmt.Fprintln(out, "It backs notes up to a git remote and can rewrite local history on a")
+		fmt.Fprintln(out, "divergence, so it is opt-in. To enable it, set `sync_enabled: true` and")
+		fmt.Fprintln(out, "review the conflict modes — see docs/SYNC.md.")
+		return nil
+	}
 	if !vcs.Available() {
 		return fmt.Errorf("git is not installed; cannot sync")
 	}
@@ -80,13 +102,18 @@ func runSync(ctx context.Context, cfg *config.Config, e embed.Embedder, dryRun b
 		return nil
 	}
 
-	// Behind (or diverged): merge the upstream in first, preferring its copy on
-	// conflict, then re-index so the store reflects the pulled notes.
+	// Behind (or diverged): merge the upstream in first per the conflict policy,
+	// then re-index so the store reflects the pulled notes.
 	if behind > 0 {
-		if err := vcs.MergePreferUpstream(root); err != nil {
+		if err := vcs.Merge(root, conflictStrategy(cfg.SyncConflict)); err != nil {
+			if errors.Is(err, vcs.ErrMergeConflict) {
+				return fmt.Errorf("local and %s have diverged with conflicts; the merge was aborted "+
+					"(no changes lost). Resolve it by hand with `git pull` (or set sync_conflict to "+
+					"prefer-upstream/prefer-local). See docs/SYNC.md", upstream)
+			}
 			return err
 		}
-		fmt.Fprintf(out, "merged %s (upstream preferred on conflict)\n", upstream)
+		fmt.Fprintf(out, "merged %s (%s)\n", upstream, cfg.SyncConflict)
 		// Re-index so search reflects the pulled notes. The index is disposable
 		// (rebuildable with `journal index`), so a failure here — e.g. Ollama down
 		// in an unattended cron — must not abort the backup or block the push.
@@ -114,7 +141,7 @@ func runSync(ctx context.Context, cfg *config.Config, e embed.Embedder, dryRun b
 func plannedAction(ahead, behind int) string {
 	switch {
 	case behind > 0 && ahead > 0:
-		return "merge upstream (preferring it on conflict), re-index, then push"
+		return "merge upstream (per sync_conflict), re-index, then push"
 	case behind > 0:
 		return "pull and re-index"
 	default:

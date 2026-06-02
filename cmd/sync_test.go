@@ -56,7 +56,24 @@ func journalRepoWithRemote(t *testing.T) (cfg *config.Config, remote, root strin
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.SyncEnabled = true // these tests exercise the enabled paths
 	return cfg, remote, root
+}
+
+func TestRunSyncDisabledIsNoOp(t *testing.T) {
+	cfg, _, _ := journalRepoWithRemote(t)
+	cfg.SyncEnabled = false // the default
+
+	var buf bytes.Buffer
+	if err := runSync(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), false, &buf); err != nil {
+		t.Fatalf("disabled sync should be a clean no-op: %v", err)
+	}
+	if !strings.Contains(buf.String(), "disabled") {
+		t.Errorf("expected a disabled notice, got: %s", buf.String())
+	}
+	if strings.Contains(buf.String(), "ahead") || strings.Contains(buf.String(), "pushed") {
+		t.Errorf("disabled sync must not touch the remote, got: %s", buf.String())
+	}
 }
 
 func TestRunSyncNoUpstreamIsNoOp(t *testing.T) {
@@ -77,6 +94,7 @@ func TestRunSyncNoUpstreamIsNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.SyncEnabled = true
 
 	var buf bytes.Buffer
 	if err := runSync(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), false, &buf); err != nil {

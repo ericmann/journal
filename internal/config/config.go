@@ -21,6 +21,17 @@ const ConfigFile = "config.yaml"
 // AnthropicKeyEnv is the only place the synthesis API key is read from.
 const AnthropicKeyEnv = "ANTHROPIC_API_KEY"
 
+// SyncConflict modes for the sync_conflict setting.
+const (
+	// SyncConflictManual aborts a conflicting merge and asks the user to resolve
+	// it by hand — the safe default that never discards work.
+	SyncConflictManual = "manual"
+	// SyncConflictPreferUpstream resolves conflicts toward the remote copy.
+	SyncConflictPreferUpstream = "prefer-upstream"
+	// SyncConflictPreferLocal resolves conflicts toward the local copy.
+	SyncConflictPreferLocal = "prefer-local"
+)
+
 // Config holds non-secret settings. It is serialized to .journal/config.yaml.
 // The Anthropic API key is deliberately NOT a field here — it comes from the
 // environment only and must never be written to disk.
@@ -66,6 +77,15 @@ type Config struct {
 	// flags work (e.g. "code --wait"). Empty falls back to $JOURNAL_EDITOR,
 	// $VISUAL, $EDITOR, then nano.
 	Editor string `yaml:"editor"`
+	// SyncEnabled gates `journal sync`. It is OFF by default: sync pushes to and
+	// pulls from a git remote (and can rewrite local history on a divergence), so
+	// it is strictly opt-in. See docs/SYNC.md.
+	SyncEnabled bool `yaml:"sync_enabled"`
+	// SyncConflict selects how `journal sync` resolves a divergence (both local
+	// and remote have new commits): "manual" (default) aborts and asks you to
+	// resolve by hand — it never discards work; "prefer-upstream" takes the remote
+	// copy on conflict; "prefer-local" keeps the local copy on conflict.
+	SyncConflict string `yaml:"sync_conflict"`
 
 	// root is the absolute repo root; not serialized.
 	root string
@@ -100,6 +120,9 @@ func Default() Config {
 		GitAutocommitSign: false,
 		// Empty: fall back to $JOURNAL_EDITOR/$VISUAL/$EDITOR, then nano.
 		Editor: "",
+		// Sync is opt-in; manual conflict handling never discards work.
+		SyncEnabled:  false,
+		SyncConflict: SyncConflictManual,
 	}
 }
 
@@ -149,6 +172,11 @@ func (c *Config) Validate() error {
 	}
 	if c.SynthMaxTokens <= 0 {
 		return fmt.Errorf("synth_max_tokens must be > 0, got %d", c.SynthMaxTokens)
+	}
+	switch c.SyncConflict {
+	case SyncConflictManual, SyncConflictPreferUpstream, SyncConflictPreferLocal:
+	default:
+		return fmt.Errorf("sync_conflict %q unsupported (want manual|prefer-upstream|prefer-local)", c.SyncConflict)
 	}
 	return nil
 }

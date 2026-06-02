@@ -7,6 +7,29 @@ import (
 	"testing"
 )
 
+func TestSyncDefaultsAndValidation(t *testing.T) {
+	c := Default()
+	if c.SyncEnabled {
+		t.Error("sync must be disabled by default")
+	}
+	if c.SyncConflict != SyncConflictManual {
+		t.Errorf("default sync_conflict = %q, want %q", c.SyncConflict, SyncConflictManual)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("default config should validate: %v", err)
+	}
+	for _, mode := range []string{SyncConflictManual, SyncConflictPreferUpstream, SyncConflictPreferLocal} {
+		c.SyncConflict = mode
+		if err := c.Validate(); err != nil {
+			t.Errorf("sync_conflict %q should be valid: %v", mode, err)
+		}
+	}
+	c.SyncConflict = "bogus"
+	if err := c.Validate(); err == nil {
+		t.Error("expected an error for an unknown sync_conflict mode")
+	}
+}
+
 func TestEditorDefaultsEmptyAndMarshals(t *testing.T) {
 	c := Default()
 	if c.Editor != "" {
