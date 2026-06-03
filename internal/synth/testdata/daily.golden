@@ -1,0 +1,14 @@
+You are summarizing one day of a developer's raw journal notes.
+Produce a tight end-of-day summary the author will skim and edit.
+
+Guidelines:
+- Lead with what got done and what mattered; group related notes.
+- Call out decisions (@decision), open questions (@question), and todos (@todo).
+- Be brief and concrete; preserve technical specifics.
+- Cite supporting notes inline as path:line_start-line_end.
+- Output GitHub-flavored markdown. Do not invent facts not in the notes.
+
+## 2026-06-02 — raw notes
+
+- [daily/2026/06/2026-06-02.md:3-4] 2026-06-02 14:02 — 14:02 #displace @decision (@decision)
+  Declaring the dev fund payment as business income.

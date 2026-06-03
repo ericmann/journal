@@ -17,6 +17,7 @@ type Options struct {
 	Kind    Kind
 	Project string    // decisions: scope to this project slug (also the write target)
 	Days    int       // stale: idle threshold (default 14)
+	Date    time.Time // daily: the day to summarize (defaults to Now's date)
 	Now     time.Time // reference time (defaults to time.Now)
 	DryRun  bool      // print prompt + path; no network, no write
 	Write   bool      // call the API and write output
@@ -65,12 +66,14 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Result, error) {
 	switch opts.Kind {
 	case KindWeekly:
 		res.Prompt, res.OutputPath, err = r.weekly(ctx, opts)
+	case KindDaily:
+		res.Prompt, res.OutputPath, err = r.daily(ctx, opts)
 	case KindDecisions:
 		res.Prompt, res.OutputPath, err = r.decisions(ctx, opts)
 	case KindStale:
 		res.Prompt, res.OutputPath, err = r.stale(ctx, opts)
 	default:
-		return res, fmt.Errorf("unknown synth kind %q (want weekly|decisions|stale)", opts.Kind)
+		return res, fmt.Errorf("unknown synth kind %q (want weekly|daily|decisions|stale)", opts.Kind)
 	}
 	if err != nil {
 		return res, err
@@ -106,6 +109,35 @@ func (r *Runner) weekly(ctx context.Context, opts Options) (prompt, outPath stri
 	chunks = chronological(chunks)
 	prompt = AssembleWeekly(label, r.voice, chunks)
 	outPath = filepath.ToSlash(filepath.Join("reflections", label+".md"))
+	return prompt, outPath, nil
+}
+
+func (r *Runner) daily(ctx context.Context, opts Options) (prompt, outPath string, err error) {
+	day := opts.Date
+	if day.IsZero() {
+		day = opts.Now
+	}
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	end := start.AddDate(0, 0, 1)
+	label := start.Format("2006-01-02")
+
+	// store.Recent filters CreatedAt >= start; drop anything from the next day so
+	// the window is exactly [start, end).
+	all, err := r.store.Recent(ctx, store.Filter{Since: start}, 0)
+	if err != nil {
+		return "", "", err
+	}
+	var chunks []store.Chunk
+	for _, c := range all {
+		// store.Recent already filters CreatedAt >= start (excluding undated
+		// chunks); keep only those before the next day's midnight.
+		if !c.CreatedAt.IsZero() && c.CreatedAt.Before(end) {
+			chunks = append(chunks, c)
+		}
+	}
+	chunks = chronological(chunks)
+	prompt = AssembleDaily(label, r.voice, chunks)
+	outPath = filepath.ToSlash(filepath.Join("reflections", "daily-"+label+".md"))
 	return prompt, outPath, nil
 }
 
@@ -168,15 +200,27 @@ func (r *Runner) write(opts Options, res Result) error {
 		return appendRollup(abs, opts.Now, res.Text)
 	}
 
-	header := draftHeader(opts.Kind, opts.Now)
+	header := draftHeader(opts.Kind, opts.Now, dailyDay(opts))
 	return writeNewFile(abs, header+res.Text+"\n", res.OutputPath)
 }
 
-func draftHeader(kind Kind, now time.Time) string {
+// dailyDay resolves the day a daily summary covers: --date if given, else Now.
+func dailyDay(opts Options) time.Time {
+	if !opts.Date.IsZero() {
+		return opts.Date
+	}
+	return opts.Now
+}
+
+// draftHeader builds the file header. now is when the draft was generated; day is
+// the subject day for a daily summary (ignored by other kinds).
+func draftHeader(kind Kind, now, day time.Time) string {
 	var title string
 	switch kind {
 	case KindWeekly:
 		title = "# Weekly reflection — " + isoWeekLabel(now)
+	case KindDaily:
+		title = "# Daily summary — " + day.Format("2006-01-02")
 	case KindStale:
 		title = "# Stale-thread review — " + now.Format("2006-01-02")
 	default:

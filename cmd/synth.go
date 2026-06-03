@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/store"
@@ -17,26 +18,36 @@ var (
 	synthWrite   bool
 	synthProject string
 	synthDays    int
+	synthDate    string
 )
 
 var synthCmd = &cobra.Command{
-	Use:   "synth weekly|decisions|stale",
+	Use:   "synth weekly|daily|decisions|stale",
 	Short: "Run an AI synthesis job (cloud Claude) over the indexed notes",
 	Long: "synth assembles a prompt from the indexed notes and (with --write) calls the\n" +
-		"Anthropic API to draft output. weekly -> reflections/YYYY-Www.md; decisions\n" +
-		"--project <slug> -> a marked rollup block appended to that project's _index.md;\n" +
-		"stale -> reflections/stale-<date>.md. --dry-run prints the prompt and target\n" +
-		"path without calling the API or writing anything (the default if neither\n" +
-		"--dry-run nor --write is given).\n\n" +
+		"Anthropic API to draft output. weekly -> reflections/YYYY-Www.md; daily -> \n" +
+		"reflections/daily-<date>.md (--date, default today); decisions --project <slug>\n" +
+		"-> a marked rollup block appended to that project's _index.md; stale -> \n" +
+		"reflections/stale-<date>.md. --dry-run prints the prompt and target path without\n" +
+		"calling the API or writing anything (the default if neither --dry-run nor\n" +
+		"--write is given).\n\n" +
 		"Requires ANTHROPIC_API_KEY in the environment (only for --write).",
 	Args:      cobra.ExactArgs(1),
-	ValidArgs: []string{string(synth.KindWeekly), string(synth.KindDecisions), string(synth.KindStale)},
+	ValidArgs: []string{string(synth.KindWeekly), string(synth.KindDaily), string(synth.KindDecisions), string(synth.KindStale)},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		kind := synth.Kind(args[0])
 		switch kind {
-		case synth.KindWeekly, synth.KindDecisions, synth.KindStale:
+		case synth.KindWeekly, synth.KindDaily, synth.KindDecisions, synth.KindStale:
 		default:
-			return fmt.Errorf("unknown synth job %q (want weekly|decisions|stale)", args[0])
+			return fmt.Errorf("unknown synth job %q (want weekly|daily|decisions|stale)", args[0])
+		}
+		var date time.Time
+		if synthDate != "" {
+			var err error
+			date, err = time.ParseInLocation("2006-01-02", synthDate, time.Local)
+			if err != nil {
+				return fmt.Errorf("invalid --date %q (want YYYY-MM-DD)", synthDate)
+			}
 		}
 		cfg, err := loadConfig()
 		if err != nil {
@@ -49,6 +60,7 @@ var synthCmd = &cobra.Command{
 			Kind:    kind,
 			Project: synthProject,
 			Days:    synthDays,
+			Date:    date,
 			DryRun:  dryRun,
 			Write:   synthWrite && !synthDryRun,
 		}, cmd.OutOrStdout()))
@@ -123,5 +135,6 @@ func init() {
 	synthCmd.Flags().BoolVar(&synthWrite, "write", false, "call the Anthropic API and write the output")
 	synthCmd.Flags().StringVar(&synthProject, "project", "", "decisions: scope to (and write the rollup into) this project")
 	synthCmd.Flags().IntVar(&synthDays, "days", 14, "stale: idle threshold in days")
+	synthCmd.Flags().StringVar(&synthDate, "date", "", "daily: the day to summarize as YYYY-MM-DD (default today)")
 	rootCmd.AddCommand(synthCmd)
 }

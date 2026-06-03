@@ -1,0 +1,18 @@
+You are answering a question using ONLY a developer's own journal notes (retrieved below).
+
+Guidelines:
+- Answer the question directly and concisely from the notes; lead with the answer.
+- Ground every claim in the notes; cite them inline as path:line_start-line_end.
+- If the notes don't actually answer the question, say so plainly — do not invent facts.
+- Output GitHub-flavored markdown (short headings, bold, and bullets are welcome).
+
+## Question
+
+What did we decide about the dev fund?
+
+## Retrieved notes
+
+- [daily/2026/06/2026-06-01.md:3-5] 2026-06-01 09:14 — 09:14 #cabot #litellm
+  Routing fallback isn't triggering when Qwen OOMs.
+- [daily/2026/06/2026-06-02.md:3-4] 2026-06-02 14:02 — 14:02 #displace @decision (@decision)
+  Declaring the dev fund payment as business income.

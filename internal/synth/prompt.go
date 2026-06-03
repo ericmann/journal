@@ -12,6 +12,7 @@ type Kind string
 
 const (
 	KindWeekly    Kind = "weekly"
+	KindDaily     Kind = "daily"
 	KindDecisions Kind = "decisions"
 	KindStale     Kind = "stale"
 )
@@ -75,6 +76,41 @@ func AssembleWeekly(weekLabel, voiceProfile string, chunks []store.Chunk) string
 	sb.WriteString("- Output GitHub-flavored markdown. Do not invent facts not in the notes.\n\n")
 	sb.WriteString(voiceSection(voiceProfile))
 	fmt.Fprintf(&sb, "## Week %s — raw notes\n\n", weekLabel)
+	sb.WriteString(renderChunks(chunks))
+	return sb.String()
+}
+
+// AssembleDaily builds the daily-summary prompt for the given date label
+// (e.g. "2026-06-03"), an optional voice profile, and that day's chunks.
+func AssembleDaily(dateLabel, voiceProfile string, chunks []store.Chunk) string {
+	var sb strings.Builder
+	sb.WriteString("You are summarizing one day of a developer's raw journal notes.\n")
+	sb.WriteString("Produce a tight end-of-day summary the author will skim and edit.\n\n")
+	sb.WriteString("Guidelines:\n")
+	sb.WriteString("- Lead with what got done and what mattered; group related notes.\n")
+	sb.WriteString("- Call out decisions (@decision), open questions (@question), and todos (@todo).\n")
+	sb.WriteString("- Be brief and concrete; preserve technical specifics.\n")
+	sb.WriteString("- Cite supporting notes inline as path:line_start-line_end.\n")
+	sb.WriteString("- Output GitHub-flavored markdown. Do not invent facts not in the notes.\n\n")
+	sb.WriteString(voiceSection(voiceProfile))
+	fmt.Fprintf(&sb, "## %s — raw notes\n\n", dateLabel)
+	sb.WriteString(renderChunks(chunks))
+	return sb.String()
+}
+
+// AssembleAnswer builds a prompt that answers a search question grounded only in
+// the retrieved notes. It is not a synthesis "job" — there is no voice profile and
+// no file output; the result is rendered to the terminal above the raw hits.
+func AssembleAnswer(query string, chunks []store.Chunk) string {
+	var sb strings.Builder
+	sb.WriteString("You are answering a question using ONLY a developer's own journal notes (retrieved below).\n\n")
+	sb.WriteString("Guidelines:\n")
+	sb.WriteString("- Answer the question directly and concisely from the notes; lead with the answer.\n")
+	sb.WriteString("- Ground every claim in the notes; cite them inline as path:line_start-line_end.\n")
+	sb.WriteString("- If the notes don't actually answer the question, say so plainly — do not invent facts.\n")
+	sb.WriteString("- Output GitHub-flavored markdown (short headings, bold, and bullets are welcome).\n\n")
+	fmt.Fprintf(&sb, "## Question\n\n%s\n\n", strings.TrimSpace(query))
+	sb.WriteString("## Retrieved notes\n\n")
 	sb.WriteString(renderChunks(chunks))
 	return sb.String()
 }

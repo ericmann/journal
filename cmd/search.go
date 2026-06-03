@@ -9,6 +9,7 @@ import (
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
 	"github.com/ericmann/journal/internal/store"
+	"github.com/ericmann/journal/internal/synth"
 	"github.com/spf13/cobra"
 )
 
@@ -17,24 +18,31 @@ import (
 const candidateN = 50
 
 var (
-	searchK       int
-	searchTags    []string
-	searchProject string
-	searchSince   string
-	searchJSON    bool
+	searchK        int
+	searchTags     []string
+	searchProject  string
+	searchSince    string
+	searchJSON     bool
+	searchAnswer   bool
+	searchNoAnswer bool
 )
 
 var searchCmd = &cobra.Command{
 	Use:   "search <query>",
 	Short: "Semantic search over notes (embed → vector KNN → rerank)",
-	Args:  cobra.MinimumNArgs(1),
+	Long: "search embeds the query, runs a vector KNN over the index, optionally reranks,\n" +
+		"and prints the best matches with citations. When ANTHROPIC_API_KEY is set it also\n" +
+		"generates a grounded answer to the question (configured synth_model) above the raw\n" +
+		"hits — disable with --no-answer, or force with --answer. --json prints results only.",
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out := cmd.OutOrStdout()
+		query := strings.Join(args, " ")
 		cfg, err := loadConfig()
 		if err != nil {
 			return renderError(out, err, searchJSON)
 		}
-		results, err := func() ([]Result, error) {
+		scored, err := func() ([]scoredChunk, error) {
 			since, err := parseSince(searchSince)
 			if err != nil {
 				return nil, err
@@ -43,19 +51,76 @@ var searchCmd = &cobra.Command{
 			if since > 0 {
 				f.Since = now().Add(-since)
 			}
-			return runSearch(cmd.Context(), cfg, newEmbedder(cfg), strings.Join(args, " "), searchK, f)
+			return searchChunks(cmd.Context(), cfg, newEmbedder(cfg), query, searchK, f)
 		}()
 		if err != nil {
 			return renderError(out, hintOllama(cfg, err), searchJSON)
 		}
-		return renderResults(out, results, searchJSON)
+
+		// Optional AI answer (text mode only), grounded in the retrieved chunks.
+		_, keyErr := config.AnthropicAPIKey()
+		do, missingKey := wantAnswer(searchJSON, searchAnswer, searchNoAnswer, keyErr == nil)
+		if missingKey {
+			return renderError(out, fmt.Errorf("--answer needs %s set in the environment", config.AnthropicKeyEnv), searchJSON)
+		}
+		if do && len(scored) > 0 {
+			key, _ := config.AnthropicAPIKey()
+			chunks := make([]store.Chunk, len(scored))
+			for i, sc := range scored {
+				chunks[i] = sc.chunk
+			}
+			ans, aerr := answerQuery(cmd.Context(), synth.NewAnthropic(key), cfg.SynthModel, cfg.SynthMaxTokens, query, chunks)
+			if aerr != nil {
+				fmt.Fprintf(out, "(AI answer unavailable: %v)\n\n", aerr) // non-fatal; raw results still shown
+			} else {
+				renderMarkdown(out, ans)
+				fmt.Fprintf(out, "\n─── sources ───\n\n")
+			}
+		}
+		return renderResults(out, resultsFromScored(scored), searchJSON)
 	},
 }
 
-// runSearch embeds the query (with the retrieval instruction), fetches the
-// nearest candidates, reranks them, and returns the top k as results. If
-// reranking fails it falls back to vector-distance order so search still works.
+// wantAnswer decides whether to generate an AI answer. forceOn is --answer,
+// forceOff is --no-answer. With a key present the answer is automatic; with
+// --answer but no key, missingKey signals a clear error; in auto mode without a
+// key it is silently skipped.
+func wantAnswer(jsonMode, forceOn, forceOff, haveKey bool) (do, missingKey bool) {
+	if jsonMode || forceOff {
+		return false, false
+	}
+	if haveKey {
+		return true, false
+	}
+	if forceOn {
+		return false, true
+	}
+	return false, false
+}
+
+// runSearch returns the top-k results. It is a thin wrapper over searchChunks
+// (which retains full chunk bodies for the optional AI answer).
 func runSearch(ctx context.Context, cfg *config.Config, e embed.Embedder, query string, k int, f store.Filter) ([]Result, error) {
+	scored, err := searchChunks(ctx, cfg, e, query, k, f)
+	if err != nil {
+		return nil, err
+	}
+	return resultsFromScored(scored), nil
+}
+
+// resultsFromScored maps scored chunks to display Results.
+func resultsFromScored(scored []scoredChunk) []Result {
+	results := make([]Result, len(scored))
+	for i, sc := range scored {
+		results[i] = chunkToResult(sc.chunk, sc.score)
+	}
+	return results
+}
+
+// searchChunks embeds the query (with the retrieval instruction), fetches the
+// nearest candidates, reranks them, and returns the top k scored chunks. If
+// reranking fails it falls back to vector-distance order so search still works.
+func searchChunks(ctx context.Context, cfg *config.Config, e embed.Embedder, query string, k int, f store.Filter) ([]scoredChunk, error) {
 	if k <= 0 {
 		k = 5
 	}
@@ -78,7 +143,7 @@ func runSearch(ctx context.Context, cfg *config.Config, e embed.Embedder, query 
 		return nil, err
 	}
 	if len(cands) == 0 {
-		return []Result{}, nil
+		return nil, nil
 	}
 
 	var scored []scoredChunk
@@ -91,11 +156,7 @@ func runSearch(ctx context.Context, cfg *config.Config, e embed.Embedder, query 
 	if len(scored) > k {
 		scored = scored[:k]
 	}
-	results := make([]Result, len(scored))
-	for i, sc := range scored {
-		results[i] = chunkToResult(sc.chunk, sc.score)
-	}
-	return results, nil
+	return scored, nil
 }
 
 type scoredChunk struct {
@@ -147,5 +208,7 @@ func init() {
 	searchCmd.Flags().StringVar(&searchProject, "project", "", "filter to a project slug")
 	searchCmd.Flags().StringVar(&searchSince, "since", "", "only chunks created within this window (e.g. 2w, 14d)")
 	searchCmd.Flags().BoolVar(&searchJSON, "json", false, "emit JSON ({results:[...]}) instead of text")
+	searchCmd.Flags().BoolVar(&searchAnswer, "answer", false, "force an AI answer above the results (needs ANTHROPIC_API_KEY)")
+	searchCmd.Flags().BoolVar(&searchNoAnswer, "no-answer", false, "never generate an AI answer, even if a key is set")
 	rootCmd.AddCommand(searchCmd)
 }

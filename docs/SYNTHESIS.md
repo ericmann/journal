@@ -7,9 +7,18 @@ path. See also [Usage](USAGE.md) · [Configuration](CONFIGURATION.md).
 ```sh
 journal synth weekly                 # dry-run by default: prints prompt + target path
 journal synth weekly --write         # calls Claude, writes reflections/YYYY-Www.md (DRAFT)
+journal synth daily --write          # summarize today → reflections/daily-YYYY-MM-DD.md
+journal synth daily --date 2026-06-02 --write      # summarize a specific day
 journal synth decisions --project canton --write   # appends a marked rollup to its _index.md
 journal synth stale --days 21        # surface threads idle > 21 days
 ```
+
+Kinds: **`weekly`** (ISO week → `reflections/YYYY-Www.md`), **`daily`** (one day,
+`--date` or today → `reflections/daily-YYYY-MM-DD.md`), **`decisions`** (a `@decision`
+rollup; `--project` appends to that project's `_index.md`), and **`stale`** (threads
+idle beyond `--days`). A daily cron at, say, 23:55 can summarize the day with
+`journal synth daily --write` (or yesterday at 00:05 via
+`--date "$(date -v-1d +%F)"` on macOS / `--date "$(date -d yesterday +%F)"` on Linux).
 
 - **`--dry-run` is the default** (and is explicit-safe): it assembles and prints
   the prompt and the intended output path, and makes **no** network call and

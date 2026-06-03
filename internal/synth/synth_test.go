@@ -64,6 +64,14 @@ func TestAssembleDecisionsGolden(t *testing.T) {
 	goldenCheck(t, "decisions", AssembleDecisions("canton", "", sampleChunks()[1:]))
 }
 
+func TestAssembleDailyGolden(t *testing.T) {
+	goldenCheck(t, "daily", AssembleDaily("2026-06-02", "", sampleChunks()[1:]))
+}
+
+func TestAssembleAnswerGolden(t *testing.T) {
+	goldenCheck(t, "answer", AssembleAnswer("What did we decide about the dev fund?", sampleChunks()))
+}
+
 func TestAssembleStaleGolden(t *testing.T) {
 	lines := []string{
 		"canton — last activity 2026-04-01, 12 notes, 2 open question(s)",
@@ -94,6 +102,46 @@ func TestVoiceSectionNeutralizesMetaInstructions(t *testing.T) {
 	}
 	if !strings.Contains(out, "<voice_profile>") {
 		t.Error("voice profile should be delimited")
+	}
+}
+
+func TestDailyWindowsToOneDay(t *testing.T) {
+	fake := &Fake{}
+	r, s, root := newRunner(t, fake)
+	seed(t, s) // chunks dated 2026-06-01 and 2026-06-02
+
+	// Dry-run daily for 2026-06-02: only that day's note, correct path, no write.
+	res, err := r.Run(context.Background(), Options{
+		Kind: KindDaily, Date: time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC), Now: fixedTime(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.OutputPath != "reflections/daily-2026-06-02.md" {
+		t.Errorf("daily path = %q", res.OutputPath)
+	}
+	if !strings.Contains(res.Prompt, "dev fund payment") {
+		t.Error("daily prompt should include the 2026-06-02 note")
+	}
+	if strings.Contains(res.Prompt, "Qwen OOMs") {
+		t.Error("daily prompt should NOT include the 2026-06-01 note")
+	}
+	if fake.CallCount != 0 {
+		t.Error("dry-run must not call the API")
+	}
+
+	// Write it: file appears with the daily DRAFT header for the summarized day.
+	if _, err := r.Run(context.Background(), Options{
+		Kind: KindDaily, Date: time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC), Now: fixedTime(), Write: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "reflections", "daily-2026-06-02.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "# Daily summary — 2026-06-02") {
+		t.Errorf("daily draft header wrong:\n%s", data)
 	}
 }
 

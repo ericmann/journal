@@ -49,12 +49,12 @@ journal init    [path]                          # bootstrap (or upgrade) a repo
 journal capture [text] [--tags a,b] [--project slug] [--marker decision|question|todo]
 journal index   [--rebuild] [--since 2w]        # embed changed notes (one-shot)
 journal index --watch                           # continuous, debounced re-index
-journal search  <query> [--k 5] [--tag t] [--project slug] [--since 2w] [--json]
+journal search  <query> [--k 5] [--tag t] [--project slug] [--since 2w] [--answer|--no-answer] [--json]
 journal recent  [--tag t] [--project slug] [--since 1w] [--json]
 journal decisions [--project slug] [--since 4w] [--json]
 journal threads [--stale] [--days 14] [--json]
 journal sync    [--dry-run]                      # back up notes to/from the git remote
-journal synth   weekly|decisions|stale [--dry-run] [--write] [--project slug] [--days 14]
+journal synth   weekly|daily|decisions|stale [--dry-run] [--write] [--project slug] [--days 14] [--date YYYY-MM-DD]
 journal doctor  [--json]                          # health checks
 journal mcp     [--repo path]                     # MCP server (stdio) for Claude clients
 ```
@@ -75,6 +75,14 @@ in [SYNC.md](SYNC.md).
   `decisions` filters to `@decision` blocks.
 - **`threads`** summarizes project activity; `--stale` surfaces projects with no
   activity in `--days` (default 14).
+
+**AI answer (key-gated).** When `ANTHROPIC_API_KEY` is set, `search` also generates
+a short, grounded answer to your question with the configured `synth_model` and
+prints it (formatted) **above** the raw hits — the raw results are always kept. It
+answers only from the retrieved notes and says so when they don't cover the
+question. It's automatic when a key is present; `--no-answer` skips it, `--answer`
+forces it (and errors if no key). `--json` never includes the answer. The answer
+is rendered richly on a terminal and as plain markdown when piped.
 
 Every read command supports **`--json`** with a stable schema:
 

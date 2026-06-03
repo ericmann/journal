@@ -30,8 +30,8 @@ disposable, rebuildable cache and is never committed. It all ships as one static
 binary.
 
 - 📝 **Frictionless capture** — append a timestamped note inline, in your editor, or from stdin; auto-committed.
-- 🔎 **Local semantic search** — Ollama + `sqlite-vec`, optional LLM reranking. Nothing leaves your machine.
-- 🤖 **AI synthesis** — weekly rollups and decision digests via cloud Claude, in your own voice.
+- 🔎 **Local semantic search** — Ollama + `sqlite-vec`, optional LLM reranking; with an API key, a grounded AI answer on top. Notes never leave your machine for retrieval.
+- 🤖 **AI synthesis** — daily/weekly rollups and decision digests via cloud Claude, in your own voice.
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
 - 🔌 **Integrations** — an MCP server exposes search/recent/decisions to Claude Desktop and Claude Code.
 
@@ -140,9 +140,9 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal init [path]` | Scaffold (or upgrade) a journal repo |
 | `journal capture [text]` | Append a timestamped note (inline / editor / stdin) |
 | `journal index [--watch]` | Embed changed notes; `--watch` runs continuously |
-| `journal search <query>` | Semantic search with citations |
+| `journal search <query>` | Semantic search with citations (+ a grounded AI answer when a key is set) |
 | `journal recent` · `decisions` · `threads` | Metadata views (newest-first, `@decision`, project activity) |
-| `journal synth weekly\|decisions\|stale` | AI synthesis via cloud Claude |
+| `journal synth weekly\|daily\|decisions\|stale` | AI synthesis via cloud Claude |
 | `journal sync` | Back up to / pull from a git remote (opt-in) |
 | `journal doctor` | Health-check Ollama, models, the index |
 | `journal mcp` | MCP server for Claude Desktop / Claude Code |
