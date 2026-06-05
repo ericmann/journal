@@ -14,9 +14,10 @@ journal synth stale --days 21        # surface threads idle > 21 days
 ```
 
 Kinds: **`weekly`** (ISO week → `reflections/YYYY-Www.md`), **`daily`** (one day,
-`--date` or today → `reflections/daily-YYYY-MM-DD.md`), **`decisions`** (a `@decision`
-rollup; `--project` appends to that project's `_index.md`), and **`stale`** (threads
-idle beyond `--days`). A daily cron at, say, 23:55 can summarize the day with
+`--date` or today → `reflections/daily-YYYY-MM-DD.md`), **`meetings`** (meeting
+transcripts over the last `--days`, default **7** → `reflections/meetings-YYYY-MM-DD.md`;
+see [QUILL.md](QUILL.md)), **`decisions`** (a `@decision` rollup; `--project` appends
+to that project's `_index.md`), and **`stale`** (threads idle beyond `--days`). A daily cron at, say, 23:55 can summarize the day with
 `journal synth daily --write` (or yesterday at 00:05 via
 `--date "$(date -v-1d +%F)"` on macOS / `--date "$(date -d yesterday +%F)"` on Linux).
 

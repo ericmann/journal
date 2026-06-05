@@ -54,10 +54,17 @@ journal recent  [--tag t] [--project slug] [--since 1w] [--json]
 journal decisions [--project slug] [--since 4w] [--json]
 journal threads [--stale] [--days 14] [--json]
 journal sync    [--dry-run]                      # back up notes to/from the git remote
-journal synth   weekly|daily|decisions|stale [--dry-run] [--write] [--project slug] [--days 14] [--date YYYY-MM-DD]
+journal synth   weekly|daily|meetings|decisions|stale [--dry-run] [--write] [--project slug] [--days N] [--date YYYY-MM-DD]
+journal quill-sync [--full] [--db path]          # pull Quill meeting transcripts into transcripts/
+journal meetings [--json]                         # recent meeting transcripts, newest first
 journal doctor  [--json]                          # health checks
 journal mcp     [--repo path]                     # MCP server (stdio) for Claude clients
 ```
+
+Meeting transcripts (via [Quill](QUILL.md)) are indexed as a separate `transcript`
+source. Filter search with `--source notes|transcript|all`, list them with
+`journal meetings`, and digest them with `journal synth meetings`. The MCP server
+mirrors this: a `source` param on `search` and a `meetings` tool.
 
 `journal mcp` exposes `search`/`recent`/`decisions`/`threads`/`capture` as MCP
 tools (same JSON as `--json`) — see [INTEGRATIONS.md](INTEGRATIONS.md) §3b for the

@@ -299,6 +299,32 @@ and keep the search index fresh.
   `install.sh` covers Linux/macOS without a package manager. The repo went public
   to make release assets downloadable unauthenticated.
 
+## v2.0.0 — Quill / meeting-transcript integration
+
+- **Pull, not push.** Quill stores meetings in a local SQLite DB and exposes no
+  file export, so journal *pulls* (`quill-sync`) and renders Markdown into a
+  gitignored `transcripts/` landing zone; the existing watcher/index/search/synth
+  pipeline then treats them as a `transcript` source. The data flow was corrected
+  from an initial (wrong) "Quill writes files we watch" assumption after checking
+  the app's actual behavior.
+- **Read-only, defensive, one adapter.** The Quill schema is app-internal,
+  undocumented, and actively changing (Prisma, 150+ migrations). All access lives
+  behind `internal/quill` (a temp-copy read-only open via the existing ncruces
+  driver — no new deps), parsing defensively (dynamic column selection, tolerant
+  JSON, skip+warn on bad rows). Verified the real `audio_transcript` shape against
+  a recorded meeting: an object with `blocks[]` of `{text, speaker_id}`;
+  `speaker_id` resolves to a contact name via `ContactMeeting`, else a stable
+  "Speaker N" label.
+- **Platform reality.** Quill is macOS/Windows only; `quill-sync` errors cleanly
+  elsewhere. `transcripts/` and the index are gitignored/per-machine, so transcript
+  search is per-machine; a `.qm` manual-import path is the cross-platform escape
+  hatch.
+- **Store schema v2 in place.** Added a `source` column via `ALTER TABLE` (default
+  `note`) so existing indexes upgrade without a rebuild.
+- **Non-destructive `init` upgrade.** Re-running `init` now merges missing config
+  keys (preserving user values), scaffolds new dirs, bumps `schema_version` to 2.0,
+  and reports a change summary — a general mechanism for any future addition.
+
 ## Tooling / process
 
 ### Commit signing

@@ -40,6 +40,21 @@ git_autocommit_sign: false             # sign those commits
 # --- Remote backup (opt-in; see docs/SYNC.md) ---
 sync_enabled: false                    # `journal sync` does nothing until true
 sync_conflict: manual                  # manual | prefer-upstream | prefer-local
+
+# --- Meeting transcripts / Quill (see docs/QUILL.md) ---
+transcripts:
+  enabled: true                        # gate the whole transcript feature
+  path: transcripts                    # gitignored landing zone (repo-relative)
+  format: auto                         # auto | markdown | txt
+  auto_index: true                     # embed new transcripts as the watcher sees them
+  tag: meeting                         # tag applied to every transcript chunk
+  log_captures: false                  # daily breadcrumb when a transcript is indexed
+quill:
+  enabled: true                        # gate `journal quill-sync`
+  db_path: ~/Library/Application Support/Quill/quill.db  # macOS; Windows: ~/AppData/Roaming/Quill/quill.db
+  accept_qm_imports: true              # render dropped-in .qm files
+
+schema_version: "2.0"                  # config schema; `journal init` upgrades older repos
 ```
 
 ## Key reference
@@ -62,6 +77,16 @@ sync_conflict: manual                  # manual | prefer-upstream | prefer-local
 | `git_autocommit_sign` | `false` | Sign auto-commits. Off avoids signing prompts in an unattended watcher. |
 | `sync_enabled` | `false` | Gates `journal sync`. **Opt-in** — see [SYNC.md](SYNC.md). |
 | `sync_conflict` | `manual` | How `sync` resolves a divergence: `manual` aborts and asks you to resolve (never discards work), `prefer-upstream` takes the remote on conflict, `prefer-local` keeps local. See [SYNC.md](SYNC.md). |
+| `transcripts.enabled` | `true` | Gates the meeting-transcript feature (a no-op until a transcript exists). |
+| `transcripts.path` | `transcripts` | Repo-relative, gitignored landing zone for rendered transcripts. |
+| `transcripts.format` | `auto` | Transcript parse hint: `auto`/`markdown`/`txt`. |
+| `transcripts.auto_index` | `true` | Embed new/modified transcripts as the watcher detects them. |
+| `transcripts.tag` | `meeting` | Tag applied to every transcript chunk (find them via `--tag`/`--source`). |
+| `transcripts.log_captures` | `false` | Append a daily breadcrumb note when a transcript is indexed. |
+| `quill.enabled` | `true` | Gates `journal quill-sync`. |
+| `quill.db_path` | OS default | Quill SQLite DB (read-only). `~` expands. macOS/Windows only — see [QUILL.md](QUILL.md). |
+| `quill.accept_qm_imports` | `true` | Render manually-dropped `.qm` files in the landing zone. |
+| `schema_version` | `2.0` | Config schema version; `journal init` upgrades older repos in place. |
 
 ## Secrets
 

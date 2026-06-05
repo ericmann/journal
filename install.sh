@@ -10,7 +10,7 @@
 #   less install.sh && sh install.sh
 #
 # Environment overrides:
-#   JOURNAL_VERSION=v1.4.1   install a specific tag (default: latest release)
+#   JOURNAL_VERSION=v2.0.0   install a specific tag (default: latest release)
 #   PREFIX=$HOME/.local      install under $PREFIX/bin (default: /usr/local, else ~/.local)
 #
 # The whole script is wrapped in main() and only invoked on the final line, so a

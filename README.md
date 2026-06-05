@@ -32,8 +32,9 @@ binary.
 - 📝 **Frictionless capture** — append a timestamped note inline, in your editor, or from stdin; auto-committed.
 - 🔎 **Local semantic search** — Ollama + `sqlite-vec`, optional LLM reranking; with an API key, a grounded AI answer on top. Notes never leave your machine for retrieval.
 - 🤖 **AI synthesis** — daily/weekly rollups and decision digests via cloud Claude, in your own voice.
+- 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); search, list, and digest them. *(v2.0; Quill is macOS/Windows.)*
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
-- 🔌 **Integrations** — an MCP server exposes search/recent/decisions to Claude Desktop and Claude Code.
+- 🔌 **Integrations** — an MCP server exposes search/recent/decisions/meetings to Claude Desktop and Claude Code.
 
 ---
 
@@ -44,6 +45,8 @@ binary.
   (all local). Default: `ollama pull qwen3-embedding:4b`. Verify with `journal doctor`.
 - **An Anthropic API key** — *only* for `journal synth`. Set `ANTHROPIC_API_KEY`;
   never stored in config. Skip it if you don't synthesize.
+- **[Quill](https://www.quillmeetings.com)** *(optional, macOS/Windows)* — only for
+  `journal quill-sync` to pull meeting transcripts. Everything else works without it.
 
 Capture, the watcher, and backup work without Ollama; only the embedding-backed
 features (index, search, synth) need it.
@@ -140,9 +143,10 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal init [path]` | Scaffold (or upgrade) a journal repo |
 | `journal capture [text]` | Append a timestamped note (inline / editor / stdin) |
 | `journal index [--watch]` | Embed changed notes; `--watch` runs continuously |
-| `journal search <query>` | Semantic search with citations (+ a grounded AI answer when a key is set) |
-| `journal recent` · `decisions` · `threads` | Metadata views (newest-first, `@decision`, project activity) |
-| `journal synth weekly\|daily\|decisions\|stale` | AI synthesis via cloud Claude |
+| `journal search <query>` | Semantic search with citations (+ a grounded AI answer when a key is set); `--source notes\|transcript\|all` |
+| `journal recent` · `decisions` · `threads` · `meetings` | Metadata views (newest-first, `@decision`, project activity, transcripts) |
+| `journal quill-sync` | Pull Quill meeting transcripts into `transcripts/` ([Quill](docs/QUILL.md)) |
+| `journal synth weekly\|daily\|meetings\|decisions\|stale` | AI synthesis via cloud Claude |
 | `journal sync` | Back up to / pull from a git remote (opt-in) |
 | `journal doctor` | Health-check Ollama, models, the index |
 | `journal mcp` | MCP server for Claude Desktop / Claude Code |
@@ -156,6 +160,7 @@ Full flags, the note format, and search internals are in [**Usage**](docs/USAGE.
 | Guide | Contents |
 | --- | --- |
 | [Usage](docs/USAGE.md) | Capture conventions, command surface, retrieval, the watcher, auto-commit |
+| [Meeting transcripts (Quill)](docs/QUILL.md) | Pulling Quill meetings into the index — the v2.0 feature (macOS/Windows) |
 | [Configuration](docs/CONFIGURATION.md) | Every `config.yaml` key, defaults, and secrets |
 | [Synthesis](docs/SYNTHESIS.md) | `journal synth` and writing in your voice |
 | [Remote backup](docs/SYNC.md) | `journal sync`: enabling, conflict modes, cron/launchd/systemd |
@@ -182,6 +187,8 @@ behind interfaces with deterministic fakes, and integration tests use a temp-fil
 ---
 
 ## License
+
+Changes are tracked in [`CHANGELOG.md`](CHANGELOG.md).
 
 MIT © Displace Technologies, LLC ([displace.tech](https://displace.tech)). See
 [`LICENSE`](LICENSE). The original technical design and build prompt live in
