@@ -42,10 +42,10 @@ func ParseQM(content string) (Meeting, error) {
 	if raw, ok := obj["tags"]; ok {
 		m.Tags = parseStringList(rawJSON(raw))
 	}
-	for _, key := range []string{"audio_transcript", "transcript", "segments"} {
+	for _, key := range []string{"audio_transcript", "transcript", "segments", "blocks"} {
 		if raw, ok := obj[key]; ok {
 			if segs := parseSegments(rawJSON(raw)); len(segs) > 0 {
-				m.Transcript = segs
+				m.Transcript = labelSpeakers(segs, nil) // no contact map for .qm
 				break
 			}
 		}

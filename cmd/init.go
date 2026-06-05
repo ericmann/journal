@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ericmann/journal/internal/config"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // syncScript is the cron-friendly wrapper dropped into .journal/. readmeTemplate
@@ -47,8 +49,14 @@ var initCmd = &cobra.Command{
 		out := cmd.OutOrStdout()
 		if res.created {
 			fmt.Fprintf(out, "initialized journal repo at %s\n", root)
+		} else if len(res.changes) > 0 {
+			fmt.Fprintf(out, "upgraded journal repo at %s:\n", root)
+			for _, c := range res.changes {
+				fmt.Fprintf(out, "  • %s\n", c)
+			}
+			fmt.Fprintln(out, "  (your notes and existing config values are untouched)")
 		} else {
-			fmt.Fprintf(out, "upgraded journal repo at %s (config left untouched)\n", root)
+			fmt.Fprintf(out, "journal repo at %s already up to date (schema %s)\n", root, config.SchemaVersion)
 		}
 		rel, err := filepath.Rel(root, res.readmePath)
 		if err != nil {
@@ -77,65 +85,162 @@ const syncScriptName = "sync.sh"
 const voiceExampleName = "VOICE_PROFILE.example.md"
 
 // initResult reports what initRepo did. created is true only on a fresh repo
-// (config newly written); readmePath is where the usage/cron README landed.
+// (config newly written); readmePath is where the usage/cron README landed. On
+// an upgrade, changes lists what was added and schemaFrom is the prior schema.
 type initResult struct {
 	created    bool
 	readmePath string
+	changes    []string
+	schemaFrom string
 }
 
-// initRepo creates (or upgrades) a journal repo: the .journal directory with a
-// default config.yaml and the daily/projects/reflections skeleton, a .gitignore
-// entry for the index, the cron sync wrapper, and a usage README. It never
-// overwrites an existing config.yaml, so re-running it on an initialized repo
-// safely "upgrades" it with the latest script and docs. created is false when
-// config already existed.
+// initRepo creates (or upgrades) a journal repo non-destructively. On a fresh
+// repo it writes the full default config + skeleton. On an existing repo it
+// applies only what's missing — new directories, new config keys (with their
+// defaults, preserving the user's values), gitignore entries — bumps the config
+// schema to the current version, and reports the changes. Managed files (sync
+// script, README, voice example) are always refreshed; the user's notes and set
+// config values are never touched.
 func initRepo(root string) (initResult, error) {
 	jdir := filepath.Join(root, config.JournalDir)
+	cfgPath := filepath.Join(jdir, config.ConfigFile)
+	_, statErr := os.Stat(cfgPath)
+	configExisted := statErr == nil
+
+	var priorKeys map[string]bool
+	var priorSchema string
+	if configExisted {
+		priorKeys, priorSchema = readConfigKeys(cfgPath)
+	}
+
+	var res initResult
+
+	// Directories: create what's missing. On an upgrade, note newly-created ones.
 	for _, dir := range []string{
 		filepath.Join(jdir, "index"),
 		filepath.Join(root, "daily"),
 		filepath.Join(root, "projects"),
 		filepath.Join(root, "reflections"),
 		filepath.Join(root, "docs"),
+		filepath.Join(root, "transcripts"),
 	} {
+		_, derr := os.Stat(dir)
+		newlyCreated := os.IsNotExist(derr)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return initResult{}, fmt.Errorf("creating %s: %w", dir, err)
 		}
+		if configExisted && newlyCreated {
+			rel, _ := filepath.Rel(root, dir)
+			res.changes = append(res.changes, "created "+filepath.ToSlash(rel)+"/")
+		}
 	}
 
-	if err := ensureGitignore(root); err != nil {
+	added, err := ensureGitignore(root)
+	if err != nil {
 		return initResult{}, err
 	}
+	if configExisted {
+		for _, e := range added {
+			res.changes = append(res.changes, "gitignored "+e)
+		}
+	}
 
-	// The sync script, README, and voice-profile example are generated, managed
-	// files: always refresh them so an upgrade picks up the latest version. (The
-	// example never clobbers the user's real docs/VOICE_PROFILE.md.)
+	// Managed files: always refresh (the example never clobbers a real profile).
 	if err := os.WriteFile(filepath.Join(jdir, syncScriptName), []byte(syncScript), 0o755); err != nil {
 		return initResult{}, fmt.Errorf("writing sync script: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "docs", voiceExampleName), []byte(voiceProfileExample), 0o644); err != nil {
 		return initResult{}, fmt.Errorf("writing voice profile example: %w", err)
 	}
-	readmePath, err := writeReadme(root)
+	readmePath, rerr := writeReadme(root)
+	if rerr != nil {
+		return initResult{}, rerr
+	}
+	res.readmePath = readmePath
+
+	if !configExisted {
+		def := config.Default()
+		data, err := def.Marshal()
+		if err != nil {
+			return initResult{}, err
+		}
+		if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
+			return initResult{}, fmt.Errorf("writing config: %w", err)
+		}
+		res.created = true
+		return res, nil
+	}
+
+	// Upgrade: re-marshal the loaded config (defaults fill missing keys; the
+	// user's values are preserved) and bump the schema version.
+	cfg, err := config.Load(root)
 	if err != nil {
 		return initResult{}, err
 	}
-
-	res := initResult{readmePath: readmePath}
-	cfgPath := filepath.Join(jdir, config.ConfigFile)
-	if _, err := os.Stat(cfgPath); err == nil {
-		return res, nil // do not clobber an existing committed config
-	}
-	def := config.Default()
-	data, err := def.Marshal()
+	cfg.SchemaVer = config.SchemaVersion
+	data, err := cfg.Marshal()
 	if err != nil {
 		return initResult{}, err
 	}
 	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
 		return initResult{}, fmt.Errorf("writing config: %w", err)
 	}
-	res.created = true
+	if newKeys := addedConfigKeys(priorKeys); len(newKeys) > 0 {
+		res.changes = append(res.changes, "added config keys: "+strings.Join(newKeys, ", "))
+	}
+	res.schemaFrom = priorSchema
+	if priorSchema != config.SchemaVersion {
+		res.changes = append(res.changes, fmt.Sprintf("schema_version: %s → %s", schemaLabel(priorSchema), config.SchemaVersion))
+	}
 	return res, nil
+}
+
+// readConfigKeys returns the top-level keys present in an existing config file
+// and its schema_version (best-effort; a parse error yields empty sets).
+func readConfigKeys(cfgPath string) (map[string]bool, string) {
+	keys := map[string]bool{}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return keys, ""
+	}
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return keys, ""
+	}
+	for k := range raw {
+		keys[k] = true
+	}
+	schema, _ := raw["schema_version"].(string)
+	return keys, schema
+}
+
+// addedConfigKeys reports default config keys absent from priorKeys (sorted) —
+// the general "what's new" diff that works for any future config addition.
+func addedConfigKeys(priorKeys map[string]bool) []string {
+	def := config.Default()
+	data, err := def.Marshal()
+	if err != nil {
+		return nil
+	}
+	var full map[string]any
+	if err := yaml.Unmarshal(data, &full); err != nil {
+		return nil
+	}
+	var added []string
+	for k := range full {
+		if !priorKeys[k] {
+			added = append(added, k)
+		}
+	}
+	sort.Strings(added)
+	return added
+}
+
+func schemaLabel(s string) string {
+	if s == "" {
+		return "(pre-2.0)"
+	}
+	return s
 }
 
 // writeReadme writes the usage/cron guide. It prefers a discoverable top-level
@@ -161,31 +266,54 @@ func writeReadme(root string) (string, error) {
 	return jdirReadme, nil
 }
 
-// ensureGitignore makes sure the disposable index is ignored.
-const gitignoreEntry = ".journal/index/"
+// gitignoreEntries are the paths journal manages in .gitignore: the disposable
+// vector index and the ephemeral transcript landing zone (rebuilt from Quill).
+var gitignoreEntries = []struct{ comment, entry string }{
+	{"disposable, rebuildable vector index", ".journal/index/"},
+	{"ephemeral meeting transcripts (re-synced from Quill)", "transcripts/"},
+}
 
-func ensureGitignore(root string) error {
+// ensureGitignore appends any managed entries not already present, returning the
+// entries it added.
+func ensureGitignore(root string) ([]string, error) {
 	path := filepath.Join(root, ".gitignore")
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
-		return err
+		return nil, err
 	}
+	present := map[string]bool{}
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == gitignoreEntry {
-			return nil
+		present[strings.TrimSpace(line)] = true
+	}
+
+	var toAdd []struct{ comment, entry string }
+	for _, e := range gitignoreEntries {
+		if !present[e.entry] {
+			toAdd = append(toAdd, e)
 		}
 	}
+	if len(toAdd) == 0 {
+		return nil, nil
+	}
+
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
-	prefix := ""
+	var b strings.Builder
 	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
-		prefix = "\n"
+		b.WriteString("\n")
 	}
-	_, err = f.WriteString(prefix + "# disposable, rebuildable vector index\n" + gitignoreEntry + "\n")
-	return err
+	var added []string
+	for _, e := range toAdd {
+		fmt.Fprintf(&b, "# %s\n%s\n", e.comment, e.entry)
+		added = append(added, e.entry)
+	}
+	if _, err := f.WriteString(b.String()); err != nil {
+		return nil, err
+	}
+	return added, nil
 }
 
 func init() {

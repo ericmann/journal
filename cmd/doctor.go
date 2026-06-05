@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
+	"github.com/ericmann/journal/internal/quill"
 	"github.com/ericmann/journal/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -83,6 +86,11 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 
 	checks = append(checks, storeCheck(ctx, cfg))
 
+	if cfg.Transcripts.Enabled {
+		checks = append(checks, transcriptsCheck(cfg))
+		checks = append(checks, quillCheck(ctx, cfg))
+	}
+
 	// Informational: the synthesis key is optional (only Phase 5 needs it) and
 	// never affects the overall health verdict.
 	if _, kerr := config.AnthropicAPIKey(); kerr != nil {
@@ -156,6 +164,59 @@ func storeCheck(ctx context.Context, cfg *config.Config) check {
 		detail += " (run `journal index`)"
 	}
 	return check{Name: "index", OK: true, Detail: detail}
+}
+
+// transcriptsCheck confirms the transcript landing zone exists and is writable.
+func transcriptsCheck(cfg *config.Config) check {
+	dir := cfg.TranscriptsAbsPath()
+	info, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		return check{Name: "transcripts", OK: false, Detail: dir + " missing — run `journal init` to scaffold it"}
+	}
+	if err != nil {
+		return check{Name: "transcripts", OK: false, Detail: err.Error()}
+	}
+	if !info.IsDir() {
+		return check{Name: "transcripts", OK: false, Detail: dir + " is not a directory"}
+	}
+	probe := filepath.Join(dir, ".journal-write-probe")
+	if werr := os.WriteFile(probe, []byte("ok"), 0o644); werr != nil {
+		return check{Name: "transcripts", OK: false, Detail: dir + " is not writable: " + werr.Error()}
+	}
+	_ = os.Remove(probe)
+	return check{Name: "transcripts", OK: true, Detail: dir + " (writable)"}
+}
+
+// quillCheck reports on the Quill database (informational — never fails the
+// verdict, since Quill is macOS/Windows-only and optional).
+func quillCheck(ctx context.Context, cfg *config.Config) check {
+	if !cfg.Quill.Enabled {
+		return check{Name: "quill", OK: true, Detail: "disabled (quill.enabled: false)"}
+	}
+	dbPath := cfg.QuillDBPath()
+	if dbPath == "" {
+		return check{Name: "quill", OK: true, Detail: "no database configured — Quill runs on macOS/Windows only; use .qm import on Linux"}
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		return check{Name: "quill", OK: true, Detail: fmt.Sprintf("no database at %s (Quill not installed here?) — set quill.db_path or use .qm import", dbPath)}
+	}
+	r, err := quill.Open(dbPath)
+	if err != nil {
+		return check{Name: "quill", OK: true, Detail: "found but unreadable: " + err.Error()}
+	}
+	defer r.Close()
+	count, cerr := r.Count(ctx)
+	if cerr != nil {
+		return check{Name: "quill", OK: true, Detail: "found at " + dbPath + " but query failed: " + cerr.Error()}
+	}
+	synced, _ := quill.LoadWatermark(filepath.Join(cfg.Root(), config.JournalDir))
+	pending := "up to date"
+	if !synced.IsZero() {
+		pending = "last synced " + synced.UTC().Format("2006-01-02")
+	} else if count > 0 {
+		pending = fmt.Sprintf("%d meeting(s) not yet synced — run `journal quill-sync`", count)
+	}
+	return check{Name: "quill", OK: true, Detail: fmt.Sprintf("%s: %d meeting(s); %s", dbPath, count, pending)}
 }
 
 func renderDoctor(out io.Writer, rep doctorReport, jsonMode bool) {

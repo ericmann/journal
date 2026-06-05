@@ -169,11 +169,63 @@ func (r *dbReader) Meetings(ctx context.Context, since time.Time, warnf func(str
 	}
 	rows.Close()
 
-	// Now fetch each meeting's AI note (separate queries, cursor closed).
+	// Now fetch each meeting's AI note and resolve speaker labels (separate
+	// queries, cursor closed).
 	for i := range out {
 		out[i].Notes = r.latestNote(ctx, out[i].ID)
+		out[i].Transcript = labelSpeakers(out[i].Transcript, r.speakerNames(ctx, out[i].ID))
 	}
 	return out, nil
+}
+
+// speakerNames maps a meeting's Quill speaker_id tokens to contact names via
+// ContactMeeting/Contact, best-effort (empty if those tables/columns are absent).
+func (r *dbReader) speakerNames(ctx context.Context, meetingID string) map[string]string {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT cm.speaker_id, c.name
+		FROM "ContactMeeting" cm JOIN "Contact" c ON c.id = cm.contact_id
+		WHERE cm.meeting_id = ? AND c.name IS NOT NULL AND c.name != ''`, meetingID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	names := map[string]string{}
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err == nil {
+			names[id] = name
+		}
+	}
+	return names
+}
+
+// labelSpeakers replaces raw speaker_id tokens with contact names where known,
+// and gives the rest stable "Speaker N" labels in first-appearance order so the
+// rendered transcript reads cleanly even without contact resolution.
+func labelSpeakers(segs []Segment, names map[string]string) []Segment {
+	if len(segs) == 0 {
+		return segs
+	}
+	label := map[string]string{}
+	next := 1
+	for i, s := range segs {
+		id := s.Speaker
+		if id == "" {
+			continue
+		}
+		l, ok := label[id]
+		if !ok {
+			if name, found := names[id]; found {
+				l = name
+			} else {
+				l = fmt.Sprintf("Speaker %d", next)
+				next++
+			}
+			label[id] = l
+		}
+		segs[i].Speaker = l
+	}
+	return segs
 }
 
 // latestNote returns the most recent non-empty AI note body for a meeting, or ""
@@ -341,10 +393,11 @@ func parseSegments(raw string) []Segment {
 	if segs := segmentsFromArray([]byte(raw)); segs != nil {
 		return segs
 	}
-	// Shape B: object wrapping the array under a common key.
+	// Shape B: object wrapping the array under a common key. Quill (verified)
+	// uses {"blocks":[{"text","speaker_id",...}]}.
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &obj); err == nil {
-		for _, key := range []string{"segments", "transcript", "turns", "utterances", "results"} {
+		for _, key := range []string{"blocks", "segments", "transcript", "turns", "utterances", "results"} {
 			if v, ok := obj[key]; ok {
 				if segs := segmentsFromArray(v); segs != nil {
 					return segs

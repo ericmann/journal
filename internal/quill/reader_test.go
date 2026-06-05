@@ -24,13 +24,19 @@ func fixtureDB(t *testing.T) string {
 			participants TEXT, tags TEXT, audio_transcript TEXT,
 			manualTitle TEXT, llmTitle TEXT, eventTitle TEXT, title TEXT)`,
 		`CREATE TABLE "Note" (id TEXT PRIMARY KEY, meeting_id TEXT, body TEXT, createdAt TEXT)`,
+		`CREATE TABLE "Contact" (id TEXT PRIMARY KEY, name TEXT)`,
+		`CREATE TABLE "ContactMeeting" (contact_id TEXT, speaker_id TEXT, meeting_id TEXT)`,
+		// Real Quill shape: audio_transcript is an object with a blocks[] array,
+		// each block {text, speaker_id}; speaker_id resolves via ContactMeeting.
 		`INSERT INTO "Meeting" VALUES('m1','2026-06-05T14:00:00Z','2026-06-05T14:30:00Z','standup',
 			'["Alice","Bob"]','["weekly"]',
-			'[{"speaker":"Alice","text":"Kickoff."},{"speaker":"Bob","text":"On it."}]',
+			'{"blocks":[{"text":"Kickoff.","speaker_id":"SPK-a"},{"text":"On it.","speaker_id":"SPK-b"}]}',
 			NULL,'Weekly Sync',NULL,'Calendar Title')`,
 		`INSERT INTO "Meeting" VALUES('m0','2026-06-01T09:00:00Z','2026-06-01T09:15:00Z','standup',
 			'[]','[]','bad-not-json',NULL,NULL,NULL,'Older Meeting')`,
 		`INSERT INTO "Note" VALUES('n1','m1','## Summary\n- shipped the thing','2026-06-05T15:00:00Z')`,
+		`INSERT INTO "Contact" VALUES('c-a','Alice')`,
+		`INSERT INTO "ContactMeeting" VALUES('c-a','SPK-a','m1')`,
 	}
 	for _, q := range stmts {
 		if _, err := db.Exec(q); err != nil {
@@ -65,8 +71,15 @@ func TestReaderParsesMeetings(t *testing.T) {
 	if len(m.Participants) != 2 || m.Participants[0] != "Alice" {
 		t.Errorf("participants = %v", m.Participants)
 	}
-	if len(m.Transcript) != 2 || m.Transcript[0].Speaker != "Alice" || m.Transcript[0].Text != "Kickoff." {
+	if len(m.Transcript) != 2 || m.Transcript[0].Text != "Kickoff." {
 		t.Errorf("transcript = %+v", m.Transcript)
+	}
+	// SPK-a resolves to the contact name; the unmapped speaker gets a stable label.
+	if m.Transcript[0].Speaker != "Alice" {
+		t.Errorf("speaker[0] = %q, want resolved name Alice", m.Transcript[0].Speaker)
+	}
+	if m.Transcript[1].Speaker != "Speaker 1" {
+		t.Errorf("speaker[1] = %q, want fallback 'Speaker 1' (first unmapped speaker)", m.Transcript[1].Speaker)
 	}
 	if !strings.Contains(m.Notes, "shipped the thing") {
 		t.Errorf("notes = %q", m.Notes)

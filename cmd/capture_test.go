@@ -260,7 +260,7 @@ func TestInitRepoCreatesSkeletonAndConfig(t *testing.T) {
 		filepath.Join(".journal", "index"),
 		filepath.Join(".journal", "sync.sh"),
 		filepath.Join("docs", "VOICE_PROFILE.example.md"),
-		"daily", "projects", "reflections", ".gitignore",
+		"daily", "projects", "reflections", "transcripts", ".gitignore",
 	} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Errorf("missing %s: %v", p, err)
@@ -286,6 +286,61 @@ func TestInitRepoCreatesSkeletonAndConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(readme), root) {
 		t.Error("README cron examples do not reference the repo path")
+	}
+}
+
+func TestInitRepoUpgradesV1ConfigToV2(t *testing.T) {
+	root := t.TempDir()
+	// Simulate a pre-v2 repo: a config with only old keys (no transcripts/quill/
+	// schema_version), and a user-customized value to preserve.
+	jdir := filepath.Join(root, ".journal")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldCfg := "embed_model: my-model\nembed_dim: 1024\nchunk_strategy: heading\n" +
+		"ollama_base_url: http://localhost:11434\nstore_path: .journal/index/journal.db\n" +
+		"synth_model: claude-sonnet-4-6\nsynth_max_tokens: 4096\nsync_conflict: manual\n"
+	if err := os.WriteFile(filepath.Join(jdir, "config.yaml"), []byte(oldCfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := initRepo(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.created {
+		t.Error("existing config should be an upgrade, not a fresh create")
+	}
+	if len(res.changes) == 0 {
+		t.Error("upgrade should report changes")
+	}
+
+	// transcripts/ scaffolded and gitignored.
+	if _, err := os.Stat(filepath.Join(root, "transcripts")); err != nil {
+		t.Errorf("transcripts/ not scaffolded: %v", err)
+	}
+	gi, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if !strings.Contains(string(gi), "transcripts/") {
+		t.Errorf("transcripts/ not gitignored:\n%s", gi)
+	}
+
+	// Config now has the new keys + schema bump, and preserved the user's value.
+	data, _ := os.ReadFile(filepath.Join(jdir, "config.yaml"))
+	for _, want := range []string{"transcripts:", "quill:", "schema_version: \"2.0\"", "embed_model: my-model", "embed_dim: 1024"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("upgraded config missing/changed %q:\n%s", want, data)
+		}
+	}
+	// And it loads + validates.
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatalf("upgraded config should load: %v", err)
+	}
+	if cfg.EmbedDim != 1024 || cfg.EmbedModel != "my-model" {
+		t.Errorf("user values not preserved: dim=%d model=%s", cfg.EmbedDim, cfg.EmbedModel)
+	}
+	if !cfg.Transcripts.Enabled {
+		t.Error("transcripts should default enabled after upgrade")
 	}
 }
 
