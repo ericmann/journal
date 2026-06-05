@@ -24,7 +24,7 @@ func writeQuillFixture(t *testing.T) string {
 			manualTitle TEXT, llmTitle TEXT, eventTitle TEXT, title TEXT)`,
 		`CREATE TABLE "Note" (id TEXT PRIMARY KEY, meeting_id TEXT, body TEXT, createdAt TEXT)`,
 		`INSERT INTO "Meeting" VALUES('m1','2026-06-05T14:00:00Z','2026-06-05T14:30:00Z','standup',
-			'["Alice"]','["weekly"]','[{"speaker":"Alice","text":"Kickoff."}]',NULL,'Weekly Sync',NULL,NULL)`,
+			'["Alice"]','["weekly"]','{"blocks":[{"text":"Kickoff.","speaker_id":"SPK-a"}]}',NULL,'Weekly Sync',NULL,NULL)`,
 		`INSERT INTO "Note" VALUES('n1','m1','## Summary\n- shipped','2026-06-05T15:00:00Z')`,
 	} {
 		if _, err := db.Exec(q); err != nil {
@@ -50,7 +50,7 @@ func TestRunQuillSyncRendersAndWatermarks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("transcript not written: %v", err)
 	}
-	if !strings.Contains(string(got), "# Weekly Sync") || !strings.Contains(string(got), "**Alice:** Kickoff.") {
+	if !strings.Contains(string(got), "# Weekly Sync") || !strings.Contains(string(got), "**Speaker 1:** Kickoff.") {
 		t.Errorf("rendered transcript wrong:\n%s", got)
 	}
 
