@@ -57,7 +57,12 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Result, error) {
 		opts.Now = time.Now()
 	}
 	if opts.Days <= 0 {
-		opts.Days = 14
+		// Meetings digests default to a tighter window than stale-thread review.
+		if opts.Kind == KindMeetings {
+			opts.Days = 7
+		} else {
+			opts.Days = 14
+		}
 	}
 
 	var res Result
@@ -72,8 +77,10 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Result, error) {
 		res.Prompt, res.OutputPath, err = r.decisions(ctx, opts)
 	case KindStale:
 		res.Prompt, res.OutputPath, err = r.stale(ctx, opts)
+	case KindMeetings:
+		res.Prompt, res.OutputPath, err = r.meetings(ctx, opts)
 	default:
-		return res, fmt.Errorf("unknown synth kind %q (want weekly|daily|decisions|stale)", opts.Kind)
+		return res, fmt.Errorf("unknown synth kind %q (want weekly|daily|meetings|decisions|stale)", opts.Kind)
 	}
 	if err != nil {
 		return res, err
@@ -138,6 +145,18 @@ func (r *Runner) daily(ctx context.Context, opts Options) (prompt, outPath strin
 	chunks = chronological(chunks)
 	prompt = AssembleDaily(label, r.voice, chunks)
 	outPath = filepath.ToSlash(filepath.Join("reflections", "daily-"+label+".md"))
+	return prompt, outPath, nil
+}
+
+func (r *Runner) meetings(ctx context.Context, opts Options) (prompt, outPath string, err error) {
+	start := opts.Now.AddDate(0, 0, -opts.Days)
+	chunks, err := r.store.Recent(ctx, store.Filter{Source: store.SourceTranscript, Since: start}, 0)
+	if err != nil {
+		return "", "", err
+	}
+	chunks = chronological(chunks)
+	prompt = AssembleMeetings(opts.Days, r.voice, chunks)
+	outPath = filepath.ToSlash(filepath.Join("reflections", "meetings-"+opts.Now.Format("2006-01-02")+".md"))
 	return prompt, outPath, nil
 }
 
@@ -223,6 +242,8 @@ func draftHeader(kind Kind, now, day time.Time) string {
 		title = "# Daily summary — " + day.Format("2006-01-02")
 	case KindStale:
 		title = "# Stale-thread review — " + now.Format("2006-01-02")
+	case KindMeetings:
+		title = "# Meeting digest — " + now.Format("2006-01-02")
 	default:
 		title = "# Decision rollup — " + now.Format("2006-01-02")
 	}

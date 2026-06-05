@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
@@ -42,6 +43,12 @@ type searchInput struct {
 	Tag     []string `json:"tag,omitempty" jsonschema:"only chunks having all of these tags"`
 	Project string   `json:"project,omitempty" jsonschema:"restrict to this project slug"`
 	Since   string   `json:"since,omitempty" jsonschema:"only notes within this window, e.g. 2w, 14d, 36h"`
+	Source  string   `json:"source,omitempty" jsonschema:"restrict to a source: notes | transcript | all (default all)"`
+}
+
+type meetingsInput struct {
+	K     int    `json:"k,omitempty" jsonschema:"max meetings to return (default 20)"`
+	Since string `json:"since,omitempty" jsonschema:"only meetings within this window, e.g. 2w"`
 }
 
 type recentInput struct {
@@ -110,6 +117,13 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 		return mcpCapture(cfg, in)
 	}))
 
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "meetings",
+		Description: "List recent meeting transcripts (newest first): filename, timestamp, title, and a snippet. Use for 'what meetings do I have notes from'.",
+	}, toolHandler(func(ctx context.Context, in meetingsInput) (string, error) {
+		return mcpMeetings(ctx, cfg, in)
+	}))
+
 	return s.Run(ctx, &mcp.StdioTransport{})
 }
 
@@ -149,7 +163,11 @@ func mcpSearch(ctx context.Context, cfg *config.Config, e embed.Embedder, in sea
 	if strings.TrimSpace(in.Query) == "" {
 		return "", fmt.Errorf("query must not be empty")
 	}
-	f, err := sinceFilter(store.Filter{Tags: in.Tag, Project: in.Project}, in.Since)
+	src, err := parseSourceFilter(in.Source)
+	if err != nil {
+		return "", err
+	}
+	f, err := sinceFilter(store.Filter{Tags: in.Tag, Project: in.Project, Source: src}, in.Since)
 	if err != nil {
 		return "", err
 	}
@@ -158,6 +176,26 @@ func mcpSearch(ctx context.Context, cfg *config.Config, e embed.Embedder, in sea
 		return "", err
 	}
 	return marshalResults(results)
+}
+
+func mcpMeetings(ctx context.Context, cfg *config.Config, in meetingsInput) (string, error) {
+	limit := in.K
+	if limit <= 0 {
+		limit = 20
+	}
+	since, err := parseSince(in.Since)
+	if err != nil {
+		return "", err
+	}
+	var sinceT time.Time
+	if since > 0 {
+		sinceT = now().Add(-since)
+	}
+	meetings, err := recentMeetings(ctx, cfg, sinceT, limit)
+	if err != nil {
+		return "", err
+	}
+	return marshalMeetings(meetings)
 }
 
 func mcpRecent(ctx context.Context, cfg *config.Config, in recentInput) (string, error) {

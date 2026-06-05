@@ -15,6 +15,7 @@ const (
 	KindDaily     Kind = "daily"
 	KindDecisions Kind = "decisions"
 	KindStale     Kind = "stale"
+	KindMeetings  Kind = "meetings"
 )
 
 // renderChunks formats chunks as a stable, citation-friendly note list for a
@@ -111,6 +112,24 @@ func AssembleAnswer(query string, chunks []store.Chunk) string {
 	sb.WriteString("- Output GitHub-flavored markdown (short headings, bold, and bullets are welcome).\n\n")
 	fmt.Fprintf(&sb, "## Question\n\n%s\n\n", strings.TrimSpace(query))
 	sb.WriteString("## Retrieved notes\n\n")
+	sb.WriteString(renderChunks(chunks))
+	return sb.String()
+}
+
+// AssembleMeetings builds the meeting-digest prompt from transcript chunks over
+// a recent window of days.
+func AssembleMeetings(days int, voiceProfile string, chunks []store.Chunk) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "You are digesting meeting transcripts from the last %d days for a developer.\n", days)
+	sb.WriteString("Produce a tight digest the author will skim and act on.\n\n")
+	sb.WriteString("Guidelines:\n")
+	sb.WriteString("- Group by meeting/topic; lead with outcomes.\n")
+	sb.WriteString("- Pull out **decisions**, **action items** (with owner if stated), and **open questions**.\n")
+	sb.WriteString("- Be concise and concrete; preserve names, numbers, and specifics.\n")
+	sb.WriteString("- Cite supporting transcript chunks inline as path:line_start-line_end.\n")
+	sb.WriteString("- Output GitHub-flavored markdown. Do not invent anything not in the transcripts.\n\n")
+	sb.WriteString(voiceSection(voiceProfile))
+	fmt.Fprintf(&sb, "## Meeting transcripts — last %d days\n\n", days)
 	sb.WriteString(renderChunks(chunks))
 	return sb.String()
 }

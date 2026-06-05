@@ -72,6 +72,38 @@ func TestAssembleAnswerGolden(t *testing.T) {
 	goldenCheck(t, "answer", AssembleAnswer("What did we decide about the dev fund?", sampleChunks()))
 }
 
+func TestAssembleMeetingsGolden(t *testing.T) {
+	goldenCheck(t, "meetings", AssembleMeetings(7, "", sampleChunks()))
+}
+
+func TestMeetingsDefaultsToSevenDays(t *testing.T) {
+	fake := &Fake{}
+	r, s, _ := newRunner(t, fake)
+	// A transcript chunk dated today.
+	ctx := context.Background()
+	c := store.Chunk{
+		ID: "tr1", Path: "transcripts/m.md", LineStart: 1, LineEnd: 2,
+		Body: "we decided to ship", Source: store.SourceTranscript,
+		CreatedAt: fixedTime().Add(-24 * time.Hour),
+	}
+	if err := s.Upsert(ctx, c, vec8(0)); err != nil {
+		t.Fatal(err)
+	}
+	res, err := r.Run(ctx, Options{Kind: KindMeetings, Now: fixedTime()}) // Days unset → 7
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.OutputPath != "reflections/meetings-2026-06-03.md" {
+		t.Errorf("meetings path = %q", res.OutputPath)
+	}
+	if !strings.Contains(res.Prompt, "last 7 days") {
+		t.Errorf("meetings prompt should default to 7 days:\n%s", res.Prompt)
+	}
+	if !strings.Contains(res.Prompt, "we decided to ship") {
+		t.Error("meetings prompt should include the transcript chunk")
+	}
+}
+
 func TestAssembleStaleGolden(t *testing.T) {
 	lines := []string{
 		"canton — last activity 2026-04-01, 12 notes, 2 open question(s)",

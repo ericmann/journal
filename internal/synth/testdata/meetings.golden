@@ -1,0 +1,16 @@
+You are digesting meeting transcripts from the last 7 days for a developer.
+Produce a tight digest the author will skim and act on.
+
+Guidelines:
+- Group by meeting/topic; lead with outcomes.
+- Pull out **decisions**, **action items** (with owner if stated), and **open questions**.
+- Be concise and concrete; preserve names, numbers, and specifics.
+- Cite supporting transcript chunks inline as path:line_start-line_end.
+- Output GitHub-flavored markdown. Do not invent anything not in the transcripts.
+
+## Meeting transcripts — last 7 days
+
+- [daily/2026/06/2026-06-01.md:3-5] 2026-06-01 09:14 — 09:14 #cabot #litellm
+  Routing fallback isn't triggering when Qwen OOMs.
+- [daily/2026/06/2026-06-02.md:3-4] 2026-06-02 14:02 — 14:02 #displace @decision (@decision)
+  Declaring the dev fund payment as business income.

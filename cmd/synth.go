@@ -22,7 +22,7 @@ var (
 )
 
 var synthCmd = &cobra.Command{
-	Use:   "synth weekly|daily|decisions|stale",
+	Use:   "synth weekly|daily|meetings|decisions|stale",
 	Short: "Run an AI synthesis job (cloud Claude) over the indexed notes",
 	Long: "synth assembles a prompt from the indexed notes and (with --write) calls the\n" +
 		"Anthropic API to draft output. weekly -> reflections/YYYY-Www.md; daily -> \n" +
@@ -33,13 +33,13 @@ var synthCmd = &cobra.Command{
 		"--write is given).\n\n" +
 		"Requires ANTHROPIC_API_KEY in the environment (only for --write).",
 	Args:      cobra.ExactArgs(1),
-	ValidArgs: []string{string(synth.KindWeekly), string(synth.KindDaily), string(synth.KindDecisions), string(synth.KindStale)},
+	ValidArgs: []string{string(synth.KindWeekly), string(synth.KindDaily), string(synth.KindMeetings), string(synth.KindDecisions), string(synth.KindStale)},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		kind := synth.Kind(args[0])
 		switch kind {
-		case synth.KindWeekly, synth.KindDaily, synth.KindDecisions, synth.KindStale:
+		case synth.KindWeekly, synth.KindDaily, synth.KindMeetings, synth.KindDecisions, synth.KindStale:
 		default:
-			return fmt.Errorf("unknown synth job %q (want weekly|daily|decisions|stale)", args[0])
+			return fmt.Errorf("unknown synth job %q (want weekly|daily|meetings|decisions|stale)", args[0])
 		}
 		var date time.Time
 		if synthDate != "" {
@@ -56,10 +56,16 @@ var synthCmd = &cobra.Command{
 		// Default to dry-run when neither flag is set: synthesis costs money and
 		// makes a network call, so it must be explicit.
 		dryRun := synthDryRun || !synthWrite
+		// Leave Days at 0 unless explicitly set, so each kind applies its own
+		// default (stale=14, meetings=7).
+		days := synthDays
+		if !cmd.Flags().Changed("days") {
+			days = 0
+		}
 		return hintOllama(cfg, runSynth(cmd.Context(), cfg, synth.Options{
 			Kind:    kind,
 			Project: synthProject,
-			Days:    synthDays,
+			Days:    days,
 			Date:    date,
 			DryRun:  dryRun,
 			Write:   synthWrite && !synthDryRun,

@@ -25,6 +25,7 @@ var (
 	searchJSON     bool
 	searchAnswer   bool
 	searchNoAnswer bool
+	searchSource   string
 )
 
 var searchCmd = &cobra.Command{
@@ -47,7 +48,11 @@ var searchCmd = &cobra.Command{
 			if err != nil {
 				return nil, err
 			}
-			f := store.Filter{Tags: searchTags, Project: searchProject}
+			src, err := parseSourceFilter(searchSource)
+			if err != nil {
+				return nil, err
+			}
+			f := store.Filter{Tags: searchTags, Project: searchProject, Source: src}
 			if since > 0 {
 				f.Since = now().Add(-since)
 			}
@@ -79,6 +84,21 @@ var searchCmd = &cobra.Command{
 		}
 		return renderResults(out, resultsFromScored(scored), searchJSON)
 	},
+}
+
+// parseSourceFilter maps a source selector ("notes"|"transcript"|"all"/"") to a
+// store source value ("" = any).
+func parseSourceFilter(s string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "all", "any":
+		return "", nil
+	case "notes", "note":
+		return store.SourceNote, nil
+	case "transcript", "transcripts":
+		return store.SourceTranscript, nil
+	default:
+		return "", fmt.Errorf("invalid source %q (want notes|transcript|all)", s)
+	}
 }
 
 // wantAnswer decides whether to generate an AI answer. forceOn is --answer,
@@ -210,5 +230,6 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchJSON, "json", false, "emit JSON ({results:[...]}) instead of text")
 	searchCmd.Flags().BoolVar(&searchAnswer, "answer", false, "force an AI answer above the results (needs ANTHROPIC_API_KEY)")
 	searchCmd.Flags().BoolVar(&searchNoAnswer, "no-answer", false, "never generate an AI answer, even if a key is set")
+	searchCmd.Flags().StringVar(&searchSource, "source", "all", "restrict to a source: notes | transcript | all")
 	rootCmd.AddCommand(searchCmd)
 }
