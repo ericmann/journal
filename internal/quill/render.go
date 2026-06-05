@@ -60,7 +60,7 @@ func RenderMarkdown(m Meeting) string {
 
 	if len(m.Transcript) > 0 {
 		b.WriteString("## Transcript\n\n")
-		for _, seg := range m.Transcript {
+		for _, seg := range coalesceSegments(m.Transcript) {
 			if seg.Speaker != "" {
 				fmt.Fprintf(&b, "**%s:** %s\n\n", seg.Speaker, seg.Text)
 			} else {
@@ -69,6 +69,21 @@ func RenderMarkdown(m Meeting) string {
 		}
 	}
 	return b.String()
+}
+
+// coalesceSegments merges consecutive turns from the same speaker into one, so a
+// speaker who talks across many short blocks reads as a single labeled paragraph
+// rather than a repeated "**Speaker 1:**" wall.
+func coalesceSegments(segs []Segment) []Segment {
+	var out []Segment
+	for _, s := range segs {
+		if n := len(out); n > 0 && out[n-1].Speaker == s.Speaker {
+			out[n-1].Text = strings.TrimSpace(out[n-1].Text + " " + s.Text)
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // yamlList renders a YAML flow sequence with quoted items: [] or ["a", "b"].
