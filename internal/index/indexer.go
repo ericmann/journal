@@ -40,7 +40,7 @@ func (ix *Indexer) IndexFiles(ctx context.Context, files []File) (Stats, error) 
 		if err != nil {
 			return st, fmt.Errorf("reading %s: %w", f.RelPath, err)
 		}
-		fs, err := ix.indexOne(ctx, f.RelPath, content)
+		fs, err := ix.IndexContent(ctx, f.RelPath, content)
 		if err != nil {
 			return st, err
 		}
@@ -52,14 +52,24 @@ func (ix *Indexer) IndexFiles(ctx context.Context, files []File) (Stats, error) 
 	return st, nil
 }
 
-// IndexContent indexes a single file's content (used by tests and the watcher).
+// IndexContent indexes a single note file's content (used by tests and the
+// watcher). Notes are chunked by heading.
 func (ix *Indexer) IndexContent(ctx context.Context, relPath, content string) (Stats, error) {
-	return ix.indexOne(ctx, relPath, content)
+	return ix.indexChunks(ctx, relPath, Chunk(relPath, content))
 }
 
-func (ix *Indexer) indexOne(ctx context.Context, relPath, content string) (Stats, error) {
+// IndexTranscript indexes a transcript file: line-windowed chunks tagged
+// source=transcript, dated by the file's mtime, carrying the configured tag.
+func (ix *Indexer) IndexTranscript(ctx context.Context, relPath, content string, mtime time.Time, tag string) (Stats, error) {
+	return ix.indexChunks(ctx, relPath, ChunkTranscript(relPath, content, mtime, tag))
+}
+
+// indexChunks synchronizes a file's freshly-computed chunks into the store:
+// it refreshes line numbers for unchanged chunks (no embed), embeds+upserts
+// new/changed chunks, and deletes chunks whose ids disappeared. It is the shared
+// core for notes and transcripts.
+func (ix *Indexer) indexChunks(ctx context.Context, relPath string, chunks []store.Chunk) (Stats, error) {
 	var st Stats
-	chunks := Chunk(relPath, content)
 
 	storedIDs, err := ix.store.ChunkIDsByPath(ctx, relPath)
 	if err != nil {

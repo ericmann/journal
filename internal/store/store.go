@@ -24,7 +24,13 @@ import (
 )
 
 // SchemaVersion is the current schema version written to PRAGMA user_version.
-const SchemaVersion = 1
+const SchemaVersion = 2
+
+// SourceNote and SourceTranscript classify a chunk's origin.
+const (
+	SourceNote       = "note"
+	SourceTranscript = "transcript"
+)
 
 // Chunk is one indexed unit of a note: a heading block with its location,
 // body, parsed metadata, and timestamps.
@@ -40,6 +46,7 @@ type Chunk struct {
 	IndexedAt time.Time
 	Tags      []string
 	Markers   []string
+	Source    string // "note" (default) or "transcript"
 }
 
 // Candidate is a KNN hit: a chunk plus its vector distance to the query.
@@ -54,6 +61,7 @@ type Filter struct {
 	Markers []string  // chunk must have ALL of these markers
 	Project string    // chunk must belong to this project
 	Since   time.Time // chunk CreatedAt must be >= Since
+	Source  string    // chunk source ("note"/"transcript"); "" means any
 }
 
 // Store wraps the sqlite-vec database. The embedding dimension is fixed for the
@@ -133,6 +141,11 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrating to schema v1: %w", err)
 		}
 	}
+	if v < 2 {
+		if err := s.migrateV2(ctx, tx); err != nil {
+			return fmt.Errorf("migrating to schema v2: %w", err)
+		}
+	}
 
 	// PRAGMA user_version cannot be parameterized.
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
@@ -183,6 +196,20 @@ func (s *Store) migrateV1(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
+// migrateV2 adds the chunk source column (default 'note') in place, so existing
+// indexes upgrade without a full rebuild.
+func (s *Store) migrateV2(ctx context.Context, tx *sql.Tx) error {
+	for _, q := range []string{
+		`ALTER TABLE chunks ADD COLUMN source TEXT NOT NULL DEFAULT 'note'`,
+		`CREATE INDEX idx_chunks_source ON chunks(source)`,
+	} {
+		if _, err := tx.ExecContext(ctx, q); err != nil {
+			return fmt.Errorf("exec %q: %w", firstLine(q), err)
+		}
+	}
+	return nil
+}
+
 // checkDim verifies the stored embedding dimension matches s.dim.
 func (s *Store) checkDim(ctx context.Context) error {
 	var v string
@@ -215,15 +242,19 @@ func (s *Store) Upsert(ctx context.Context, c Chunk, embedding []float32) error 
 	}
 	defer tx.Rollback() //nolint:errcheck // best-effort rollback on early return
 
+	source := c.Source
+	if source == "" {
+		source = SourceNote
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO chunks(id, path, line_start, line_end, heading, body, project, created_at, indexed_at)
-		VALUES(?,?,?,?,?,?,?,?,?)
+		INSERT INTO chunks(id, path, line_start, line_end, heading, body, project, created_at, indexed_at, source)
+		VALUES(?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			path=excluded.path, line_start=excluded.line_start, line_end=excluded.line_end,
 			heading=excluded.heading, body=excluded.body, project=excluded.project,
-			created_at=excluded.created_at, indexed_at=excluded.indexed_at`,
+			created_at=excluded.created_at, indexed_at=excluded.indexed_at, source=excluded.source`,
 		c.ID, c.Path, c.LineStart, c.LineEnd, c.Heading, c.Body, c.Project,
-		nullableTime(c.CreatedAt), timeString(c.IndexedAt)); err != nil {
+		nullableTime(c.CreatedAt), timeString(c.IndexedAt), source); err != nil {
 		return fmt.Errorf("upsert chunk: %w", err)
 	}
 
@@ -332,9 +363,9 @@ func (s *Store) Get(ctx context.Context, id string) (Chunk, error) {
 	var created sql.NullString
 	var indexed string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, path, line_start, line_end, heading, body, project, created_at, indexed_at
+		SELECT id, path, line_start, line_end, heading, body, project, created_at, indexed_at, source
 		FROM chunks WHERE id=?`, id).
-		Scan(&c.ID, &c.Path, &c.LineStart, &c.LineEnd, &c.Heading, &c.Body, &c.Project, &created, &indexed)
+		Scan(&c.ID, &c.Path, &c.LineStart, &c.LineEnd, &c.Heading, &c.Body, &c.Project, &created, &indexed, &c.Source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Chunk{}, fmt.Errorf("chunk %s not found", id)
 	}
@@ -473,6 +504,10 @@ func buildWhere(f Filter) (string, []any) {
 		conds = append(conds, "c.project = ?")
 		args = append(args, f.Project)
 	}
+	if f.Source != "" {
+		conds = append(conds, "c.source = ?")
+		args = append(args, f.Source)
+	}
 	if !f.Since.IsZero() {
 		conds = append(conds, "c.created_at != '' AND c.created_at >= ?")
 		args = append(args, f.Since.UTC().Format(time.RFC3339))
@@ -536,6 +571,9 @@ func (s *Store) Projects(ctx context.Context) ([]ProjectInfo, error) {
 // matches reports whether a chunk satisfies the filter.
 func matches(c Chunk, f Filter) bool {
 	if f.Project != "" && c.Project != f.Project {
+		return false
+	}
+	if f.Source != "" && c.Source != f.Source {
 		return false
 	}
 	if !f.Since.IsZero() && (c.CreatedAt.IsZero() || c.CreatedAt.Before(f.Since)) {

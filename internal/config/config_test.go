@@ -30,6 +30,56 @@ func TestSyncDefaultsAndValidation(t *testing.T) {
 	}
 }
 
+func TestTranscriptsAndQuillDefaults(t *testing.T) {
+	c := Default()
+	if !c.Transcripts.Enabled || c.Transcripts.Path != "transcripts" || c.Transcripts.Tag != "meeting" {
+		t.Errorf("transcripts defaults wrong: %+v", c.Transcripts)
+	}
+	if c.Transcripts.Format != TranscriptFormatAuto || !c.Transcripts.AutoIndex {
+		t.Errorf("transcripts format/auto_index wrong: %+v", c.Transcripts)
+	}
+	if !c.Quill.Enabled || !c.Quill.AcceptQMImports {
+		t.Errorf("quill defaults wrong: %+v", c.Quill)
+	}
+	if c.SchemaVer != SchemaVersion {
+		t.Errorf("schema_version = %q, want %q", c.SchemaVer, SchemaVersion)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("default config should validate: %v", err)
+	}
+	// Bad format rejected.
+	c.Transcripts.Format = "bogus"
+	if err := c.Validate(); err == nil {
+		t.Error("expected error for unknown transcripts.format")
+	}
+	// Marshal includes the new blocks.
+	def := Default()
+	data, err := def.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"transcripts:", "quill:", "schema_version:", "db_path:"} {
+		if !strings.Contains(string(data), key) {
+			t.Errorf("marshaled config missing %q", key)
+		}
+	}
+}
+
+func TestQuillDBPathExpandsTilde(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	c := Default()
+	c.Quill.DBPath = "~/Library/Application Support/Quill/quill.db"
+	got := c.QuillDBPath()
+	want := filepath.Join(home, "Library", "Application Support", "Quill", "quill.db")
+	if got != want {
+		t.Errorf("QuillDBPath() = %q, want %q", got, want)
+	}
+	c.Quill.DBPath = ""
+	if c.QuillDBPath() != "" {
+		t.Error("empty db_path should expand to empty")
+	}
+}
+
 func TestEditorDefaultsEmptyAndMarshals(t *testing.T) {
 	c := Default()
 	if c.Editor != "" {

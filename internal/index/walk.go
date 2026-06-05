@@ -16,6 +16,46 @@ type File struct {
 	ModTime time.Time
 }
 
+// WalkTranscripts returns transcript files (.md/.txt/.qm) under the landing zone
+// transcriptRel (relative to root), with RelPath repo-relative. Returns nil if
+// the landing zone doesn't exist yet.
+func WalkTranscripts(root, transcriptRel string, since time.Time) ([]File, error) {
+	dir := filepath.Join(root, filepath.FromSlash(transcriptRel))
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil, nil
+	}
+	var files []File
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		low := strings.ToLower(d.Name())
+		if !strings.HasSuffix(low, ".md") && !strings.HasSuffix(low, ".txt") && !strings.HasSuffix(low, ".qm") {
+			return nil
+		}
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		if !since.IsZero() && info.ModTime().Before(since) {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return relErr
+		}
+		files = append(files, File{RelPath: filepath.ToSlash(rel), AbsPath: p, ModTime: info.ModTime()})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
 // Walk returns the markdown files under root, in lexical order, skipping any
 // repo-relative path matched by an exclude pattern. When since is non-zero,
 // only files modified at or after since are returned.

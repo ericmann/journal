@@ -12,6 +12,17 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// TranscriptConfig enables the watcher to also index a transcripts landing zone.
+// Transcript files are chunked by sliding window, tagged source=transcript, and
+// are NEVER auto-committed (they're ephemeral input, gitignored).
+type TranscriptConfig struct {
+	Path     string // repo-relative landing zone, slash form (e.g. "transcripts")
+	Tag      string // tag applied to every transcript chunk
+	AcceptQM bool   // render dropped .qm files to markdown before indexing
+	// QMRender converts .qm file content to rendered markdown; nil disables .qm.
+	QMRender func(content string) (markdown string, ok bool)
+}
+
 // Watcher re-indexes markdown files as they change. It watches the repo tree
 // (honoring excludes), debounces bursts of filesystem events, and re-indexes
 // only the files that changed — deletions remove the file's chunks.
@@ -23,20 +34,38 @@ type Watcher struct {
 	logf       func(string, ...any)
 	autoCommit bool
 	signCommit bool
+	tr         *TranscriptConfig // nil = transcripts disabled
 }
 
 // NewWatcher constructs a Watcher. debounce is the quiet period after the last
 // event before a re-index runs; logf (may be nil) receives one-line status logs.
 // When autoCommit is true, the watcher commits note changes after each re-index
-// (no-op outside a git repo); signCommit signs those commits.
-func NewWatcher(root string, excludes []string, ix *Indexer, debounce time.Duration, logf func(string, ...any), autoCommit, signCommit bool) *Watcher {
+// (no-op outside a git repo); signCommit signs those commits. tr (may be nil)
+// enables indexing a transcripts landing zone.
+func NewWatcher(root string, excludes []string, ix *Indexer, debounce time.Duration, logf func(string, ...any), autoCommit, signCommit bool, tr *TranscriptConfig) *Watcher {
 	if debounce <= 0 {
 		debounce = 500 * time.Millisecond
 	}
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
-	return &Watcher{root: root, excludes: excludes, ix: ix, debounce: debounce, logf: logf, autoCommit: autoCommit, signCommit: signCommit}
+	return &Watcher{root: root, excludes: excludes, ix: ix, debounce: debounce, logf: logf, autoCommit: autoCommit, signCommit: signCommit, tr: tr}
+}
+
+// isTranscript reports whether a repo-relative path is a transcript file to
+// index (under the configured landing zone, with an accepted extension).
+func (w *Watcher) isTranscript(rel string) bool {
+	if w.tr == nil || w.tr.Path == "" {
+		return false
+	}
+	if rel != w.tr.Path && !strings.HasPrefix(rel, w.tr.Path+"/") {
+		return false
+	}
+	low := strings.ToLower(rel)
+	if strings.HasSuffix(low, ".md") || strings.HasSuffix(low, ".txt") {
+		return true
+	}
+	return w.tr.AcceptQM && strings.HasSuffix(low, ".qm")
 }
 
 // commit auto-commits note changes if enabled, logging the outcome. Commit
@@ -78,10 +107,31 @@ func (w *Watcher) Run(ctx context.Context) error {
 		w.logf("watching %s — initial index: %d files, %d embedded", w.root, st.FilesScanned, st.Embedded)
 		w.commit(st) // commit anything captured before the watcher started
 	}
+	// Initial transcript pass (separate: never committed).
+	if w.tr != nil {
+		if trFiles, err := WalkTranscripts(w.root, w.tr.Path, time.Time{}); err == nil && len(trFiles) > 0 {
+			rels := make([]string, len(trFiles))
+			for i, f := range trFiles {
+				rels[i] = f.RelPath
+			}
+			if st, err := w.ProcessTranscriptChanges(ctx, rels); err == nil {
+				w.logf("initial transcript index: %d embedded", st.Embedded)
+			}
+		}
+	}
 
 	pending := map[string]bool{}
+	pendingTr := map[string]bool{}
 	var timer *time.Timer
 	var fire <-chan time.Time
+	arm := func() {
+		if timer == nil {
+			timer = time.NewTimer(w.debounce)
+		} else {
+			timer.Reset(w.debounce)
+		}
+		fire = timer.C
+	}
 
 	for {
 		select {
@@ -100,16 +150,17 @@ func (w *Watcher) Run(ctx context.Context) error {
 				}
 			}
 			rel := w.rel(ev.Name)
-			if rel == "" || !isMarkdown(rel) || w.skipDir(rel) {
+			if rel == "" {
 				continue
 			}
-			pending[rel] = true
-			if timer == nil {
-				timer = time.NewTimer(w.debounce)
-			} else {
-				timer.Reset(w.debounce)
+			switch {
+			case w.isTranscript(rel):
+				pendingTr[rel] = true
+				arm()
+			case isMarkdown(rel) && !w.skipDir(rel):
+				pending[rel] = true
+				arm()
 			}
-			fire = timer.C
 
 		case err, ok := <-watcher.Errors:
 			if !ok {
@@ -118,17 +169,28 @@ func (w *Watcher) Run(ctx context.Context) error {
 			w.logf("watch error: %v", err)
 
 		case <-fire:
-			changed := keys(pending)
-			pending = map[string]bool{}
 			fire = nil
-			st, err := w.ProcessChanges(ctx, changed)
-			if err != nil {
-				w.logf("re-index error: %v", err)
-				continue
+			if changed := keys(pending); len(changed) > 0 {
+				pending = map[string]bool{}
+				st, err := w.ProcessChanges(ctx, changed)
+				if err != nil {
+					w.logf("re-index error: %v", err)
+				} else {
+					w.logf("re-indexed %d file(s): %d embedded, %d updated, %d deleted",
+						len(changed), st.Embedded, st.Updated, st.Deleted)
+					w.commit(st)
+				}
 			}
-			w.logf("re-indexed %d file(s): %d embedded, %d updated, %d deleted",
-				len(changed), st.Embedded, st.Updated, st.Deleted)
-			w.commit(st)
+			if changed := keys(pendingTr); len(changed) > 0 {
+				pendingTr = map[string]bool{}
+				st, err := w.ProcessTranscriptChanges(ctx, changed)
+				if err != nil {
+					w.logf("transcript index error: %v", err)
+				} else {
+					w.logf("indexed %d transcript(s): %d embedded, %d updated, %d deleted (not committed)",
+						len(changed), st.Embedded, st.Updated, st.Deleted)
+				}
+			}
 		}
 	}
 }
@@ -180,12 +242,81 @@ func (w *Watcher) addDirs(watcher *fsnotify.Watcher) error {
 }
 
 // skipDir reports whether a directory should not be watched: the git internals
-// (which churn on every auto-commit) or any configured exclude.
+// (which churn on every auto-commit) or any configured exclude. The transcripts
+// landing zone is excluded from the NOTE walk but still watched (events route to
+// the transcript path), so it is never skipped when transcripts are enabled.
 func (w *Watcher) skipDir(rel string) bool {
 	if rel == ".git" || strings.HasPrefix(rel, ".git/") {
 		return true
 	}
+	if w.tr != nil && w.tr.Path != "" && (rel == w.tr.Path || strings.HasPrefix(rel, w.tr.Path+"/")) {
+		return false
+	}
 	return Excluded(rel, w.excludes)
+}
+
+// ProcessTranscriptChanges indexes transcript files as source=transcript and
+// never commits them. A .qm file is rendered to a sibling .md (when a QMRender
+// hook is configured) which is then indexed; a deleted file has its chunks
+// removed. It is the unit-testable core of the transcript watch path.
+func (w *Watcher) ProcessTranscriptChanges(ctx context.Context, relPaths []string) (Stats, error) {
+	var total Stats
+	if w.tr == nil {
+		return total, nil
+	}
+	for _, rel := range relPaths {
+		abs := filepath.Join(w.root, filepath.FromSlash(rel))
+
+		// Render a dropped .qm into a sibling .md, then index that instead.
+		if strings.HasSuffix(strings.ToLower(rel), ".qm") {
+			if w.tr.QMRender == nil {
+				continue
+			}
+			content, err := os.ReadFile(abs)
+			if errors.Is(err, os.ErrNotExist) {
+				continue // a removed .qm: nothing to do (its .md is managed separately)
+			}
+			if err != nil {
+				return total, fmt.Errorf("reading %s: %w", rel, err)
+			}
+			md, ok := w.tr.QMRender(string(content))
+			if !ok {
+				w.logf("skipping %s: not a recognizable .qm export", rel)
+				continue
+			}
+			mdRel := strings.TrimSuffix(rel, filepath.Ext(rel)) + ".md"
+			mdAbs := filepath.Join(w.root, filepath.FromSlash(mdRel))
+			if err := os.WriteFile(mdAbs, []byte(md), 0o644); err != nil {
+				return total, fmt.Errorf("writing %s: %w", mdRel, err)
+			}
+			rel, abs = mdRel, mdAbs
+		}
+
+		var mtime time.Time
+		content, err := os.ReadFile(abs)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			content = nil // deleted: re-index empty -> removes its chunks
+			mtime = time.Now()
+		case err != nil:
+			return total, fmt.Errorf("reading %s: %w", rel, err)
+		default:
+			if info, serr := os.Stat(abs); serr == nil {
+				mtime = info.ModTime()
+			} else {
+				mtime = time.Now()
+			}
+		}
+		st, err := w.ix.IndexTranscript(ctx, rel, string(content), mtime, w.tr.Tag)
+		if err != nil {
+			return total, err
+		}
+		total.FilesScanned++
+		total.Embedded += st.Embedded
+		total.Updated += st.Updated
+		total.Deleted += st.Deleted
+	}
+	return total, nil
 }
 
 // addDirUnder watches a newly-created directory subtree (best effort).

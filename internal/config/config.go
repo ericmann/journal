@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -31,6 +33,61 @@ const (
 	// SyncConflictPreferLocal resolves conflicts toward the local copy.
 	SyncConflictPreferLocal = "prefer-local"
 )
+
+// SchemaVersion is the current .journal/config.yaml schema. `journal init` on an
+// older repo upgrades it to this in place.
+const SchemaVersion = "2.0"
+
+// Transcript formats for the transcripts.format setting.
+const (
+	TranscriptFormatAuto     = "auto"
+	TranscriptFormatMarkdown = "markdown"
+	TranscriptFormatTxt      = "txt"
+)
+
+// Transcripts configures the meeting-transcript landing zone (populated by
+// `journal quill-sync` and/or dropped-in files) and how it is indexed.
+type Transcripts struct {
+	// Enabled gates the whole transcript feature (a no-op when false).
+	Enabled bool `yaml:"enabled"`
+	// Path is the repo-relative landing zone for rendered transcripts. Gitignored.
+	Path string `yaml:"path"`
+	// Format hints how transcript files are parsed: auto | markdown | txt.
+	Format string `yaml:"format"`
+	// AutoIndex embeds new/modified transcripts as the watcher detects them.
+	AutoIndex bool `yaml:"auto_index"`
+	// Tag is applied to every transcript-sourced chunk (so `--tag`/source filter
+	// and search find them).
+	Tag string `yaml:"tag"`
+	// LogCaptures, when true, appends a timestamped breadcrumb to the daily file
+	// when a transcript is indexed.
+	LogCaptures bool `yaml:"log_captures"`
+}
+
+// Quill configures pulling meeting transcripts from the local Quill app's
+// SQLite database (macOS/Windows only — Quill does not run on Linux).
+type Quill struct {
+	// Enabled gates `journal quill-sync`.
+	Enabled bool `yaml:"enabled"`
+	// DBPath is the Quill SQLite database (read-only to us). ~ is expanded.
+	DBPath string `yaml:"db_path"`
+	// AcceptQMImports renders manually-dropped .qm files in the landing zone.
+	AcceptQMImports bool `yaml:"accept_qm_imports"`
+}
+
+// defaultQuillDBPath returns the per-OS Quill database location (with ~), or ""
+// where Quill is unavailable (Linux). ~ resolves on Windows too (AppData lives
+// under the home dir).
+func defaultQuillDBPath() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "~/Library/Application Support/Quill/quill.db"
+	case "windows":
+		return "~/AppData/Roaming/Quill/quill.db"
+	default:
+		return ""
+	}
+}
 
 // Config holds non-secret settings. It is serialized to .journal/config.yaml.
 // The Anthropic API key is deliberately NOT a field here — it comes from the
@@ -86,6 +143,13 @@ type Config struct {
 	// resolve by hand — it never discards work; "prefer-upstream" takes the remote
 	// copy on conflict; "prefer-local" keeps the local copy on conflict.
 	SyncConflict string `yaml:"sync_conflict"`
+	// Transcripts configures the meeting-transcript landing zone + indexing.
+	Transcripts Transcripts `yaml:"transcripts"`
+	// Quill configures pulling transcripts from the local Quill app database.
+	Quill Quill `yaml:"quill"`
+	// SchemaVer records the config schema version (see SchemaVersion). Lets
+	// `journal init` detect and upgrade older repos.
+	SchemaVer string `yaml:"schema_version"`
 
 	// root is the absolute repo root; not serialized.
 	root string
@@ -123,6 +187,22 @@ func Default() Config {
 		// Sync is opt-in; manual conflict handling never discards work.
 		SyncEnabled:  false,
 		SyncConflict: SyncConflictManual,
+		// Quill/transcript integration (v2.0). On by default but a no-op until a
+		// transcript exists; quill-sync only works where Quill runs (macOS/Windows).
+		Transcripts: Transcripts{
+			Enabled:     true,
+			Path:        "transcripts",
+			Format:      TranscriptFormatAuto,
+			AutoIndex:   true,
+			Tag:         "meeting",
+			LogCaptures: false,
+		},
+		Quill: Quill{
+			Enabled:         true,
+			DBPath:          defaultQuillDBPath(),
+			AcceptQMImports: true,
+		},
+		SchemaVer: SchemaVersion,
 	}
 }
 
@@ -147,6 +227,39 @@ func (c *Config) StoreAbsPath() string {
 		return c.StorePath
 	}
 	return filepath.Join(c.root, c.StorePath)
+}
+
+// TranscriptsRelPath is the repo-relative transcripts landing zone (slash form).
+func (c *Config) TranscriptsRelPath() string {
+	p := strings.TrimSpace(c.Transcripts.Path)
+	if p == "" {
+		p = "transcripts"
+	}
+	return filepath.ToSlash(p)
+}
+
+// TranscriptsAbsPath returns the absolute path to the transcripts landing zone.
+func (c *Config) TranscriptsAbsPath() string {
+	p := c.TranscriptsRelPath()
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(c.root, filepath.FromSlash(p))
+}
+
+// QuillDBPath returns the configured Quill database path with ~ expanded, or ""
+// when none is configured (e.g. on Linux, where Quill is unavailable).
+func (c *Config) QuillDBPath() string {
+	p := strings.TrimSpace(c.Quill.DBPath)
+	if p == "" {
+		return ""
+	}
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(p, "~"), "/"))
+		}
+	}
+	return p
 }
 
 // Validate checks invariants on non-secret settings.
@@ -177,6 +290,14 @@ func (c *Config) Validate() error {
 	case SyncConflictManual, SyncConflictPreferUpstream, SyncConflictPreferLocal:
 	default:
 		return fmt.Errorf("sync_conflict %q unsupported (want manual|prefer-upstream|prefer-local)", c.SyncConflict)
+	}
+	switch c.Transcripts.Format {
+	case TranscriptFormatAuto, TranscriptFormatMarkdown, TranscriptFormatTxt:
+	default:
+		return fmt.Errorf("transcripts.format %q unsupported (want auto|markdown|txt)", c.Transcripts.Format)
+	}
+	if c.Transcripts.Enabled && strings.TrimSpace(c.Transcripts.Path) == "" {
+		return errors.New("transcripts.path must not be empty when transcripts are enabled")
 	}
 	return nil
 }

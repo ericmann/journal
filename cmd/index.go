@@ -11,6 +11,7 @@ import (
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
 	"github.com/ericmann/journal/internal/index"
+	"github.com/ericmann/journal/internal/quill"
 	"github.com/ericmann/journal/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -59,12 +60,49 @@ func runWatch(ctx context.Context, cfg *config.Config, e embed.Embedder, out io.
 	logf := func(format string, args ...any) {
 		fmt.Fprintf(out, format+"\n", args...)
 	}
-	w := index.NewWatcher(cfg.Root(), cfg.Excludes, ix, 0, logf, cfg.GitAutocommit, cfg.GitAutocommitSign)
+	w := index.NewWatcher(cfg.Root(), noteExcludes(cfg), ix, 0, logf, cfg.GitAutocommit, cfg.GitAutocommitSign, transcriptConfig(cfg))
 	err = w.Run(ctx)
 	if errors.Is(err, context.Canceled) {
 		return nil // clean shutdown on Ctrl-C
 	}
 	return err
+}
+
+// noteExcludes is the exclude set for the NOTE walk: the configured excludes
+// plus the transcripts landing zone (transcripts are indexed via a separate
+// source-tagged path, never as notes).
+func noteExcludes(cfg *config.Config) []string {
+	ex := append([]string{}, cfg.Excludes...)
+	if cfg.Transcripts.Enabled {
+		ex = append(ex, cfg.TranscriptsRelPath()+"/**")
+	}
+	return ex
+}
+
+// transcriptConfig builds the watcher's transcript config from cfg, or nil when
+// transcripts are disabled. It wires .qm rendering through the quill package.
+func transcriptConfig(cfg *config.Config) *index.TranscriptConfig {
+	if !cfg.Transcripts.Enabled {
+		return nil
+	}
+	tc := &index.TranscriptConfig{
+		Path:     cfg.TranscriptsRelPath(),
+		Tag:      cfg.Transcripts.Tag,
+		AcceptQM: cfg.Quill.AcceptQMImports,
+	}
+	if cfg.Quill.AcceptQMImports {
+		tc.QMRender = func(content string) (string, bool) {
+			if !quill.IsQM(content) {
+				return "", false
+			}
+			m, err := quill.ParseQM(content)
+			if err != nil {
+				return "", false
+			}
+			return quill.RenderMarkdown(m), true
+		}
+	}
+	return tc
 }
 
 type indexOptions struct {
@@ -91,18 +129,41 @@ func runIndex(ctx context.Context, cfg *config.Config, e embed.Embedder, opts in
 	if opts.since > 0 {
 		since = time.Now().Add(-opts.since)
 	}
-	files, err := index.Walk(cfg.Root(), cfg.Excludes, since)
+	files, err := index.Walk(cfg.Root(), noteExcludes(cfg), since)
 	if err != nil {
 		return index.Stats{}, err
 	}
 
 	start := time.Now()
-	st, err := index.NewIndexer(s, e).IndexFiles(ctx, files)
+	ix := index.NewIndexer(s, e)
+	st, err := ix.IndexFiles(ctx, files)
 	if err != nil {
 		return st, fmt.Errorf("indexing: %w", err)
 	}
 	fmt.Fprintf(out, "indexed %d files in %s: %d embedded, %d updated, %d deleted\n",
 		st.FilesScanned, time.Since(start).Round(time.Millisecond), st.Embedded, st.Updated, st.Deleted)
+
+	// Transcripts are indexed via a separate source-tagged path and never
+	// committed. Reuse the watcher's transcript processor for identical handling.
+	if cfg.Transcripts.Enabled {
+		trFiles, terr := index.WalkTranscripts(cfg.Root(), cfg.TranscriptsRelPath(), since)
+		if terr != nil {
+			return st, fmt.Errorf("walking transcripts: %w", terr)
+		}
+		if len(trFiles) > 0 {
+			rels := make([]string, len(trFiles))
+			for i, f := range trFiles {
+				rels[i] = f.RelPath
+			}
+			tw := index.NewWatcher(cfg.Root(), noteExcludes(cfg), ix, 0, nil, false, false, transcriptConfig(cfg))
+			tst, terr := tw.ProcessTranscriptChanges(ctx, rels)
+			if terr != nil {
+				return st, fmt.Errorf("indexing transcripts: %w", terr)
+			}
+			fmt.Fprintf(out, "indexed %d transcript file(s): %d embedded, %d updated, %d deleted\n",
+				tst.FilesScanned, tst.Embedded, tst.Updated, tst.Deleted)
+		}
+	}
 
 	if cfg.GitAutocommit {
 		committed, cerr := index.AutoCommit(cfg.Root(), st, cfg.GitAutocommitSign, time.Now())

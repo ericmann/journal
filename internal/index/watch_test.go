@@ -22,8 +22,35 @@ func newWatchFixture(t *testing.T) (*Watcher, *store.Store, *embed.Fake, string)
 	t.Cleanup(func() { s.Close() })
 	fake := embed.NewFake(16)
 	root := t.TempDir()
-	w := NewWatcher(root, []string{"reflections/**", ".journal/**"}, NewIndexer(s, fake), 20*time.Millisecond, nil, false, false)
+	w := NewWatcher(root, []string{"reflections/**", ".journal/**"}, NewIndexer(s, fake), 20*time.Millisecond, nil, false, false, nil)
 	return w, s, fake, root
+}
+
+// newTranscriptFixture builds a watcher with transcripts enabled, returning the
+// watcher, store, and repo root.
+func newTranscriptFixture(t *testing.T) (*Watcher, *store.Store, string) {
+	t.Helper()
+	s, err := store.Open(filepath.Join(t.TempDir(), "j.db"), 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	root := t.TempDir()
+	tc := &TranscriptConfig{
+		Path:     "transcripts",
+		Tag:      "meeting",
+		AcceptQM: true,
+		QMRender: func(content string) (string, bool) {
+			// Stub renderer: any QMv2 file becomes a tiny markdown doc.
+			if !strings.HasPrefix(content, "QMv2") {
+				return "", false
+			}
+			return "# Imported\n\nrendered transcript body\n", true
+		},
+	}
+	w := NewWatcher(root, []string{"reflections/**", ".journal/**", "transcripts/**"},
+		NewIndexer(s, embed.NewFake(16)), 20*time.Millisecond, nil, false, false, tc)
+	return w, s, root
 }
 
 func TestProcessChangesIndexesEditsAndDeletes(t *testing.T) {
@@ -78,6 +105,66 @@ func TestProcessChangesSkipsExcludedAndNonMarkdown(t *testing.T) {
 	}
 }
 
+func TestProcessTranscriptChangesIndexesAsTranscript(t *testing.T) {
+	w, s, root := newTranscriptFixture(t)
+	ctx := context.Background()
+	mustWrite(t, filepath.Join(root, "transcripts", "m.md"),
+		strings.Repeat("transcript line\n", 50))
+
+	st, err := w.ProcessTranscriptChanges(ctx, []string{"transcripts/m.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Embedded == 0 {
+		t.Fatal("expected transcript chunks embedded")
+	}
+	// Stored as source=transcript, not as notes.
+	tr, err := s.Recent(ctx, store.Filter{Source: store.SourceTranscript}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tr) == 0 || tr[0].Tags[0] != "meeting" {
+		t.Errorf("transcript chunks missing or untagged: %+v", tr)
+	}
+	notes, _ := s.Recent(ctx, store.Filter{Source: store.SourceNote}, 0)
+	if len(notes) != 0 {
+		t.Errorf("transcript should not be stored as notes, got %d", len(notes))
+	}
+}
+
+func TestProcessTranscriptChangesRendersQM(t *testing.T) {
+	w, s, root := newTranscriptFixture(t)
+	ctx := context.Background()
+	mustWrite(t, filepath.Join(root, "transcripts", "drop.qm"), "QMv2\n{\"id\":\"x\"}")
+
+	st, err := w.ProcessTranscriptChanges(ctx, []string{"transcripts/drop.qm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Embedded == 0 {
+		t.Error("rendered .qm should produce indexed chunks")
+	}
+	// The renderer wrote a sibling .md.
+	if _, err := os.Stat(filepath.Join(root, "transcripts", "drop.md")); err != nil {
+		t.Errorf(".qm should render a sibling .md: %v", err)
+	}
+	if n, _ := s.Count(ctx); n == 0 {
+		t.Error("no chunks stored from .qm import")
+	}
+}
+
+func TestTranscriptSkipDirStillWatched(t *testing.T) {
+	w, _, _ := newTranscriptFixture(t)
+	// transcripts/** is in the note excludes, but the transcripts dir must still
+	// be watched (events route to the transcript path).
+	if w.skipDir("transcripts") {
+		t.Error("transcripts dir should be watched, not skipped")
+	}
+	if !w.skipDir("reflections") {
+		t.Error("reflections should still be skipped")
+	}
+}
+
 func TestWatcherCommitGatedAndWorks(t *testing.T) {
 	if !haveGit() {
 		t.Skip("git not available")
@@ -87,14 +174,14 @@ func TestWatcherCommitGatedAndWorks(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "daily", "d.md"), "# 2026-06-01\n\n## 09:00\nnote\n")
 
 	// autoCommit disabled -> no commit (safe with zero commits via rev-list).
-	off := NewWatcher(root, nil, nil, 10*time.Millisecond, nil, false, false)
+	off := NewWatcher(root, nil, nil, 10*time.Millisecond, nil, false, false, nil)
 	off.commit(Stats{Embedded: 1})
 	if n := strings.TrimSpace(gitOut(t, root, "rev-list", "--all", "--count")); n != "0" {
 		t.Errorf("commit happened with autoCommit off: %s commits", n)
 	}
 
 	// autoCommit enabled -> the note is committed.
-	on := NewWatcher(root, nil, nil, 10*time.Millisecond, nil, true, false)
+	on := NewWatcher(root, nil, nil, 10*time.Millisecond, nil, true, false, nil)
 	on.commit(Stats{Embedded: 1})
 	if n := strings.TrimSpace(gitOut(t, root, "rev-list", "--all", "--count")); n != "1" {
 		t.Errorf("expected exactly 1 auto-commit, got %s", n)

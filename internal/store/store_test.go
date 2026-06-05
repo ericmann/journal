@@ -42,6 +42,45 @@ func sampleChunk(id, path, project string, tags, markers []string) Chunk {
 	}
 }
 
+func TestSourceFilterAndDefault(t *testing.T) {
+	ctx := context.Background()
+	s := openTemp(t, 8)
+
+	noteC := sampleChunk("n1", "daily/d.md", "", nil, nil) // Source "" → defaults to note
+	trC := sampleChunk("t1", "transcripts/m.md", "", []string{"meeting"}, nil)
+	trC.Source = SourceTranscript
+	for i, c := range []Chunk{noteC, trC} {
+		if err := s.Upsert(ctx, c, vec(8, i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := s.Get(ctx, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Source != SourceNote {
+		t.Errorf("empty source should default to %q, got %q", SourceNote, got.Source)
+	}
+
+	tr, err := s.Recent(ctx, Filter{Source: SourceTranscript}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tr) != 1 || tr[0].ID != "t1" {
+		t.Errorf("source=transcript Recent = %d rows, want just t1", len(tr))
+	}
+	cands, err := s.KNN(ctx, vec(8, 1), 10, Filter{Source: SourceNote})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cands {
+		if c.Source != SourceNote {
+			t.Errorf("KNN source filter leaked %q", c.Source)
+		}
+	}
+}
+
 func TestOpenCreatesSchemaAtVersion(t *testing.T) {
 	s := openTemp(t, 8)
 	v, err := s.SchemaVersion(context.Background())
