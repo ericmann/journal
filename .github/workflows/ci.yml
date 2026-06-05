@@ -42,8 +42,12 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # -p 1 serializes package test binaries: multiple packages run SQLite as
+      # WASM via wazero, and parallel test binaries race on wazero's on-disk
+      # compile cache, faulting intermittently on linux/amd64 (a wazero issue,
+      # not our code; see docs/DECISIONS.md). Serial runs are fast and stable.
       - name: Test (coverage)
-        run: go test -coverprofile=coverage.out ./...
+        run: go test -p 1 -coverprofile=coverage.out ./...
 
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1
