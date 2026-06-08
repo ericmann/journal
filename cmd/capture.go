@@ -96,7 +96,7 @@ var captureCmd = &cobra.Command{
 		"$VISUAL, $EDITOR, then nano.",
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		root, err := config.FindRepoRoot(".")
+		root, err := resolveRoot()
 		if err != nil {
 			return err
 		}

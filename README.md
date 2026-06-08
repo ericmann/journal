@@ -151,6 +151,10 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal doctor` | Health-check Ollama, models, the index |
 | `journal mcp` | MCP server for Claude Desktop / Claude Code |
 
+Every command takes a global **`--journal-dir`** (or `JOURNAL_DIR` env) to operate
+on a journal from any directory — handy for an alias like
+`alias jc='journal capture --journal-dir ~/Projects/devnotes'`.
+
 Full flags, the note format, and search internals are in [**Usage**](docs/USAGE.md).
 
 ---

@@ -5,6 +5,17 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [2.1.0] — 2026-06-08
+
+### Added
+
+- **Global `--journal-dir` flag** (and `JOURNAL_DIR` env var) on every command, so
+  you can capture into / query a specific journal from any directory — e.g.
+  `journal capture "…" --journal-dir ~/Projects/devnotes`, or
+  `export JOURNAL_DIR=~/Projects/devnotes`. The flag wins over the env; both expand
+  `~` and accept the repo root or any subdirectory. `mcp --repo` still takes
+  precedence for the MCP server.
+
 ## [2.0.1] — 2026-06-08
 
 ### Fixed

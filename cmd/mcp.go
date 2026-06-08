@@ -27,7 +27,12 @@ var mcpCmd = &cobra.Command{
 		"--repo. Search/embedding still use the local Ollama configured in the repo.",
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfigFrom(mcpRepo)
+		// --repo wins; otherwise honor --journal-dir / $JOURNAL_DIR / cwd.
+		start := mcpRepo
+		if strings.TrimSpace(start) == "" {
+			start = resolveStart()
+		}
+		cfg, err := loadConfigFrom(start)
 		if err != nil {
 			return err
 		}

@@ -3,6 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +12,41 @@ import (
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
 )
+
+// journalDir is bound to the global --journal-dir flag (see init in root.go). It
+// lets every command operate on a journal repo other than the current directory.
+var journalDir string
+
+// JournalDirEnv is the environment variable equivalent of --journal-dir, so you
+// can point at one journal from anywhere without a flag (e.g. in an alias/shell).
+const JournalDirEnv = "JOURNAL_DIR"
+
+// resolveStart returns where to look for the journal repo: the --journal-dir
+// flag, else $JOURNAL_DIR, else the current directory. ~ is expanded.
+func resolveStart() string {
+	if s := strings.TrimSpace(journalDir); s != "" {
+		return expandTilde(s)
+	}
+	if s := strings.TrimSpace(os.Getenv(JournalDirEnv)); s != "" {
+		return expandTilde(s)
+	}
+	return "."
+}
+
+// resolveRoot finds the journal root (nearest .journal) from resolveStart().
+func resolveRoot() (string, error) {
+	return config.FindRepoRoot(resolveStart())
+}
+
+// expandTilde expands a leading ~ to the user's home directory.
+func expandTilde(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(p, "~"), "/"))
+		}
+	}
+	return p
+}
 
 // hintOllama augments an Ollama-unreachable error with actionable setup steps.
 // Indexing, search, and synthesis all need a local Ollama; when it can't be
@@ -28,9 +65,10 @@ func hintOllama(cfg *config.Config, err error) error {
 		err, cfg.EmbedModel, cfg.OllamaBaseURL)
 }
 
-// loadConfig resolves the repo root from the current directory and loads config.
+// loadConfig resolves the repo root (honoring --journal-dir / $JOURNAL_DIR, else
+// the current directory) and loads config.
 func loadConfig() (*config.Config, error) {
-	return loadConfigFrom(".")
+	return loadConfigFrom(resolveStart())
 }
 
 // loadConfigFrom resolves the repo root by walking up from start and loads

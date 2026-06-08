@@ -5,6 +5,22 @@ running the indexer continuously. See also
 [Configuration](CONFIGURATION.md) · [Synthesis](SYNTHESIS.md) ·
 [Remote backup](SYNC.md).
 
+## Working from anywhere
+
+By default journal operates on the repo found by walking up from the current
+directory. To capture into (or query) a specific journal **from any directory**,
+use the global `--journal-dir` flag or the `JOURNAL_DIR` environment variable
+(the flag wins; `~` expands):
+
+```sh
+journal capture "idea from a random terminal" --journal-dir ~/Projects/devnotes
+export JOURNAL_DIR=~/Projects/devnotes   # then `journal …` works anywhere
+alias jc='journal capture --journal-dir ~/Projects/devnotes'
+```
+
+It applies to every command (capture, search, index, synth, quill-sync, …) and
+accepts the repo root or any subdirectory of it.
+
 ## Capture conventions
 
 The daily file is intentionally minimal — an `# YYYY-MM-DD` H1 and a series of

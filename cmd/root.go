@@ -44,6 +44,13 @@ var rootCmd = &cobra.Command{
 	SilenceErrors: true,
 }
 
+func init() {
+	// Global: operate on a journal repo other than the current directory. Also
+	// settable via $JOURNAL_DIR (the flag wins). ~ is expanded.
+	rootCmd.PersistentFlags().StringVar(&journalDir, "journal-dir", "",
+		"path to the journal repo (default: current directory; or set "+JournalDirEnv+")")
+}
+
 // Execute runs the root command and exits non-zero on error.
 func Execute() {
 	// Cancel the command context on Ctrl-C / SIGTERM so long-running commands
