@@ -5,6 +5,17 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [2.0.1] — 2026-06-08
+
+### Fixed
+
+- **`quill-sync` stopped finding new meetings after the first sync.** Quill stores
+  `Meeting.start`/`end` as epoch-millisecond integers, but the incremental filter
+  compared that integer column to an RFC3339 text watermark in SQL — always false
+  in SQLite, so every meeting was filtered out once a watermark existed. Meetings
+  are now filtered on the parsed Go timestamp instead, and `parseQuillTime` accepts
+  epoch ms/sec/µs integers.
+
 ## [2.0.0] — 2026-06-05
 
 ### Added — Quill / meeting-transcript integration (headline)
