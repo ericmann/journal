@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -136,15 +137,14 @@ func (r *dbReader) Meetings(ctx context.Context, since time.Time, warnf func(str
 		return nil, fmt.Errorf("unexpected Quill schema: Meeting lacks id/start (see internal/quill/reader.go)")
 	}
 
-	q := `SELECT ` + quoteCols(cols) + ` FROM "Meeting"`
-	var args []any
-	if !since.IsZero() {
-		q += ` WHERE start > ?`
-		args = append(args, since.UTC().Format(time.RFC3339))
-	}
-	q += ` ORDER BY start ASC`
+	// Note: we do NOT filter by `start` in SQL. Quill stores start/end as epoch
+	// milliseconds (an INTEGER), so a `start > '<rfc3339>'` comparison against a
+	// text watermark is always false in SQLite (integers sort before text). We
+	// fetch all rows and filter on the parsed Go time instead — robust to whatever
+	// encoding the (drifting) schema uses.
+	q := `SELECT ` + quoteCols(cols) + ` FROM "Meeting" ORDER BY start ASC`
 
-	rows, err := r.db.QueryContext(ctx, q, args...)
+	rows, err := r.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("querying meetings: %w", err)
 	}
@@ -159,6 +159,12 @@ func (r *dbReader) Meetings(ctx context.Context, since time.Time, warnf func(str
 		}
 		m := meetingFromRow(row)
 		if m.ID == "" {
+			continue
+		}
+		// Incremental: keep only meetings after the watermark. Undated meetings
+		// are included only on a full (zero-since) sync, so they aren't re-emitted
+		// every run.
+		if !since.IsZero() && !m.Start.After(since) {
 			continue
 		}
 		out = append(out, m)
@@ -330,10 +336,23 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// parseQuillTime tolerates the common SQLite datetime encodings.
+// parseQuillTime tolerates the encodings Quill/SQLite use: epoch milliseconds or
+// seconds (integers — Quill's actual format) and common ISO-8601 layouts (in case
+// the driver hands back a converted DATETIME string).
 func parseQuillTime(s string) time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {
+		return time.Time{}
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		switch {
+		case n > 1e14: // microseconds
+			return time.UnixMicro(n).UTC()
+		case n > 1e11: // milliseconds (Quill's format)
+			return time.UnixMilli(n).UTC()
+		case n > 0: // seconds
+			return time.Unix(n, 0).UTC()
+		}
 		return time.Time{}
 	}
 	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05.999-07:00", "2006-01-02 15:04:05", "2006-01-02T15:04:05.000Z"} {

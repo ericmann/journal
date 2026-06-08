@@ -3,6 +3,7 @@ package quill
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -103,6 +104,51 @@ func TestReaderSinceFilter(t *testing.T) {
 	}
 	if len(ms) != 1 || ms[0].ID != "m1" {
 		t.Errorf("since filter = %d meetings, want only m1", len(ms))
+	}
+}
+
+// TestReaderEpochMillisStart pins the real Quill encoding: start/end are stored
+// as epoch-millisecond INTEGERs. The since filter must work on the parsed Go
+// time, not a SQL text comparison (which silently matches nothing).
+func TestReaderEpochMillisStart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "quill.db")
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2026-06-05T20:29:20.328Z and 2026-06-08T... in epoch millis.
+	old := time.Date(2026, 6, 5, 20, 29, 20, 0, time.UTC).UnixMilli()
+	new1 := time.Date(2026, 6, 8, 14, 0, 0, 0, time.UTC).UnixMilli()
+	for _, q := range []string{
+		`CREATE TABLE "Meeting" (id TEXT PRIMARY KEY, start INTEGER, end INTEGER, type TEXT,
+			participants TEXT, tags TEXT, audio_transcript TEXT,
+			manualTitle TEXT, llmTitle TEXT, eventTitle TEXT, title TEXT)`,
+		`CREATE TABLE "Note" (id TEXT, meeting_id TEXT, body TEXT, createdAt TEXT)`,
+		fmt.Sprintf(`INSERT INTO "Meeting" VALUES('old',%d,%d,'m','[]','[]',NULL,NULL,NULL,NULL,'Old')`, old, old),
+		fmt.Sprintf(`INSERT INTO "Meeting" VALUES('new',%d,%d,'m','[]','[]',NULL,NULL,NULL,NULL,'New')`, new1, new1),
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("fixture: %v", err)
+		}
+	}
+	db.Close()
+
+	r, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	// start parses from epoch millis.
+	all, _ := r.Meetings(context.Background(), time.Time{}, nil)
+	if len(all) != 2 || all[1].Start.Year() != 2026 || all[1].Start.Day() != 8 {
+		t.Fatalf("epoch-millis start not parsed: %+v", all)
+	}
+	// Watermark after the old meeting → only the new one (the bug: this returned 0).
+	since := time.Date(2026, 6, 5, 20, 29, 20, 0, time.UTC)
+	got, _ := r.Meetings(context.Background(), since, nil)
+	if len(got) != 1 || got[0].ID != "new" {
+		t.Errorf("since filter over epoch-millis = %v, want only 'new'", got)
 	}
 }
 
