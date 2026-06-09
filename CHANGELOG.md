@@ -5,6 +5,31 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [2.2.0] — 2026-06-09
+
+### Added — the productivity loop
+
+- **Todo lifecycle.** A new `@done` marker joins the recognized set.
+  `journal todos` lists open `@todo` items newest-first with `path:line` citations
+  (`--done`, `--all`, `--project`, `--since`, `--json`); `journal done <ref>`
+  (citation or unique text fragment) rewrites that one `@todo` token to
+  `@done YYYY-MM-DD` in the note, re-indexes, and auto-commits. New MCP **`todos`**
+  and **`done`** tools let a connected Claude read and check off your list.
+- **Read commands.** `journal show [date|path]` renders any note (glamour on a
+  TTY); `journal today` is a day-at-a-glance dashboard (today's notes + open
+  todos + today's meetings, `--json` structured); `journal edit [date]` opens a
+  daily file in your editor (creating it with its date header) and auto-commits.
+- **`journal stats`** — capture volume by source, projects/meetings, marker
+  counts, current & longest daily streak, this-week-vs-last, top tags (`--json`).
+- **`journal tui`** — full-screen interactive dashboard (bubbletea): Today,
+  Todos (press `d` to complete), semantic Search, Recent, Meetings, Stats.
+
+### Notes
+
+- All additive — no store schema change, no config keys, no breaking CLI changes.
+- New Go deps: charmbracelet bubbletea/lipgloss/bubbles (the line already adopted
+  via glamour). Builds remain pure-Go/static.
+
 ## [2.1.0] — 2026-06-08
 
 ### Added

@@ -69,6 +69,13 @@ journal search  <query> [--k 5] [--tag t] [--project slug] [--since 2w] [--answe
 journal recent  [--tag t] [--project slug] [--since 1w] [--json]
 journal decisions [--project slug] [--since 4w] [--json]
 journal threads [--stale] [--days 14] [--json]
+journal todos   [--done|--all] [--project slug] [--since 2w] [--json]
+journal done    <path:line | text fragment>       # complete an open @todo
+journal today   [--json]                          # day at a glance (notes + todos + meetings)
+journal show    [date|path]                       # render a day's notes or any note file
+journal edit    [date]                            # open a daily file in your editor
+journal stats   [--json]                          # volume, streaks, markers, top tags
+journal tui                                       # interactive dashboard
 journal sync    [--dry-run]                      # back up notes to/from the git remote
 journal synth   weekly|daily|meetings|decisions|stale [--dry-run] [--write] [--project slug] [--days N] [--date YYYY-MM-DD]
 journal quill-sync [--full] [--db path]          # pull Quill meeting transcripts into transcripts/
@@ -119,6 +126,56 @@ Every read command supports **`--json`** with a stable schema:
 "open_questions", "stale", "days_since" } ] }`. On failure, commands emit
 `{ "error": "…" }` to stdout and exit non-zero — so an empty result set is
 distinguishable from an error.
+
+## Todos
+
+Any `@todo` in a captured note becomes a tracked item once indexed (the watcher
+does this live; otherwise run `journal index`):
+
+```sh
+journal capture "follow up with bob on pricing @todo"
+journal todos                       # numbered list with path:line citations
+journal done "follow up with bob"   # by unique text fragment…
+journal done daily/2026/06/2026-06-09.md:12   # …or by citation
+journal todos --done                # what you've finished
+```
+
+Completing a todo rewrites that one `@todo` token to `@done YYYY-MM-DD` in the
+note file (the content is otherwise untouched — it's the markdown equivalent of
+checking a checkbox), re-indexes, and auto-commits. The same `todos`/`done`
+operations are exposed as MCP tools, so a connected Claude can check items off.
+
+## Reading your notes
+
+```sh
+journal today              # day at a glance: today's notes + open todos + meetings
+journal show               # render today's notes (glamour on a TTY, plain piped)
+journal show yesterday     # or YYYY-MM-DD, or any repo-relative path
+journal edit               # open today's daily file in your editor (created if needed)
+journal edit 2026-06-08    # touch up a past day; auto-commits when you close
+```
+
+## Stats
+
+`journal stats` reports capture volume (chunks by source, projects, meetings),
+**momentum** (current/longest daily streak, this week vs last), marker counts
+(open/done todos, decisions, questions), and your top tags. `--json` emits a
+stable schema.
+
+## The TUI dashboard
+
+`journal tui` is a full-screen interactive view over everything above:
+
+| Tab | Contents | Keys |
+| --- | --- | --- |
+| Today | rendered daily notes | `r` refresh |
+| Todos | open todos | **`d` complete selected**, `enter` open |
+| Search | semantic search | type + `enter`; `/` edits the query |
+| Recent / Meetings | latest notes & transcripts | `enter` open, `esc` back |
+| Stats | the stats report | |
+
+`tab`/`shift+tab` or `1–6` switch tabs; `q` quits. Search errors (e.g. Ollama
+down) land in the status bar — the dashboard keeps working.
 
 ## The watcher
 

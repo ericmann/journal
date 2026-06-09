@@ -30,7 +30,9 @@ disposable, rebuildable cache and is never committed. It all ships as one static
 binary.
 
 - 📝 **Frictionless capture** — append a timestamped note inline, in your editor, or from stdin; auto-committed.
+- ✅ **Todos that close the loop** — `@todo` in any note becomes a tracked item: `journal todos` lists them, `journal done` checks them off (also via MCP, so Claude can too).
 - 🔎 **Local semantic search** — Ollama + `sqlite-vec`, optional LLM reranking; with an API key, a grounded AI answer on top. Notes never leave your machine for retrieval.
+- 📺 **A daily home** — `journal today` (day at a glance), `journal tui` (interactive dashboard: notes, todos, search, meetings, stats), `journal stats` (streaks & volume).
 - 🤖 **AI synthesis** — daily/weekly rollups and decision digests via cloud Claude, in your own voice.
 - 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); search, list, and digest them. *(v2.0; Quill is macOS/Windows.)*
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
@@ -145,6 +147,10 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal index [--watch]` | Embed changed notes; `--watch` runs continuously |
 | `journal search <query>` | Semantic search with citations (+ a grounded AI answer when a key is set); `--source notes\|transcript\|all` |
 | `journal recent` · `decisions` · `threads` · `meetings` | Metadata views (newest-first, `@decision`, project activity, transcripts) |
+| `journal todos` · `journal done <ref>` | List open `@todo` items; check one off (rewrites it to `@done <date>`) |
+| `journal today` · `show` · `edit` | Day at a glance; render any note; open a daily file in your editor |
+| `journal tui` | Interactive dashboard: today, todos, semantic search, recent, meetings, stats |
+| `journal stats` | Capture volume, streaks, marker counts, top tags |
 | `journal quill-sync` | Pull Quill meeting transcripts into `transcripts/` ([Quill](docs/QUILL.md)) |
 | `journal synth weekly\|daily\|meetings\|decisions\|stale` | AI synthesis via cloud Claude |
 | `journal sync` | Back up to / pull from a git remote (opt-in) |

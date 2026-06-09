@@ -325,6 +325,28 @@ and keep the search index fresh.
   keys (preserving user values), scaffolds new dirs, bumps `schema_version` to 2.0,
   and reports a change summary — a general mechanism for any future addition.
 
+## v2.2.0 — the productivity loop (todos, read commands, stats, TUI)
+
+- **Completing a todo mutates one token, deliberately.** `journal done` rewrites
+  the matched `@todo` to `@done YYYY-MM-DD` in the user's note. The append-only
+  ethos governs *content* (synth never touches note bodies; capture only appends);
+  marker state is tool-managed metadata, and rewriting it is the markdown
+  equivalent of checking a checkbox. The alternative — appending completion
+  records that reference the original — keeps files append-only but makes "what's
+  open" a join the user can't see in the file itself.
+- **No keyword-search fallback (explicit product call).** A planned keyword/hybrid
+  mode was rejected: semantic retrieval is the value proposition; diluting it to
+  soften the Ollama requirement isn't worth the identity cost. Search remains
+  embedding-only.
+- **TUI in package cmd, charmbracelet stack.** `journal tui` (bubbletea/lipgloss/
+  bubbles — the line already adopted via glamour) lives in package cmd so it
+  reuses the same unexported cores as the CLI and MCP (`completeTodo`,
+  `searchChunks`, `gatherStats`, `recentMeetings`) instead of forcing exports or
+  duplication. The model's Update/View are tested headlessly; no PTY in CI.
+- **Todos are index-backed.** Like search, `todos` reads the store, so items
+  appear once indexed (live with the watcher). Keeps capture pure/instant and
+  avoids a second markdown scanner.
+
 ## Tooling / process
 
 ### Commit signing
