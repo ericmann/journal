@@ -46,11 +46,8 @@ func Open(editorCmd string) (string, error) {
 	_ = f.Close()
 	defer func() { _ = os.Remove(path) }()
 
-	// `sh -c '<editorCmd> "$1"' sh <path>` — the extra "sh" becomes $0, path is $1.
-	c := exec.Command("sh", "-c", editorCmd+` "$1"`, "sh", path)
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := c.Run(); err != nil {
-		return "", fmt.Errorf("editor %q exited with an error: %w", editorCmd, err)
+	if err := OpenPath(editorCmd, path); err != nil {
+		return "", err
 	}
 
 	data, err := os.ReadFile(path)
@@ -58,4 +55,17 @@ func Open(editorCmd string) (string, error) {
 		return "", fmt.Errorf("reading composed note: %w", err)
 	}
 	return string(data), nil
+}
+
+// OpenPath opens an existing file in editorCmd and waits for the editor to
+// close. Same launch mechanics as Open (`sh -c '<editorCmd> "$1"'`); used by
+// `journal edit` to work on a real note file rather than a temp buffer.
+func OpenPath(editorCmd, path string) error {
+	// `sh -c '<editorCmd> "$1"' sh <path>` — the extra "sh" becomes $0, path is $1.
+	c := exec.Command("sh", "-c", editorCmd+` "$1"`, "sh", path)
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("editor %q exited with an error: %w", editorCmd, err)
+	}
+	return nil
 }

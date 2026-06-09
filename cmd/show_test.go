@@ -1,0 +1,114 @@
+package cmd
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ericmann/journal/internal/editor"
+	"github.com/ericmann/journal/internal/note"
+)
+
+func TestDateForArg(t *testing.T) {
+	if _, err := dateForArg("today"); err != nil {
+		t.Error("today should parse")
+	}
+	if _, err := dateForArg(""); err != nil {
+		t.Error("empty should parse as today")
+	}
+	y, err := dateForArg("yesterday")
+	if err != nil || !y.Before(time.Now()) {
+		t.Errorf("yesterday = %v, %v", y, err)
+	}
+	d, err := dateForArg("2026-06-01")
+	if err != nil || d.Day() != 1 || d.Month() != 6 {
+		t.Errorf("explicit date = %v, %v", d, err)
+	}
+	if _, err := dateForArg("daily/2026/06/2026-06-01.md"); err == nil {
+		t.Error("a path should not parse as a date")
+	}
+}
+
+func TestResolveNotePathRejectsEscape(t *testing.T) {
+	cfg := testRepo(t, nil)
+	if _, _, err := resolveNotePath(cfg, "../outside.md"); err == nil {
+		t.Error("path escaping the repo should be rejected")
+	}
+	abs, rel, err := resolveNotePath(cfg, "projects/x/notes/n.md")
+	if err != nil || rel != "projects/x/notes/n.md" || !strings.HasPrefix(abs, cfg.Root()) {
+		t.Errorf("relative path resolve = %s, %s, %v", abs, rel, err)
+	}
+}
+
+func TestGatherTodayAndCompose(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00 @todo\nfinish the dashboard\n",
+	})
+	rep, notesMD, err := gatherToday(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Notes || !strings.Contains(notesMD, "finish the dashboard") {
+		t.Errorf("today's notes not picked up: %+v", rep)
+	}
+	if len(rep.Todos) != 1 {
+		t.Errorf("today todos = %d, want 1", len(rep.Todos))
+	}
+	md := composeToday(rep, notesMD)
+	if !strings.Contains(md, "Open todos (1)") || !strings.Contains(md, "- [ ]") {
+		t.Errorf("composed dashboard missing todos section:\n%s", md)
+	}
+
+	// Empty repo: friendly empty state, sections omitted.
+	cfg2 := testRepo(t, nil)
+	rep2, notes2, err := gatherToday(context.Background(), cfg2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md2 := composeToday(rep2, notes2)
+	if !strings.Contains(md2, "No notes yet today") || strings.Contains(md2, "Open todos") {
+		t.Errorf("empty dashboard wrong:\n%s", md2)
+	}
+}
+
+func TestEditCreatesDailyAndInvokesEditor(t *testing.T) {
+	cfg := testRepo(t, nil)
+
+	var opened string
+	openPathEditor = func(editorCmd, path string) error {
+		opened = path
+		return os.WriteFile(path, []byte(note.DailyH1(time.Now())+"\n\n## 09:00\nadded in editor\n"), 0o644)
+	}
+	t.Cleanup(func() { openPathEditor = editor.OpenPath })
+
+	// Drive the command path pieces directly: resolve, create, open.
+	abs, _, err := resolveNotePath(cfg, "today")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(abs); !os.IsNotExist(err) {
+		t.Fatal("daily file should not exist yet")
+	}
+	// Simulate the RunE create-then-open sequence.
+	if err := os.WriteFile(abs, []byte(note.DailyH1(time.Now())+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := openPathEditor("fake", abs); err != nil {
+		t.Fatal(err)
+	}
+	if opened != abs {
+		t.Errorf("editor opened %q, want %q", opened, abs)
+	}
+	data, _ := os.ReadFile(abs)
+	if !strings.Contains(string(data), "added in editor") {
+		t.Errorf("edit not persisted:\n%s", data)
+	}
+}

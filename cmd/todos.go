@@ -108,7 +108,7 @@ func renderTodos(out io.Writer, results []Result, jsonMode, doneMode bool) error
 		if doneMode {
 			fmt.Fprintln(out, "no completed todos")
 		} else {
-			fmt.Fprintln(out, "no open todos — capture one with `journal capture \"… @todo\"`")
+			fmt.Fprintln(out, "no open todos — capture one with `journal capture \"… @todo\"` (todos appear once indexed: `journal index` or the watcher)")
 		}
 		return nil
 	}
