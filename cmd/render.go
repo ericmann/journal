@@ -31,3 +31,20 @@ func isTerminal(out io.Writer) bool {
 	f, ok := out.(*os.File)
 	return ok && term.IsTerminal(int(f.Fd()))
 }
+
+// renderMarkdownString glamour-renders md at the given wrap width, returning
+// the raw markdown on any renderer error. Used by the TUI (always a TTY).
+func renderMarkdownString(md string, width int) string {
+	if width <= 0 {
+		width = 100
+	}
+	r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(width))
+	if err != nil {
+		return md
+	}
+	out, err := r.Render(md)
+	if err != nil {
+		return md
+	}
+	return out
+}
