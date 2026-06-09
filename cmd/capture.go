@@ -155,7 +155,7 @@ func capture(root string, t time.Time, text string, flagTags []string, project, 
 	if flagMarker != "" {
 		m := strings.ToLower(strings.TrimSpace(flagMarker))
 		if !note.ValidMarker(m) {
-			return "", fmt.Errorf("invalid marker %q (want decision|question|todo)", flagMarker)
+			return "", fmt.Errorf("invalid marker %q (want decision|question|todo|done)", flagMarker)
 		}
 		markers = mergeStrings(markers, []string{m})
 	}
@@ -197,6 +197,6 @@ func mergeStrings(a, b []string) []string {
 func init() {
 	captureCmd.Flags().StringSliceVar(&captureTags, "tags", nil, "comma-separated tags (also detected inline as #tag)")
 	captureCmd.Flags().StringVar(&captureProject, "project", "", "capture into projects/<slug>/ instead of the daily file")
-	captureCmd.Flags().StringVar(&captureMarker, "marker", "", "structured marker: decision|question|todo")
+	captureCmd.Flags().StringVar(&captureMarker, "marker", "", "structured marker: decision|question|todo|done")
 	rootCmd.AddCommand(captureCmd)
 }

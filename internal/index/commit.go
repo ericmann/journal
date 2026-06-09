@@ -30,6 +30,12 @@ func CaptureCommitMessage(t time.Time) string {
 	return fmt.Sprintf("📓 %s a note · %s", verb, t.Format("Mon 2006-01-02 15:04"))
 }
 
+// DoneCommitMessage is the auto-commit message for `journal done` completing a
+// @todo.
+func DoneCommitMessage(t time.Time) string {
+	return fmt.Sprintf("📓 checked off a todo · %s", t.Format("Mon 2006-01-02 15:04"))
+}
+
 // SyncCommitMessage is the auto-commit message for pending changes swept up by
 // `journal sync` before it pushes (e.g. notes edited by hand while the watcher
 // was not running).

@@ -56,6 +56,16 @@ type meetingsInput struct {
 	Since string `json:"since,omitempty" jsonschema:"only meetings within this window, e.g. 2w"`
 }
 
+type todosInput struct {
+	Done    bool   `json:"done,omitempty" jsonschema:"list completed (@done) items instead of open @todo items"`
+	Project string `json:"project,omitempty" jsonschema:"restrict to this project slug"`
+	Since   string `json:"since,omitempty" jsonschema:"only items within this window, e.g. 2w"`
+}
+
+type doneInput struct {
+	Ref string `json:"ref" jsonschema:"the todo to complete: a citation from the todos tool (path:line) or a unique text fragment"`
+}
+
 type recentInput struct {
 	Tag     []string `json:"tag,omitempty" jsonschema:"only chunks having all of these tags"`
 	Project string   `json:"project,omitempty" jsonschema:"restrict to this project slug"`
@@ -129,6 +139,20 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 		return mcpMeetings(ctx, cfg, in)
 	}))
 
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "todos",
+		Description: "List open @todo notes (newest first) with path:line citations, or completed items with done=true. Use for 'what's on my plate'.",
+	}, toolHandler(func(ctx context.Context, in todosInput) (string, error) {
+		return mcpTodos(ctx, cfg, in)
+	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "done",
+		Description: "Complete an open @todo: rewrites its @todo marker to @done with today's date in the note file. ref is a citation from the todos tool (path:line) or a unique text fragment.",
+	}, toolHandler(func(ctx context.Context, in doneInput) (string, error) {
+		return mcpDone(ctx, cfg, e, in)
+	}))
+
 	return s.Run(ctx, &mcp.StdioTransport{})
 }
 
@@ -181,6 +205,32 @@ func mcpSearch(ctx context.Context, cfg *config.Config, e embed.Embedder, in sea
 		return "", err
 	}
 	return marshalResults(results)
+}
+
+func mcpTodos(ctx context.Context, cfg *config.Config, in todosInput) (string, error) {
+	markers := []string{note.MarkerTodo}
+	if in.Done {
+		markers = []string{note.MarkerDone}
+	}
+	results, err := listTodos(ctx, cfg, markers, in.Project, in.Since)
+	if err != nil {
+		return "", err
+	}
+	return marshalResults(results)
+}
+
+func mcpDone(ctx context.Context, cfg *config.Config, e embed.Embedder, in doneInput) (string, error) {
+	res, err := completeTodo(ctx, cfg, e, in.Ref, nil)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.MarshalIndent(struct {
+		Completed Result `json:"completed"`
+	}{Completed: res}, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func mcpMeetings(ctx context.Context, cfg *config.Config, in meetingsInput) (string, error) {

@@ -18,17 +18,20 @@ import (
 )
 
 // Markers are the structured annotations the synthesis and query layers key
-// off. Only these three are recognized.
+// off. Only these four are recognized. @done is written by `journal done` when
+// completing a @todo (and may be hand-written).
 const (
 	MarkerDecision = "decision"
 	MarkerQuestion = "question"
 	MarkerTodo     = "todo"
+	MarkerDone     = "done"
 )
 
 var validMarkers = map[string]bool{
 	MarkerDecision: true,
 	MarkerQuestion: true,
 	MarkerTodo:     true,
+	MarkerDone:     true,
 }
 
 // timeLayout is the block-header clock format.
@@ -46,7 +49,7 @@ var (
 	// A marker is "@" at the start of the text or after whitespace, followed by
 	// one of the known set — same whitespace boundary as tags so URL/path "@"s
 	// are not mistaken for markers.
-	markerRe = regexp.MustCompile(`(?:^|\s)@(decision|question|todo)\b`)
+	markerRe = regexp.MustCompile(`(?:^|\s)@(decision|question|todo|done)\b`)
 	// Block header: exactly "## HH:MM" then optional tags/markers.
 	blockTimeRe = regexp.MustCompile(`^\d{2}:\d{2}$`)
 	// Slug normalization.
