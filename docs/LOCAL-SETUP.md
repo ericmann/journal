@@ -127,6 +127,26 @@ one-runtime stack.
    them."* Jan shows inline approval cards per tool call (or pre-approve with
    "Allow All").
 
+> **"Generation Failed: Forbidden"?** Ollama 403s requests whose `Origin`
+> header isn't on its allowlist, and some Jan builds send Tauri's
+> `http://tauri.localhost` form, which isn't in Ollama's defaults (Jan's
+> maintainers recommend allowlisting both forms —
+> [janhq/jan#7485](https://github.com/janhq/jan/issues/7485)). The fix appends
+> to Ollama's defaults, it never replaces them:
+>
+> ```sh
+> # macOS desktop app (launchd env), then restart Ollama:
+> launchctl setenv OLLAMA_ORIGINS "http://tauri.localhost,https://tauri.localhost"
+> # Linux (systemd): systemctl edit ollama → Environment=OLLAMA_ORIGINS=...
+> ```
+>
+> macOS caveat: `launchctl setenv` does **not** survive a reboot — re-run it,
+> or persist it with a login LaunchAgent. Windows users hit this 403 reliably
+> (Tauri always uses `http://tauri.localhost` there); set the same value as a
+> user environment variable. Avoid `OLLAMA_ORIGINS="*"`, especially if
+> Ollama's "expose to network" setting is on — wildcard origins plus a
+> non-loopback bind opens your Ollama to any browser page and any LAN device.
+
 The full tool surface the model gets — search, show, recent, decisions,
 threads, meetings, todos, done, capture — is documented in
 [INTEGRATIONS.md](INTEGRATIONS.md).
