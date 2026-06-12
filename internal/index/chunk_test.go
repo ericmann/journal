@@ -3,6 +3,7 @@ package index
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -136,6 +137,50 @@ func TestProjectForPath(t *testing.T) {
 		if got := ProjectForPath(in); got != want {
 			t.Errorf("ProjectForPath(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Regression: a capture block whose content uses its own `# ` headings (pasted
+// markdown) must keep that content in the block body. Previously any H1
+// terminated the block, leaving an empty chunk and dropping everything after.
+func TestChunkNonDateH1IsBodyContent(t *testing.T) {
+	content := `# 2026-06-12
+
+## 10:30
+# Merck Human Health
+
+Discovery focused engagement.
+
+# Entrepreneur Media
+
+Reduce the Piano footprint.
+
+## 11:00
+follow-up note
+`
+	chunks := Chunk("projects/fde-triage/notes/2026-06-12.md", content)
+	if len(chunks) != 2 {
+		t.Fatalf("got %d chunks, want 2", len(chunks))
+	}
+	c0 := chunks[0]
+	if c0.Heading != "10:30" {
+		t.Errorf("chunk0 heading = %q", c0.Heading)
+	}
+	for _, want := range []string{"# Merck Human Health", "Discovery focused engagement.", "# Entrepreneur Media", "Reduce the Piano footprint."} {
+		if !strings.Contains(c0.Body, want) {
+			t.Errorf("chunk0 body missing %q; body = %q", want, c0.Body)
+		}
+	}
+	if c0.LineStart != 3 || c0.LineEnd != 10 {
+		t.Errorf("chunk0 lines = %d-%d, want 3-10 (trailing blank trimmed)", c0.LineStart, c0.LineEnd)
+	}
+	// A later date H1 still flushes and re-dates subsequent blocks.
+	if chunks[1].Heading != "11:00" || chunks[1].Body != "follow-up note" {
+		t.Errorf("chunk1 = %q / %q", chunks[1].Heading, chunks[1].Body)
+	}
+	want := time.Date(2026, 6, 12, 10, 30, 0, 0, time.UTC)
+	if !c0.CreatedAt.Equal(want) {
+		t.Errorf("chunk0 created = %v, want %v", c0.CreatedAt, want)
 	}
 }
 

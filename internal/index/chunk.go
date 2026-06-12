@@ -25,7 +25,9 @@ var h1DateRe = regexp.MustCompile(`^#\s+(\d{4}-\d{2}-\d{2})\s*$`)
 // derived from the file's H1 date plus the block's HH:MM when both are present.
 //
 // Content before the first `##` (H1, frontmatter, intro prose) is preamble and
-// is not chunked, matching the capture format.
+// is not chunked, matching the capture format. Only a date H1 ("# YYYY-MM-DD")
+// is structural; any other `# ` line is user content (e.g. markdown pasted into
+// a capture block) and stays in the current block's body.
 func Chunk(repoRelPath, content string) []store.Chunk {
 	lines := strings.Split(content, "\n")
 	project := ProjectForPath(repoRelPath)
@@ -56,11 +58,9 @@ func Chunk(repoRelPath, content string) []store.Chunk {
 			inBlock = true
 			bHeading = strings.TrimSpace(line[len("## "):])
 			bStart = lineNo
-		case isH1(line):
+		case isH1Date(line):
 			flush(lineNo - 1)
-			if m := h1DateRe.FindStringSubmatch(line); m != nil {
-				curDate = m[1]
-			}
+			curDate = h1DateRe.FindStringSubmatch(line)[1]
 		default:
 			if inBlock {
 				bBody = append(bBody, line)
@@ -154,9 +154,10 @@ func createdAt(date, heading string) time.Time {
 
 func isH2(line string) bool { return strings.HasPrefix(line, "## ") }
 
-func isH1(line string) bool {
-	return strings.HasPrefix(line, "# ")
-}
+// isH1Date reports whether the line is a structural date H1 ("# YYYY-MM-DD").
+// Non-date H1s must not end a block: notes often contain pasted markdown whose
+// own `# ` headings are content, not journal structure.
+func isH1Date(line string) bool { return h1DateRe.MatchString(line) }
 
 // ProjectForPath returns the project slug for a repo-relative path under
 // projects/<slug>/..., or "" if the path is not in a project.
