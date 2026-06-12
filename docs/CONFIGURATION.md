@@ -28,10 +28,16 @@ excludes:                              # repo-relative globs skipped by the inde
 # --- Capture ---
 editor: ""                             # editor for `journal capture` with no text
 
-# --- Synthesis (cloud Claude) ---
-synth_model: claude-sonnet-4-6
+# --- Synthesis (cloud Claude or local Ollama) ---
+synth_provider: anthropic              # anthropic (cloud) | ollama (fully local)
+synth_model: claude-sonnet-4-6         # model when provider is anthropic
+synth_ollama_model: gemma4:12b         # model when provider is ollama
+synth_num_ctx: 32768                   # Ollama context window (its 4096 default truncates silently)
 synth_max_tokens: 4096
 voice_profile: docs/VOICE_PROFILE.md   # optional style reference for synth
+
+# --- Egress kill-switch (see docs/DATA-FLOWS.md) ---
+local_only: false                      # true = refuse cloud synth, disable sync + mcp
 
 # --- Git integration ---
 git_autocommit: true                   # auto-commit notes during capture/index/watch
@@ -70,8 +76,12 @@ schema_version: "2.0"                  # config schema; `journal init` upgrades 
 | `store_path` | `.journal/index/journal.db` | Path to the sqlite-vec index. Disposable and gitignored — rebuild any time with `journal index --rebuild`. |
 | `excludes` | `reflections/**`, `.journal/**`, `docs/**`, `README.md` | Repo-relative globs the indexer skips. `reflections/` holds synthesis output; `docs/` holds meta like the voice profile; `README.md` is the generated guide. |
 | `editor` | `""` | Command for `journal capture` with no text. Run as a shell string (so `code --wait` works). Empty falls back to `$JOURNAL_EDITOR`, `$VISUAL`, `$EDITOR`, then `nano`. |
-| `synth_model` | `claude-sonnet-4-6` | Anthropic model for `journal synth`. |
+| `synth_provider` | `anthropic` | Who runs `journal synth` and search answers: `anthropic` (cloud, needs `ANTHROPIC_API_KEY`) or `ollama` (fully local — note content never leaves the machine). See [SYNTHESIS.md](SYNTHESIS.md). |
+| `synth_model` | `claude-sonnet-4-6` | Anthropic model, used when `synth_provider: anthropic`. |
+| `synth_ollama_model` | `gemma4:12b` | Ollama model, used when `synth_provider: ollama`. Pull it with `ollama pull`. 64GB machines can step up to `gemma4:26b`. |
+| `synth_num_ctx` | `32768` | Context window requested per Ollama synthesis call. Always sent explicitly — Ollama's server default is 4096 and it **truncates silently**. |
 | `synth_max_tokens` | `4096` | Cap on synthesis response length. |
+| `local_only` | `false` | **Egress kill-switch.** When `true`: cloud synthesis is refused (`synth_provider` must be `ollama`), `journal sync` and `journal mcp` are disabled, and `ollama_base_url` must be loopback. See [DATA-FLOWS.md](DATA-FLOWS.md). |
 | `voice_profile` | `docs/VOICE_PROFILE.md` | Optional markdown style reference injected into synth prompts. |
 | `git_autocommit` | `true` | Auto-commit note changes during `capture`/`index`/`index --watch` when the repo root is a git work tree. No-op outside git. |
 | `git_autocommit_sign` | `false` | Sign auto-commits. Off avoids signing prompts in an unattended watcher. |

@@ -5,6 +5,24 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Added — local-first synthesis & the egress kill-switch
+
+- **Local synthesis via Ollama.** `synth_provider: ollama` runs `journal synth`
+  and grounded search answers against a local model (`synth_ollama_model`,
+  default `gemma4:12b`) — no API key, no note content leaving the machine.
+  Every request sends `synth_num_ctx` (default 32768) explicitly because
+  Ollama's 4096 default truncates prompts silently. `journal doctor` verifies
+  the synth model is pulled when the provider is ollama.
+- **`local_only: true`** — one-line egress kill-switch: refuses cloud synthesis,
+  disables `journal sync` and `journal mcp` (MCP clients may forward note
+  content to cloud models), and requires a loopback `ollama_base_url`. The new
+  `egress` doctor check reports the posture either way.
+- **Docs:** [DATA-FLOWS.md](docs/DATA-FLOWS.md) (what's stored, what can leave,
+  HIPAA posture) and [CLIENTS.md](docs/CLIENTS.md) (fully-local MCP GUI
+  alternatives to Claude Desktop: LM Studio, Jan, AnythingLLM).
+
 ## [2.3.0] — 2026-06-12
 
 ### Added
