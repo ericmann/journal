@@ -138,6 +138,16 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		"empty ollamaurl":  func(c *Config) { c.OllamaBaseURL = "" },
 		"bad strategy":     func(c *Config) { c.ChunkStrategy = "paragraph" },
 		"empty storepath":  func(c *Config) { c.StorePath = "" },
+		"bad provider":     func(c *Config) { c.SynthProvider = "openai" },
+		"ollama provider w/o model": func(c *Config) {
+			c.SynthProvider = SynthProviderOllama
+			c.SynthOllamaModel = ""
+		},
+		"zero num_ctx": func(c *Config) { c.SynthNumCtx = 0 },
+		"local_only with network ollama": func(c *Config) {
+			c.LocalOnly = true
+			c.OllamaBaseURL = "http://gpu-box.local:11434"
+		},
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -147,6 +157,34 @@ func TestValidateRejectsBadValues(t *testing.T) {
 				t.Errorf("expected validation error for %s", name)
 			}
 		})
+	}
+}
+
+func TestLocalOnlyAcceptsLoopbackOllama(t *testing.T) {
+	for _, u := range []string{
+		"http://localhost:11434",
+		"http://127.0.0.1:11434",
+		"http://[::1]:11434",
+		"http://127.0.0.53:11434", // anywhere in 127/8
+	} {
+		c := Default()
+		c.LocalOnly = true
+		c.SynthProvider = SynthProviderOllama
+		c.OllamaBaseURL = u
+		if err := c.Validate(); err != nil {
+			t.Errorf("local_only with %s should validate, got: %v", u, err)
+		}
+	}
+}
+
+func TestActiveSynthModel(t *testing.T) {
+	c := Default()
+	if got := c.ActiveSynthModel(); got != c.SynthModel {
+		t.Errorf("anthropic provider model = %q, want %q", got, c.SynthModel)
+	}
+	c.SynthProvider = SynthProviderOllama
+	if got := c.ActiveSynthModel(); got != c.SynthOllamaModel {
+		t.Errorf("ollama provider model = %q, want %q", got, c.SynthOllamaModel)
 	}
 }
 
@@ -291,7 +329,9 @@ func TestConfigMarshalOmitsSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{"ANTHROPIC", "api_key", "apikey", "sk-"} {
+	// "anthropic" alone is a legitimate synth_provider value; check for actual
+	// secret shapes instead.
+	for _, bad := range []string{"ANTHROPIC_API_KEY", "api_key", "apikey", "sk-"} {
 		if containsFold(string(out), bad) {
 			t.Errorf("marshaled config must not contain %q; got:\n%s", bad, out)
 		}

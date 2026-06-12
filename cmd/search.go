@@ -63,18 +63,17 @@ var searchCmd = &cobra.Command{
 		}
 
 		// Optional AI answer (text mode only), grounded in the retrieved chunks.
-		_, keyErr := config.AnthropicAPIKey()
-		do, missingKey := wantAnswer(searchJSON, searchAnswer, searchNoAnswer, keyErr == nil)
-		if missingKey {
-			return renderError(out, fmt.Errorf("--answer needs %s set in the environment", config.AnthropicKeyEnv), searchJSON)
+		client, available, unavailableReason := answerClient(cfg)
+		do, unavailable := wantAnswer(searchJSON, searchAnswer, searchNoAnswer, available)
+		if unavailable {
+			return renderError(out, unavailableReason, searchJSON)
 		}
 		if do && len(scored) > 0 {
-			key, _ := config.AnthropicAPIKey()
 			chunks := make([]store.Chunk, len(scored))
 			for i, sc := range scored {
 				chunks[i] = sc.chunk
 			}
-			ans, aerr := answerQuery(cmd.Context(), synth.NewAnthropic(key), cfg.SynthModel, cfg.SynthMaxTokens, query, chunks)
+			ans, aerr := answerQuery(cmd.Context(), client, cfg.ActiveSynthModel(), cfg.SynthMaxTokens, query, chunks)
 			if aerr != nil {
 				fmt.Fprintf(out, "(AI answer unavailable: %v)\n\n", aerr) // non-fatal; raw results still shown
 			} else {
@@ -102,20 +101,37 @@ func parseSourceFilter(s string) (string, error) {
 }
 
 // wantAnswer decides whether to generate an AI answer. forceOn is --answer,
-// forceOff is --no-answer. With a key present the answer is automatic; with
-// --answer but no key, missingKey signals a clear error; in auto mode without a
-// key it is silently skipped.
-func wantAnswer(jsonMode, forceOn, forceOff, haveKey bool) (do, missingKey bool) {
+// forceOff is --no-answer. With a usable client the answer is automatic; with
+// --answer but no usable client, unavailable signals a clear error; in auto
+// mode without one it is silently skipped.
+func wantAnswer(jsonMode, forceOn, forceOff, available bool) (do, unavailable bool) {
 	if jsonMode || forceOff {
 		return false, false
 	}
-	if haveKey {
+	if available {
 		return true, false
 	}
 	if forceOn {
 		return false, true
 	}
 	return false, false
+}
+
+// answerClient builds the synthesis client for grounded search answers per the
+// configured provider. available=false with a reason means answers are skipped
+// in auto mode (and the reason is surfaced if --answer forces one).
+func answerClient(cfg *config.Config) (client synth.Client, available bool, reason error) {
+	if cfg.SynthProvider == config.SynthProviderOllama {
+		return synth.NewOllama(cfg.OllamaBaseURL, cfg.SynthNumCtx), true, nil
+	}
+	if cfg.LocalOnly {
+		return nil, false, fmt.Errorf("local_only is enabled: cloud answers are disabled — set `synth_provider: ollama` for local answers (see docs/DATA-FLOWS.md)")
+	}
+	if _, err := config.AnthropicAPIKey(); err != nil {
+		return nil, false, fmt.Errorf("--answer needs %s set in the environment", config.AnthropicKeyEnv)
+	}
+	key, _ := config.AnthropicAPIKey()
+	return synth.NewAnthropic(key), true, nil
 }
 
 // runSearch returns the top-k results. It is a thin wrapper over searchChunks
