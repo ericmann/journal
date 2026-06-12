@@ -5,6 +5,18 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [2.2.1] — 2026-06-12
+
+### Fixed
+
+- **Chunker dropped note content after non-date `#` headings.** Only a date H1
+  (`# YYYY-MM-DD`) is structural; any other `# ` line — e.g. markdown pasted
+  into a capture block — previously terminated the open `##` block, leaving an
+  empty chunk and silently un-indexing everything after it. Such lines now stay
+  in the block body. Affected notes re-embed automatically on the next
+  `journal index` (the body change produces new chunk IDs — no `--rebuild`
+  needed).
+
 ## [2.2.0] — 2026-06-09
 
 ### Added — the productivity loop
