@@ -152,10 +152,14 @@ the same stable JSON as the CLI's `--json`):
 
 | MCP tool    | Arguments                                  | Returns                         |
 |-------------|--------------------------------------------|---------------------------------|
-| `search`    | `query`, `k?`, `tag[]?`, `project?`, `since?` | `{results:[…]}` (path:line cites) |
+| `search`    | `query`, `k?`, `tag[]?`, `project?`, `since?`, `source?` | `{results:[…]}` (path:line cites + full `body`) |
+| `show`      | `path` (date, repo-relative path, or citation) | `{path, content}` (full raw markdown) |
 | `recent`    | `tag[]?`, `project?`, `since?`             | `{results:[…]}`                 |
 | `decisions` | `project?`, `since?`                       | `{results:[…]}` (@decision only)|
 | `threads`   | `stale?`, `days?`                          | `{threads:[…]}`                 |
+| `meetings`  | `k?`, `since?`                             | `{meetings:[…]}`                |
+| `todos`     | `done?`, `project?`, `since?`              | `{results:[…]}` (@todo/@done)   |
+| `done`      | `ref` (citation or text fragment)          | `{completed:{…}}`               |
 | `capture`   | `text`, `tags[]?`, `project?`, `marker?`   | `{"captured":"<path>"}`         |
 
 Register it in the desktop app's MCP config (`claude_desktop_config.json`).

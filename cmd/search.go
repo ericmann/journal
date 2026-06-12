@@ -128,11 +128,14 @@ func runSearch(ctx context.Context, cfg *config.Config, e embed.Embedder, query 
 	return resultsFromScored(scored), nil
 }
 
-// resultsFromScored maps scored chunks to display Results.
+// resultsFromScored maps scored chunks to display Results. Search results carry
+// the full chunk body (k is small, and MCP/--json consumers need the content,
+// not just the snippet); list commands stay snippet-only.
 func resultsFromScored(scored []scoredChunk) []Result {
 	results := make([]Result, len(scored))
 	for i, sc := range scored {
 		results[i] = chunkToResult(sc.chunk, sc.score)
+		results[i].Body = sc.chunk.Body
 	}
 	return results
 }

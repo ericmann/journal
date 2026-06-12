@@ -16,6 +16,7 @@ type Result struct {
 	LineEnd   int      `json:"line_end"`
 	Heading   string   `json:"heading"`
 	Snippet   string   `json:"snippet"`
+	Body      string   `json:"body,omitempty"` // full chunk body; search results only
 	Score     float64  `json:"score"`
 	Tags      []string `json:"tags"`
 	Markers   []string `json:"markers"`

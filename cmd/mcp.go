@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -82,6 +84,10 @@ type threadsInput struct {
 	Days  int  `json:"days,omitempty" jsonschema:"staleness threshold in days (default 14)"`
 }
 
+type showInput struct {
+	Path string `json:"path" jsonschema:"a date (YYYY-MM-DD, today, yesterday) or repo-relative note path; a path:line-line citation from other tools also works"`
+}
+
 type captureInput struct {
 	Text    string   `json:"text" jsonschema:"the note text to append"`
 	Tags    []string `json:"tags,omitempty" jsonschema:"tags to attach"`
@@ -123,6 +129,13 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 		Description: "Summarize project threads and their activity. Use stale=true for neglected projects.",
 	}, toolHandler(func(ctx context.Context, in threadsInput) (string, error) {
 		return mcpThreads(ctx, cfg, in)
+	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "show",
+		Description: "Read a note file's full raw markdown by date (YYYY-MM-DD, today, yesterday) or repo-relative path. Use this to read the complete content behind a citation when a search snippet is not enough.",
+	}, toolHandler(func(ctx context.Context, in showInput) (string, error) {
+		return mcpShow(cfg, in)
 	}))
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -286,6 +299,33 @@ func mcpThreads(ctx context.Context, cfg *config.Config, in threadsInput) (strin
 		threads = []Thread{}
 	}
 	b, err := json.MarshalIndent(threadsEnvelope{Threads: threads}, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// citationSuffixRe matches a trailing ":line" or ":line-line" so a citation
+// from search/todos results can be passed to show as-is.
+var citationSuffixRe = regexp.MustCompile(`:\d+(-\d+)?$`)
+
+func mcpShow(cfg *config.Config, in showInput) (string, error) {
+	ref := citationSuffixRe.ReplaceAllString(strings.TrimSpace(in.Path), "")
+	abs, rel, err := resolveNotePath(cfg, ref)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(abs)
+	if os.IsNotExist(err) {
+		return "", fmt.Errorf("no note at %s", rel)
+	}
+	if err != nil {
+		return "", err
+	}
+	b, err := json.MarshalIndent(struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}{Path: rel, Content: string(data)}, "", "  ")
 	if err != nil {
 		return "", err
 	}

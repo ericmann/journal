@@ -5,6 +5,22 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [2.3.0] — 2026-06-12
+
+### Added
+
+- **MCP `show` tool.** Reads a note file's full raw markdown by date
+  (`YYYY-MM-DD`, `today`, `yesterday`), repo-relative path, or a
+  `path:line-line` citation taken verbatim from another tool's results — so a
+  connected Claude can always dereference a citation into complete content.
+
+### Changed
+
+- **Search results carry the full chunk body.** `journal search --json` and the
+  MCP `search` tool now include a `body` field alongside the 240-char `snippet`
+  (which MCP clients couldn't read past). Additive — existing fields unchanged.
+  List commands (`recent`, `decisions`, `todos`) remain snippet-only.
+
 ## [2.2.1] — 2026-06-12
 
 ### Fixed

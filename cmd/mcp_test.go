@@ -31,6 +31,46 @@ func TestMCPSearchReturnsResultsJSON(t *testing.T) {
 			t.Errorf("missing key %q", k)
 		}
 	}
+	// Search results must carry the full chunk body, not just the snippet —
+	// MCP clients read content through this field.
+	if body, _ := env.Results[0]["body"].(string); body != "litellm fallback routing is broken" {
+		t.Errorf("body = %q, want full chunk body", body)
+	}
+}
+
+func TestMCPShowReturnsFullContent(t *testing.T) {
+	content := "# 2026-06-01\n\n## 09:14\n" + strings.Repeat("a long line of note text. ", 30) + "\n"
+	cfg := testRepo(t, map[string]string{"projects/canton/notes/2026-06-01.md": content})
+
+	for _, ref := range []string{
+		"projects/canton/notes/2026-06-01.md",
+		"projects/canton/notes/2026-06-01.md:3-12", // citation form
+	} {
+		out, err := mcpShow(cfg, showInput{Path: ref})
+		if err != nil {
+			t.Fatalf("show(%q): %v", ref, err)
+		}
+		var got struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Content != content {
+			t.Errorf("show(%q) content truncated or altered: %d bytes, want %d", ref, len(got.Content), len(content))
+		}
+	}
+}
+
+func TestMCPShowMissingAndEscapingPaths(t *testing.T) {
+	cfg := testRepo(t, nil)
+	if _, err := mcpShow(cfg, showInput{Path: "projects/nope/notes/2026-01-01.md"}); err == nil {
+		t.Error("expected error for missing note")
+	}
+	if _, err := mcpShow(cfg, showInput{Path: "../outside.md"}); err == nil {
+		t.Error("expected error for path outside the repo")
+	}
 }
 
 func TestMCPSearchEmptyQueryErrors(t *testing.T) {
