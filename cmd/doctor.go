@@ -82,6 +82,9 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 		checks = append(checks, modelCheck("embed_model", cfg.EmbedModel, tags))
 		checks = append(checks, rerankerCheck(cfg.Reranker, tags))
 		checks = append(checks, embedDimCheck(ctx, cfg, checker, tags))
+		if cfg.SynthProvider == config.SynthProviderOllama {
+			checks = append(checks, modelCheck("synth_ollama_model", cfg.SynthOllamaModel, tags))
+		}
 	}
 
 	checks = append(checks, storeCheck(ctx, cfg))
@@ -91,13 +94,17 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 		checks = append(checks, quillCheck(ctx, cfg))
 	}
 
-	// Informational: the synthesis key is optional (only Phase 5 needs it) and
+	// Informational: the synthesis key is optional (anthropic provider only) and
 	// never affects the overall health verdict.
-	if _, kerr := config.AnthropicAPIKey(); kerr != nil {
-		checks = append(checks, check{Name: "anthropic_key (synth)", OK: true, Detail: "not set — only needed for `journal synth`"})
-	} else {
-		checks = append(checks, check{Name: "anthropic_key (synth)", OK: true, Detail: "set"})
+	if cfg.SynthProvider == config.SynthProviderAnthropic {
+		if _, kerr := config.AnthropicAPIKey(); kerr != nil {
+			checks = append(checks, check{Name: "anthropic_key (synth)", OK: true, Detail: "not set — only needed for `journal synth`"})
+		} else {
+			checks = append(checks, check{Name: "anthropic_key (synth)", OK: true, Detail: "set"})
+		}
 	}
+
+	checks = append(checks, egressCheck(cfg))
 
 	rep := doctorReport{OK: true, Checks: checks}
 	for _, c := range checks {
@@ -106,6 +113,30 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 		}
 	}
 	return rep
+}
+
+// egressCheck reports the repo's network-egress posture in one line, so "does
+// anything leave this machine?" is answerable at a glance. Informational —
+// egress is a policy choice, not an error.
+func egressCheck(cfg *config.Config) check {
+	if cfg.LocalOnly {
+		mcpDesc := "mcp blocked — no note content leaves this machine"
+		if cfg.LocalOnlyMCP == config.LocalOnlyMCPAllow {
+			mcpDesc = "mcp allowed by attestation (local_only_mcp: allow) — egress now depends on your MCP client; see docs/CLIENTS.md"
+		}
+		return check{Name: "egress", OK: true,
+			Detail: fmt.Sprintf("local_only: synthesis via ollama (%s), sync disabled, %s", cfg.SynthOllamaModel, mcpDesc)}
+	}
+	synthDesc := fmt.Sprintf("synth provider %s (local: %s)", cfg.SynthProvider, cfg.ActiveSynthModel())
+	if cfg.SynthProvider == config.SynthProviderAnthropic {
+		synthDesc = fmt.Sprintf("synth provider %s (cloud: %s)", cfg.SynthProvider, cfg.SynthModel)
+	}
+	syncDesc := "sync off"
+	if cfg.SyncEnabled {
+		syncDesc = "sync on"
+	}
+	return check{Name: "egress", OK: true,
+		Detail: fmt.Sprintf("%s, %s, mcp available — set `local_only: true` to hard-disable all egress", synthDesc, syncDesc)}
 }
 
 func modelCheck(name, model string, tags []string) check {

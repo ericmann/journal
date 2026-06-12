@@ -1,8 +1,9 @@
-# Synthesis (cloud Claude)
+# Synthesis (cloud Claude or local Ollama)
 
 `journal synth` turns the indexed firehose into curated drafts using the
-Anthropic API. It runs scheduled or on demand — never in the capture/search hot
-path. See also [Usage](USAGE.md) · [Configuration](CONFIGURATION.md).
+configured provider — the Anthropic API (default) or a local Ollama model. It
+runs scheduled or on demand — never in the capture/search hot path. See also
+[Usage](USAGE.md) · [Configuration](CONFIGURATION.md).
 
 ```sh
 journal synth weekly                 # dry-run by default: prints prompt + target path
@@ -28,8 +29,41 @@ to that project's `_index.md`), and **`stale`** (threads idle beyond `--days`). 
   under `reflections/` (refusing to clobber an existing one, since you edit
   those). `decisions --project <slug>` appends a **clearly-marked rollup block** to
   `projects/<slug>/_index.md` — it never mutates your note bodies.
-- Requires **`ANTHROPIC_API_KEY` in the environment** (only for `--write`); it's
-  never written to config or logged. The model is `synth_model` in config.
+- With the default `synth_provider: anthropic`, `--write` requires
+  **`ANTHROPIC_API_KEY` in the environment**; it's never written to config or
+  logged. The model is `synth_model` in config.
+
+## Local synthesis (Ollama)
+
+Set `synth_provider: ollama` in `.journal/config.yaml` and synthesis (plus the
+grounded answer above `journal search` results) runs against your local Ollama —
+no API key, and **note content never leaves the machine**. This is the provider
+`local_only` mode requires (see [DATA-FLOWS.md](DATA-FLOWS.md)).
+
+```yaml
+synth_provider: ollama
+synth_ollama_model: gemma4:12b   # pull first: ollama pull gemma4:12b
+```
+
+Model guidance (Apple Silicon, Q4 quantization):
+
+| Model | Memory while loaded | Fit |
+| --- | --- | --- |
+| `gemma4:12b` (default) | ~8-10 GB | Comfortable on 32-48GB machines; strong faithful summarization. |
+| `gemma4:26b` (MoE, 3.8B active) | ~20-24 GB peak | Near-frontier prose at ~50 tok/s; wants 48-64GB with headroom. |
+| `llama3.1:8b` | ~5-6 GB | Budget pick; clean, low-hallucination summaries. |
+
+Ollama loads the model on first call and unloads it after ~5 minutes idle, so
+the memory cost is transient — synthesis runs don't permanently occupy RAM.
+Every request sends `synth_num_ctx` (default 32768) explicitly because Ollama's
+server default is 4,096 tokens and it **truncates the prompt silently** — a
+weekly synthesis prompt would quietly lose most of its input.
+
+Quality calibration: for faithful summarization (daily/weekly digests, decision
+rollups) the local tier is close to cloud Sonnet. The gap shows in long-form
+stylistic writing — if you use a voice profile and care about register, you may
+prefer keeping `weekly` on the anthropic provider and running `daily`/answers
+locally; the provider is one config line to flip either way.
 
 ## Writing in your voice
 

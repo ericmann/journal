@@ -93,7 +93,9 @@ func TestWorkspaceSeparateSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(strings.ToLower(string(out)), "anthropic") ||
+	// synth_provider: anthropic is a legitimate (non-secret) value, so look for
+	// actual secret shapes: a key-bearing field name or a token prefix.
+	if strings.Contains(strings.ToLower(string(out)), "api_key") ||
 		strings.Contains(string(out), "sk-") {
 		t.Errorf("config.yaml must not contain any secret:\n%s", out)
 	}

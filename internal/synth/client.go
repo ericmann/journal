@@ -1,8 +1,9 @@
 // Package synth assembles prompts from gathered notes and runs synthesis jobs
-// (weekly reflection draft, decision rollup, stale-thread surfacing) against the
-// Anthropic API. Prompt assembly is pure and golden-file tested; the API client
-// sits behind an interface with a deterministic fake so tests run without a
-// network. The API key is read from the environment only and is never logged.
+// (weekly reflection draft, decision rollup, stale-thread surfacing) against a
+// completion provider: the Anthropic API (cloud) or local Ollama. Prompt
+// assembly is pure and golden-file tested; the clients sit behind an interface
+// with a deterministic fake so tests run without a network. The Anthropic API
+// key is read from the environment only and is never logged.
 package synth
 
 import (

@@ -6,6 +6,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -37,6 +39,28 @@ const (
 // SchemaVersion is the current .journal/config.yaml schema. `journal init` on an
 // older repo upgrades it to this in place.
 const SchemaVersion = "2.0"
+
+// Synthesis providers for the synth_provider setting.
+const (
+	// SynthProviderAnthropic sends synthesis prompts to the Anthropic API (cloud).
+	SynthProviderAnthropic = "anthropic"
+	// SynthProviderOllama runs synthesis against the local Ollama service —
+	// note content never leaves the machine.
+	SynthProviderOllama = "ollama"
+)
+
+// Modes for the local_only_mcp setting (only consulted when local_only is true).
+const (
+	// LocalOnlyMCPBlock disables `journal mcp` under local_only — the
+	// conservative default, since a typical MCP client (e.g. Claude Desktop)
+	// forwards retrieved note content to a cloud model.
+	LocalOnlyMCPBlock = "block"
+	// LocalOnlyMCPAllow keeps `journal mcp` available under local_only. This is
+	// a user attestation, not something the server can verify: stdio gives no
+	// trustworthy client identity, so "allow" means "my MCP client runs a local
+	// model" (see docs/CLIENTS.md).
+	LocalOnlyMCPAllow = "allow"
+)
 
 // Transcript formats for the transcripts.format setting.
 const (
@@ -114,10 +138,29 @@ type Config struct {
 	StorePath string `yaml:"store_path"`
 	// RetrievalInstruction is prefixed to queries when embedding for search.
 	RetrievalInstruction string `yaml:"retrieval_instruction"`
-	// SynthModel is the Anthropic model used for synthesis jobs.
+	// SynthProvider selects who runs synthesis jobs and search answers:
+	// "anthropic" (cloud, needs ANTHROPIC_API_KEY) or "ollama" (local).
+	SynthProvider string `yaml:"synth_provider"`
+	// SynthModel is the Anthropic model used when synth_provider is "anthropic".
 	SynthModel string `yaml:"synth_model"`
+	// SynthOllamaModel is the Ollama model used when synth_provider is "ollama".
+	SynthOllamaModel string `yaml:"synth_ollama_model"`
+	// SynthNumCtx is the context window requested per Ollama synthesis call.
+	// Ollama's server default is 4096 and it truncates silently, so we always
+	// send num_ctx explicitly. Ignored by the anthropic provider.
+	SynthNumCtx int `yaml:"synth_num_ctx"`
 	// SynthMaxTokens caps the synthesis response length.
 	SynthMaxTokens int `yaml:"synth_max_tokens"`
+	// LocalOnly is the egress kill-switch. When true: cloud synthesis is
+	// refused (synth_provider must be "ollama"), `journal sync` is disabled,
+	// `journal mcp` is disabled unless local_only_mcp is "allow", and
+	// ollama_base_url must point at loopback. See docs/DATA-FLOWS.md.
+	LocalOnly bool `yaml:"local_only"`
+	// LocalOnlyMCP controls `journal mcp` under local_only: "block" (default)
+	// or "allow" — an attestation that the MCP client runs a local model and
+	// keeps note content on this machine (see docs/CLIENTS.md). Ignored when
+	// local_only is false.
+	LocalOnlyMCP string `yaml:"local_only_mcp"`
 	// VoiceProfilePath is the repo-relative markdown file describing the
 	// author's writing voice; when present it is injected into synthesis
 	// prompts so drafts sound like the author. Optional.
@@ -175,9 +218,16 @@ func Default() Config {
 		Excludes:             []string{"reflections/**", ".journal/**", "docs/**", "README.md"},
 		StorePath:            filepath.Join(JournalDir, "index", "journal.db"),
 		RetrievalInstruction: "Represent this query for retrieving relevant developer journal notes:",
+		SynthProvider:        SynthProviderAnthropic,
 		SynthModel:           "claude-sonnet-4-6",
-		SynthMaxTokens:       4096,
-		VoiceProfilePath:     filepath.ToSlash(filepath.Join("docs", "VOICE_PROFILE.md")),
+		// gemma4:12b balances prose quality against memory (~8GB resident while
+		// loaded); 64GB machines can step up to gemma4:26b. See docs/SYNTHESIS.md.
+		SynthOllamaModel: "gemma4:12b",
+		SynthNumCtx:      32768,
+		SynthMaxTokens:   4096,
+		LocalOnly:        false,
+		LocalOnlyMCP:     LocalOnlyMCPBlock,
+		VoiceProfilePath: filepath.ToSlash(filepath.Join("docs", "VOICE_PROFILE.md")),
 		// Auto-commit note changes during index/watch (no-op outside a git repo);
 		// unsigned by default to avoid signing prompts in an unattended watcher.
 		GitAutocommit:     true,
@@ -280,11 +330,30 @@ func (c *Config) Validate() error {
 	if c.StorePath == "" {
 		return errors.New("store_path must not be empty")
 	}
+	switch c.SynthProvider {
+	case SynthProviderAnthropic, SynthProviderOllama:
+	default:
+		return fmt.Errorf("synth_provider %q unsupported (want anthropic|ollama)", c.SynthProvider)
+	}
 	if c.SynthModel == "" {
 		return errors.New("synth_model must not be empty")
 	}
+	if c.SynthProvider == SynthProviderOllama && c.SynthOllamaModel == "" {
+		return errors.New("synth_ollama_model must not be empty when synth_provider is \"ollama\"")
+	}
+	if c.SynthNumCtx <= 0 {
+		return fmt.Errorf("synth_num_ctx must be > 0, got %d", c.SynthNumCtx)
+	}
 	if c.SynthMaxTokens <= 0 {
 		return fmt.Errorf("synth_max_tokens must be > 0, got %d", c.SynthMaxTokens)
+	}
+	if c.LocalOnly && !isLoopbackURL(c.OllamaBaseURL) {
+		return fmt.Errorf("local_only is enabled but ollama_base_url %q is not loopback — a network Ollama host is egress; point it at localhost or disable local_only", c.OllamaBaseURL)
+	}
+	switch c.LocalOnlyMCP {
+	case LocalOnlyMCPBlock, LocalOnlyMCPAllow:
+	default:
+		return fmt.Errorf("local_only_mcp %q unsupported (want block|allow)", c.LocalOnlyMCP)
 	}
 	switch c.SyncConflict {
 	case SyncConflictManual, SyncConflictPreferUpstream, SyncConflictPreferLocal:
@@ -300,6 +369,32 @@ func (c *Config) Validate() error {
 		return errors.New("transcripts.path must not be empty when transcripts are enabled")
 	}
 	return nil
+}
+
+// ActiveSynthModel returns the model name synthesis will actually use, per the
+// configured provider.
+func (c *Config) ActiveSynthModel() string {
+	if c.SynthProvider == SynthProviderOllama {
+		return c.SynthOllamaModel
+	}
+	return c.SynthModel
+}
+
+// isLoopbackURL reports whether the URL's host resolves textually to loopback
+// (localhost, 127.0.0.0/8, or ::1). It deliberately does not do DNS: local_only
+// must not depend on the network, and a hostname that *might* resolve to
+// loopback is not a guarantee.
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Marshal serializes the config to YAML (non-secret fields only).

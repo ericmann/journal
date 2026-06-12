@@ -179,6 +179,10 @@ directory) to bind it to a specific journal repo:
 
 That's it — restart the desktop app and the `journal` tools appear. Search still
 uses the local Ollama configured in that repo; `capture` appends append-only.
+Claude Desktop forwards retrieved note content to Anthropic's cloud models — for
+fully local GUI alternatives (LM Studio, Jan, AnythingLLM + Ollama), see
+[CLIENTS.md](CLIENTS.md); for the egress picture and the `local_only` switch,
+see [DATA-FLOWS.md](DATA-FLOWS.md).
 Tool errors come back as `{"error":"…"}` (e.g. if Ollama is down), so the model
 can tell failure from an empty result set.
 
