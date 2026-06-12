@@ -24,8 +24,10 @@ versioning. Build-time design rationale lives in
   gives the server no trustworthy client identity, so the egress responsibility
   for the MCP path shifts to the user. Default `block`.
 - **Docs:** [DATA-FLOWS.md](docs/DATA-FLOWS.md) (what's stored, what can leave,
-  HIPAA posture) and [CLIENTS.md](docs/CLIENTS.md) (fully-local MCP GUI
-  alternatives to Claude Desktop: LM Studio, Jan, AnythingLLM).
+  HIPAA posture), [CLIENTS.md](docs/CLIENTS.md) (fully-local MCP GUI
+  alternatives to Claude Desktop: LM Studio, Jan, AnythingLLM), and
+  [LOCAL-SETUP.md](docs/LOCAL-SETUP.md) (end-to-end zero-egress guide: Ollama
+  install → models → journal config → LM Studio MCP integration).
 
 ## [2.3.0] — 2026-06-12
 

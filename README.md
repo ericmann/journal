@@ -176,6 +176,7 @@ Full flags, the note format, and search internals are in [**Usage**](docs/USAGE.
 | [Remote backup](docs/SYNC.md) | `journal sync`: enabling, conflict modes, cron/launchd/systemd |
 | [Workspaces](docs/WORKSPACES.md) | Multiple isolated journals (e.g. personal vs. work) |
 | [Integrations](docs/INTEGRATIONS.md) | Claude Desktop, Claude Code, Ollama wiring |
+| [Fully local setup](docs/LOCAL-SETUP.md) | Zero-egress stack: Ollama models, `local_only`, a local MCP chat client |
 | [Design decisions](docs/DECISIONS.md) | Why the tool is built the way it is |
 
 ---

@@ -10,6 +10,10 @@ built-in) + journal's MCP tools, with zero egress. See
 > **Verified June 2026.** MCP client support moves fast — check each project's
 > docs if you're reading this much later.
 
+For the complete zero-egress walkthrough (Ollama install → models → config →
+LM Studio), follow [LOCAL-SETUP.md](LOCAL-SETUP.md); this page is the client
+survey behind it.
+
 ## Ground rules (read first)
 
 1. **Ollama is not an MCP client.** It only serves the model; the GUI client
