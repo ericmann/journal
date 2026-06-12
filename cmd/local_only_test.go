@@ -85,8 +85,25 @@ func TestLocalOnlyDisablesSyncAndMCP(t *testing.T) {
 	}
 
 	err = runMCP(context.Background(), cfg, embed.NewFake(cfg.EmbedDim))
-	if err == nil || !strings.Contains(err.Error(), "local_only") {
-		t.Errorf("mcp under local_only: err = %v, want local_only refusal", err)
+	if err == nil || !strings.Contains(err.Error(), "local_only_mcp: allow") {
+		t.Errorf("mcp under local_only: err = %v, want refusal with opt-in hint", err)
+	}
+}
+
+// local_only_mcp: allow is an explicit attestation that the MCP client is
+// local; with it set, runMCP must get past the egress guard. The fake embedder
+// is enough — runMCP fails later on the closed stdio transport, but NOT with
+// the local_only refusal.
+func TestLocalOnlyMCPAllowOptIn(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.LocalOnly = true
+	cfg.LocalOnlyMCP = config.LocalOnlyMCPAllow
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // don't actually serve stdio; we only care about the guard
+	err := runMCP(ctx, cfg, embed.NewFake(cfg.EmbedDim))
+	if err != nil && strings.Contains(err.Error(), "local_only") {
+		t.Errorf("mcp with local_only_mcp: allow should pass the guard, got: %v", err)
 	}
 }
 
@@ -103,5 +120,11 @@ func TestEgressCheckReportsPosture(t *testing.T) {
 	c = egressCheck(cfg)
 	if !c.OK || !strings.Contains(c.Detail, "no note content leaves this machine") {
 		t.Errorf("local_only egress check = %+v", c)
+	}
+
+	cfg.LocalOnlyMCP = config.LocalOnlyMCPAllow
+	c = egressCheck(cfg)
+	if !c.OK || !strings.Contains(c.Detail, "depends on your MCP client") {
+		t.Errorf("local_only+mcp-allow egress check = %+v", c)
 	}
 }

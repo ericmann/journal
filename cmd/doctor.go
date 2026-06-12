@@ -120,8 +120,12 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 // egress is a policy choice, not an error.
 func egressCheck(cfg *config.Config) check {
 	if cfg.LocalOnly {
+		mcpDesc := "mcp blocked — no note content leaves this machine"
+		if cfg.LocalOnlyMCP == config.LocalOnlyMCPAllow {
+			mcpDesc = "mcp allowed by attestation (local_only_mcp: allow) — egress now depends on your MCP client; see docs/CLIENTS.md"
+		}
 		return check{Name: "egress", OK: true,
-			Detail: fmt.Sprintf("local_only: synthesis via ollama (%s), sync disabled, mcp disabled — no note content leaves this machine", cfg.SynthOllamaModel)}
+			Detail: fmt.Sprintf("local_only: synthesis via ollama (%s), sync disabled, %s", cfg.SynthOllamaModel, mcpDesc)}
 	}
 	synthDesc := fmt.Sprintf("synth provider %s (local: %s)", cfg.SynthProvider, cfg.ActiveSynthModel())
 	if cfg.SynthProvider == config.SynthProviderAnthropic {

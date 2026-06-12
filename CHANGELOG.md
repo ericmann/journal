@@ -16,9 +16,13 @@ versioning. Build-time design rationale lives in
   Ollama's 4096 default truncates prompts silently. `journal doctor` verifies
   the synth model is pulled when the provider is ollama.
 - **`local_only: true`** — one-line egress kill-switch: refuses cloud synthesis,
-  disables `journal sync` and `journal mcp` (MCP clients may forward note
+  disables `journal sync`, blocks `journal mcp` (MCP clients may forward note
   content to cloud models), and requires a loopback `ollama_base_url`. The new
   `egress` doctor check reports the posture either way.
+- **`local_only_mcp: allow`** — re-enables `journal mcp` under `local_only` for
+  local-model MCP clients (LM Studio, Jan, …). An explicit attestation: stdio
+  gives the server no trustworthy client identity, so the egress responsibility
+  for the MCP path shifts to the user. Default `block`.
 - **Docs:** [DATA-FLOWS.md](docs/DATA-FLOWS.md) (what's stored, what can leave,
   HIPAA posture) and [CLIENTS.md](docs/CLIENTS.md) (fully-local MCP GUI
   alternatives to Claude Desktop: LM Studio, Jan, AnythingLLM).

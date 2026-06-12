@@ -41,10 +41,13 @@ One config line hard-disables every egress path:
 - **Cloud synthesis is refused** — `synth --write` and `search` answers error
   unless `synth_provider: ollama` (see [SYNTHESIS.md](SYNTHESIS.md)).
 - **`journal sync` is disabled**, regardless of `sync_enabled`.
-- **`journal mcp` is disabled** — the conservative default, because the typical
-  MCP client sends retrieved content to a cloud model. If you run a vetted
-  local-model client ([CLIENTS.md](CLIENTS.md)), you can keep `local_only` off
-  and simply not configure cloud paths; revisiting this gate is on the roadmap.
+- **`journal mcp` is blocked by default** — the typical MCP client sends
+  retrieved content to a cloud model. If you run a local-model client
+  ([CLIENTS.md](CLIENTS.md)), set `local_only_mcp: allow`. That setting is an
+  **attestation, not a verification**: stdio MCP gives the server no
+  trustworthy client identity, so the binary cannot tell LM Studio from Claude
+  Desktop — `allow` shifts responsibility for the MCP path's egress to you.
+  Every other `local_only` guarantee remains enforced.
 - **`ollama_base_url` must be loopback** (localhost / 127.0.0.0/8 / ::1) —
   validated at config load, since a networked Ollama host is egress.
 

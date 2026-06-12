@@ -148,6 +148,7 @@ func TestValidateRejectsBadValues(t *testing.T) {
 			c.LocalOnly = true
 			c.OllamaBaseURL = "http://gpu-box.local:11434"
 		},
+		"bad local_only_mcp": func(c *Config) { c.LocalOnlyMCP = "maybe" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

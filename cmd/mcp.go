@@ -99,10 +99,12 @@ type captureInput struct {
 func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 	// The MCP server itself is local stdio, but its *client* (e.g. Claude
 	// Desktop) typically forwards retrieved note content to a cloud model — so
-	// the egress kill-switch disables it wholesale until a vetted local client
-	// is configured. See docs/DATA-FLOWS.md and docs/CLIENTS.md.
-	if cfg.LocalOnly {
-		return fmt.Errorf("journal mcp is disabled when local_only is enabled: MCP clients may forward note content to cloud models (see docs/DATA-FLOWS.md; local client options: docs/CLIENTS.md)")
+	// the egress kill-switch blocks it by default. Stdio gives no trustworthy
+	// client identity, so the opt-out is an explicit user attestation
+	// (local_only_mcp: allow), not client detection. See docs/DATA-FLOWS.md
+	// and docs/CLIENTS.md.
+	if cfg.LocalOnly && cfg.LocalOnlyMCP != config.LocalOnlyMCPAllow {
+		return fmt.Errorf("journal mcp is blocked when local_only is enabled: MCP clients may forward note content to cloud models. If your client runs a local model (see docs/CLIENTS.md), set `local_only_mcp: allow` in .journal/config.yaml")
 	}
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "journal",

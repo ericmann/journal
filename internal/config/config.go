@@ -49,6 +49,19 @@ const (
 	SynthProviderOllama = "ollama"
 )
 
+// Modes for the local_only_mcp setting (only consulted when local_only is true).
+const (
+	// LocalOnlyMCPBlock disables `journal mcp` under local_only — the
+	// conservative default, since a typical MCP client (e.g. Claude Desktop)
+	// forwards retrieved note content to a cloud model.
+	LocalOnlyMCPBlock = "block"
+	// LocalOnlyMCPAllow keeps `journal mcp` available under local_only. This is
+	// a user attestation, not something the server can verify: stdio gives no
+	// trustworthy client identity, so "allow" means "my MCP client runs a local
+	// model" (see docs/CLIENTS.md).
+	LocalOnlyMCPAllow = "allow"
+)
+
 // Transcript formats for the transcripts.format setting.
 const (
 	TranscriptFormatAuto     = "auto"
@@ -140,10 +153,14 @@ type Config struct {
 	SynthMaxTokens int `yaml:"synth_max_tokens"`
 	// LocalOnly is the egress kill-switch. When true: cloud synthesis is
 	// refused (synth_provider must be "ollama"), `journal sync` is disabled,
-	// `journal mcp` is disabled (MCP clients may forward retrieved content to
-	// cloud models), and ollama_base_url must point at loopback. See
-	// docs/DATA-FLOWS.md.
+	// `journal mcp` is disabled unless local_only_mcp is "allow", and
+	// ollama_base_url must point at loopback. See docs/DATA-FLOWS.md.
 	LocalOnly bool `yaml:"local_only"`
+	// LocalOnlyMCP controls `journal mcp` under local_only: "block" (default)
+	// or "allow" — an attestation that the MCP client runs a local model and
+	// keeps note content on this machine (see docs/CLIENTS.md). Ignored when
+	// local_only is false.
+	LocalOnlyMCP string `yaml:"local_only_mcp"`
 	// VoiceProfilePath is the repo-relative markdown file describing the
 	// author's writing voice; when present it is injected into synthesis
 	// prompts so drafts sound like the author. Optional.
@@ -209,6 +226,7 @@ func Default() Config {
 		SynthNumCtx:      32768,
 		SynthMaxTokens:   4096,
 		LocalOnly:        false,
+		LocalOnlyMCP:     LocalOnlyMCPBlock,
 		VoiceProfilePath: filepath.ToSlash(filepath.Join("docs", "VOICE_PROFILE.md")),
 		// Auto-commit note changes during index/watch (no-op outside a git repo);
 		// unsigned by default to avoid signing prompts in an unattended watcher.
@@ -331,6 +349,11 @@ func (c *Config) Validate() error {
 	}
 	if c.LocalOnly && !isLoopbackURL(c.OllamaBaseURL) {
 		return fmt.Errorf("local_only is enabled but ollama_base_url %q is not loopback — a network Ollama host is egress; point it at localhost or disable local_only", c.OllamaBaseURL)
+	}
+	switch c.LocalOnlyMCP {
+	case LocalOnlyMCPBlock, LocalOnlyMCPAllow:
+	default:
+		return fmt.Errorf("local_only_mcp %q unsupported (want block|allow)", c.LocalOnlyMCP)
 	}
 	switch c.SyncConflict {
 	case SyncConflictManual, SyncConflictPreferUpstream, SyncConflictPreferLocal:

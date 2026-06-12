@@ -91,8 +91,10 @@ ollama pull qwen3-embedding:4b  # journal's embedding model (if not already)
 3. Optionally set `synth_provider: ollama` so `journal synth` is local too
    ([SYNTHESIS.md](SYNTHESIS.md)).
 
+4. If you run with `local_only: true`, also set `local_only_mcp: allow` — the
+   blanket default blocks `journal mcp` because the server cannot verify its
+   client; `allow` is your attestation that the client above keeps everything
+   local ([DATA-FLOWS.md](DATA-FLOWS.md)).
+
 Result: capture, index, search, MCP chat, and synthesis with no note content
-leaving the machine. Note that `local_only: true` currently disables
-`journal mcp` for *all* clients — including local ones — as the conservative
-default; run a local client with `local_only` off and no cloud paths configured
-until the gate learns to distinguish clients (roadmap).
+leaving the machine.
