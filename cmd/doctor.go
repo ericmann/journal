@@ -94,16 +94,7 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 		checks = append(checks, quillCheck(ctx, cfg))
 	}
 
-	// Informational: the synthesis key is optional (anthropic provider only) and
-	// never affects the overall health verdict.
-	if cfg.SynthProvider == config.SynthProviderAnthropic {
-		if _, kerr := config.AnthropicAPIKey(); kerr != nil {
-			checks = append(checks, check{Name: "anthropic_key (synth)", OK: true, Detail: "not set — only needed for `journal synth`"})
-		} else {
-			checks = append(checks, check{Name: "anthropic_key (synth)", OK: true, Detail: "set"})
-		}
-	}
-
+	checks = append(checks, synthCheck(cfg))
 	checks = append(checks, egressCheck(cfg))
 
 	rep := doctorReport{OK: true, Checks: checks}
@@ -113,6 +104,24 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 		}
 	}
 	return rep
+}
+
+// synthCheck reports which synthesis provider is active and how to switch to
+// the other one, so both the cloud and local-first paths are discoverable.
+// Informational — synthesis is optional and never affects the verdict.
+func synthCheck(cfg *config.Config) check {
+	if cfg.SynthProvider == config.SynthProviderOllama {
+		return check{Name: "synth", OK: true, Detail: fmt.Sprintf(
+			"local: %s via Ollama — no API key, nothing leaves the machine (set `synth_provider: anthropic` for cloud Claude)",
+			cfg.SynthOllamaModel)}
+	}
+	key := "ANTHROPIC_API_KEY set"
+	if _, err := config.AnthropicAPIKey(); err != nil {
+		key = "ANTHROPIC_API_KEY not set — needed only for `journal synth --write`"
+	}
+	return check{Name: "synth", OK: true, Detail: fmt.Sprintf(
+		"cloud: %s (%s); set `synth_provider: ollama` to run fully local",
+		cfg.SynthModel, key)}
 }
 
 // egressCheck reports the repo's network-egress posture in one line, so "does

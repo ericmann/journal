@@ -5,6 +5,19 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Changed
+
+- **Homebrew tap moved to `ericmann/tap`.** Install with
+  `brew install ericmann/tap/journal`; GoReleaser now publishes the cask to
+  `ericmann/homebrew-tap`. The old `DisplaceTech/homebrew-tap` cask is
+  deprecated (frozen at v2.4.0, with a `deprecate!` pointer).
+- **README + `journal doctor` clarify cloud vs. local synthesis up front.** The
+  new `doctor` `synth` check names the active provider and model and how to
+  switch (cloud Claude ⇄ local Ollama); the READMEs present both paths
+  succinctly instead of implying cloud-only.
+
 ## [2.4.0] — 2026-06-16
 
 ### Added — local-first synthesis & the egress kill-switch

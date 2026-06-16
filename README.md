@@ -5,7 +5,7 @@
 
 <p align="center">
   <strong>A local-first developer journal with semantic search and AI synthesis.</strong><br>
-  Plain-markdown notes in git. Frictionless capture, local RAG retrieval, cloud-Claude synthesis.
+  Plain-markdown notes in git. Frictionless capture, local RAG retrieval, synthesis via cloud Claude <em>or</em> a fully local model.
 </p>
 
 <p align="center">
@@ -23,7 +23,8 @@
 `journal` turns a folder of plain-markdown notes into a searchable, AI-queryable
 corpus — no server, daemon, or cloud store. Capture is frictionless and
 append-only; retrieval is a fully local RAG stack (Ollama embeddings + optional
-reranking, vectors in `sqlite-vec`); synthesis is on-demand cloud Claude.
+reranking, vectors in `sqlite-vec`); synthesis is on-demand — **cloud Claude
+(Sonnet by default) or a fully local Ollama model**, your choice.
 
 **Markdown in git is the single source of truth** — the vector index is a
 disposable, rebuildable cache and is never committed. It all ships as one static
@@ -31,9 +32,9 @@ binary.
 
 - 📝 **Frictionless capture** — append a timestamped note inline, in your editor, or from stdin; auto-committed.
 - ✅ **Todos that close the loop** — `@todo` in any note becomes a tracked item: `journal todos` lists them, `journal done` checks them off (also via MCP, so Claude can too).
-- 🔎 **Local semantic search** — Ollama + `sqlite-vec`, optional LLM reranking; with an API key, a grounded AI answer on top. Notes never leave your machine for retrieval.
+- 🔎 **Local semantic search** — Ollama + `sqlite-vec`, optional LLM reranking; with synthesis configured (cloud or local), a grounded AI answer on top. Notes never leave your machine for retrieval.
 - 📺 **A daily home** — `journal today` (day at a glance), `journal tui` (interactive dashboard: notes, todos, search, meetings, stats), `journal stats` (streaks & volume).
-- 🤖 **AI synthesis** — daily/weekly rollups and decision digests via cloud Claude, in your own voice.
+- 🤖 **AI synthesis** — daily/weekly rollups and decision digests in your own voice, via cloud Claude (default) **or** a fully local Ollama model (`synth_provider: ollama` — zero egress). See [LOCAL-SETUP.md](docs/LOCAL-SETUP.md).
 - 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); search, list, and digest them. *(v2.0; Quill is macOS/Windows.)*
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
 - 🔌 **Integrations** — an MCP server exposes search/recent/decisions/meetings to Claude Desktop and Claude Code.
@@ -45,8 +46,10 @@ binary.
 - **git** — notes live in a git repo; capture/index auto-commit.
 - **[Ollama](https://ollama.com) + an embedding model** — for indexing and search
   (all local). Default: `ollama pull qwen3-embedding:4b`. Verify with `journal doctor`.
-- **An Anthropic API key** — *only* for `journal synth`. Set `ANTHROPIC_API_KEY`;
-  never stored in config. Skip it if you don't synthesize.
+- **A synthesis provider** *(only for `journal synth` + grounded search answers)* —
+  **cloud Claude** (default; set `ANTHROPIC_API_KEY`, never stored in config) **or a
+  fully local Ollama model** (`synth_provider: ollama` — no key, nothing leaves your
+  machine). Skip both if you don't synthesize.
 - **[Quill](https://www.quillmeetings.com)** *(optional, macOS/Windows)* — only for
   `journal quill-sync` to pull meeting transcripts. Everything else works without it.
 
@@ -145,14 +148,14 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal init [path]` | Scaffold (or upgrade) a journal repo |
 | `journal capture [text]` | Append a timestamped note (inline / editor / stdin) |
 | `journal index [--watch]` | Embed changed notes; `--watch` runs continuously |
-| `journal search <query>` | Semantic search with citations (+ a grounded AI answer when a key is set); `--source notes\|transcript\|all` |
+| `journal search <query>` | Semantic search with citations (+ a grounded AI answer when synthesis is configured); `--source notes\|transcript\|all` |
 | `journal recent` · `decisions` · `threads` · `meetings` | Metadata views (newest-first, `@decision`, project activity, transcripts) |
 | `journal todos` · `journal done <ref>` | List open `@todo` items; check one off (rewrites it to `@done <date>`) |
 | `journal today` · `show` · `edit` | Day at a glance; render any note; open a daily file in your editor |
 | `journal tui` | Interactive dashboard: today, todos, semantic search, recent, meetings, stats |
 | `journal stats` | Capture volume, streaks, marker counts, top tags |
 | `journal quill-sync` | Pull Quill meeting transcripts into `transcripts/` ([Quill](docs/QUILL.md)) |
-| `journal synth weekly\|daily\|meetings\|decisions\|stale` | AI synthesis via cloud Claude |
+| `journal synth weekly\|daily\|meetings\|decisions\|stale` | AI synthesis — cloud Claude or local Ollama (`synth_provider`) |
 | `journal sync` | Back up to / pull from a git remote (opt-in) |
 | `journal doctor` | Health-check Ollama, models, the index |
 | `journal mcp` | MCP server for Claude Desktop / Claude Code |

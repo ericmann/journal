@@ -128,3 +128,22 @@ func TestEgressCheckReportsPosture(t *testing.T) {
 		t.Errorf("local_only+mcp-allow egress check = %+v", c)
 	}
 }
+
+// doctor must make both synthesis paths discoverable: each provider's check
+// names the active model and points at the other provider.
+func TestSynthCheckSurfacesBothPaths(t *testing.T) {
+	cfg := testRepo(t, nil)
+
+	// anthropic (default): names the cloud model, points at ollama.
+	c := synthCheck(cfg)
+	if !c.OK || !strings.Contains(c.Detail, cfg.SynthModel) || !strings.Contains(c.Detail, "synth_provider: ollama") {
+		t.Errorf("anthropic synth check = %+v", c)
+	}
+
+	// ollama: names the local model, points at anthropic.
+	cfg.SynthProvider = config.SynthProviderOllama
+	c = synthCheck(cfg)
+	if !c.OK || !strings.Contains(c.Detail, cfg.SynthOllamaModel) || !strings.Contains(c.Detail, "synth_provider: anthropic") {
+		t.Errorf("ollama synth check = %+v", c)
+	}
+}
