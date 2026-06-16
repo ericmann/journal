@@ -288,8 +288,8 @@ and keep the search index fresh.
   (editor) from piped input (read it) from neither (e.g. `/dev/null` → clear
   error), instead of a char-device heuristic that could hang or launch a doomed
   editor.
-- **Distribution (v1.4.0).** Homebrew via `displacetech/tap`; copyright is
-  Displace Technologies, LLC. Code repo stays at `ericmann/journal`.
+- **Distribution (v1.4.0).** Homebrew via `displacetech/tap`; copyright Eric
+  Mann. Code repo stays at `ericmann/journal`.
 - **GoReleaser release pipeline (v1.4.1).** Replaced the hand-rolled `make
   release` with GoReleaser (`.goreleaser.yaml` + tag-triggered
   `release.yml`): tar.gz archives, `checksums.txt` **cosign-keyless** signed via
