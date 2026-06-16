@@ -109,45 +109,55 @@ journal search "what did I decide about the FDE queue"   # grounded answer, loca
 
 ## 4. Jan as the MCP chat client (over Ollama)
 
-[Jan](https://jan.ai) is open-source (AGPL), and crucially can chat through
-Ollama instead of running its own engine — that's what keeps this a
-one-runtime stack.
+[Jan](https://jan.ai) is open-source (AGPL) and can chat through Ollama instead
+of running its own engine — that's what keeps this a one-runtime stack. Its
+tool-use plumbing for OpenAI-compatible providers has several easy-to-miss
+toggles, so do these in order.
 
 1. **Install:** `brew install --cask jan` or https://jan.ai (macOS/Windows/Linux).
 2. **Point it at Ollama:** Settings → Model Providers → add an OpenAI-compatible
-   provider with base URL `http://localhost:11434/v1` (no API key). Your pulled
-   Ollama models appear as choices; pick `gemma4:12b`.
-3. **Enable tool calling for that model** — a per-model capability toggle in
-   Jan's model settings. **Nothing works until this is on**, and it's the
-   single most-missed step.
+   provider, base URL `http://localhost:11434/v1`. Jan requires a non-empty API
+   key field even though Ollama ignores it — enter any placeholder (e.g.
+   `ollama`). Your pulled models then appear; pick a **tool-capable** one like
+   `gemma4:12b` (confirm with `ollama show gemma4:12b` → Capabilities lists
+   `tools`).
+3. **Enable the model's Tools capability — THE most-missed step.** In that
+   model's settings, turn on **Tools / Function Calling**. If it's off, Jan
+   sends *no* tool definitions to the model; the model then can't call anything
+   and instead narrates ("I am now checking the available tools…") or reaches
+   for a nonexistent web-search tool. The tell, in Jan's reasoning trace: *"No
+   tools are available."*
 4. **Add the journal MCP server:** Settings → MCP Servers → `+`:
    - command: `/opt/homebrew/bin/journal` (absolute path — GUI apps inherit a
-     minimal `PATH`, the same gotcha as Claude Desktop)
-   - arguments: `mcp --repo /Users/you/journal`
-5. **Use it:** start a chat and ask something that needs your notes — e.g.
-   *"search my journal for open questions on the canton project and summarize
-   them."* Jan shows inline approval cards per tool call (or pre-approve with
-   "Allow All").
+     minimal `PATH`, same gotcha as Claude Desktop).
+   - arguments: enter as **three separate entries**, one per line — `mcp`, then
+     `--repo`, then `/Users/you/journal`. Jan does **not** split a single
+     `mcp --repo …` line on spaces; pasted as one field it's sent as a single
+     bogus argument and journal errors `unknown command "mcp --repo …"`.
+   - ⚠️ On macOS, **Smart Dashes** silently rewrites `--repo` to `—repo` (em
+     dash) → `unknown command`. Disable System Settings → Keyboard → Text Input
+     → Edit → "Smart dashes," or paste rather than type the flag.
+5. **Use a clean assistant.** Jan's default assistant can carry a web-search
+   system prompt ("search before stating you can't"), which fights journal use
+   and steers the model toward web tools. Select/create an assistant with a
+   minimal prompt, e.g. *"Use the available journal tools to answer questions
+   about my notes."*
+6. **Allowlist `Origin: null`** (the box below) — required, or every chat 403s.
+7. **Use it:** new chat, ask e.g. *"Using the journal tools, what did I work on
+   today?"* Jan shows inline tool-approval cards (or pre-approve with "Allow
+   All"); the model calls `recent`/`search`/etc. and answers from your notes.
 
-> **"Generation Failed: Forbidden"?** Ollama 403s requests whose `Origin`
-> header isn't on its allowlist, and some Jan builds send Tauri's
-> `http://tauri.localhost` form, which isn't in Ollama's defaults (Jan's
-> maintainers recommend allowlisting both forms —
-> [janhq/jan#7485](https://github.com/janhq/jan/issues/7485)). The fix appends
-> to Ollama's defaults, it never replaces them:
+> **"Generation failed: Forbidden" (a 403)?** Jan's chat requests (via the
+> Vercel AI SDK) send the header `Origin: null`, which isn't in Ollama's default
+> CORS allowlist — so Ollama rejects them. Confusingly, Jan's *model-list* call
+> uses a hardcoded `tauri://localhost` that Ollama *does* allow, so the provider
+> looks connected while every chat 403s. Add `null` to `OLLAMA_ORIGINS`; it
+> **appends** to Ollama's defaults, never replaces them.
 >
-> The one-liner below fixes the running session; the LaunchAgent after it makes
-> it permanent. `OLLAMA_ORIGINS` **appends** to Ollama's defaults, never
-> replaces them.
->
-> ```sh
-> # Fix the current session, then restart Ollama:
-> launchctl setenv OLLAMA_ORIGINS "http://tauri.localhost,https://tauri.localhost"
-> ```
->
-> `launchctl setenv` does **not** survive a reboot. Install a login LaunchAgent
-> so it's set once and forgotten — it re-applies the origin at every login and
-> restarts Ollama only if it's already running:
+> Crucially, the **menubar Ollama app reads the launchd environment, not your
+> shell `.zshrc`** (that only affects `ollama serve` launched from a terminal).
+> So set it in the launchd session and persist it with a login LaunchAgent that
+> also restarts Ollama so it picks the value up:
 >
 > ```sh
 > mkdir -p ~/Library/LaunchAgents
@@ -164,24 +174,27 @@ one-runtime stack.
 >     <array>
 >         <string>/bin/sh</string>
 >         <string>-c</string>
->         <string>/bin/launchctl setenv OLLAMA_ORIGINS "http://tauri.localhost,https://tauri.localhost"; if /usr/bin/pgrep -x Ollama &gt;/dev/null; then /usr/bin/pkill -x Ollama; /bin/sleep 2; /usr/bin/open -a Ollama; fi</string>
+>         <string>/bin/launchctl setenv OLLAMA_ORIGINS "null,http://tauri.localhost,https://tauri.localhost"; if /usr/bin/pgrep -x Ollama &gt;/dev/null; then /usr/bin/pkill -x Ollama; /bin/sleep 2; /usr/bin/open -a Ollama; fi</string>
 >     </array>
 > </dict>
 > </plist>
 > PLIST
 > launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.ollama-origins.plist
+> launchctl kickstart gui/$(id -u)/com.example.ollama-origins
 > ```
 >
-> Remove it with `launchctl bootout gui/$(id -u)/com.example.ollama-origins`
-> then delete the plist. **Linux (systemd):** `systemctl edit ollama` → add
-> `Environment="OLLAMA_ORIGINS=http://tauri.localhost,https://tauri.localhost"`
-> (persists across reboots already). **Windows:** this 403 is guaranteed (Tauri
-> always uses `http://tauri.localhost`); set the same value as a user
-> environment variable via `setx`.
+> Verify: `curl -s -o /dev/null -w '%{http_code}\n' -H 'Origin: null' http://localhost:11434/v1/models` should print `200`. The env only attaches when Ollama launches *after* it's set — the agent makes that deterministic at login. Gotcha: the agent only *restarts* an already-running Ollama; if you kill it manually mid-session and the app isn't up, just `open -a Ollama`.
 >
-> Avoid `OLLAMA_ORIGINS="*"`, especially with Ollama's "expose to network"
-> setting on — wildcard origins plus a non-loopback bind opens your Ollama to
-> any browser page and any LAN device.
+> Remove with `launchctl bootout gui/$(id -u)/com.example.ollama-origins` then
+> delete the plist. **Linux (systemd):** `systemctl edit ollama` → add
+> `Environment="OLLAMA_ORIGINS=null"`. **Windows:** set `OLLAMA_ORIGINS=null` as
+> a user environment variable via `setx`.
+>
+> Don't use `OLLAMA_ORIGINS="*"`: Ollama may be bound to `0.0.0.0`, and wildcard
+> origins on a network-bound server expose it to any web page and LAN device.
+> `null` plus the loopback defaults is the minimal grant. (Restricting the bind
+> to loopback is fiddly here because Jan connects over IPv6 `::1`, so a naive
+> `OLLAMA_HOST=127.0.0.1` — IPv4 only — would break it.)
 
 The full tool surface the model gets — search, show, recent, decisions,
 threads, meetings, todos, done, capture — is documented in

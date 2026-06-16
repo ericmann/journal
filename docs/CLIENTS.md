@@ -55,8 +55,19 @@ Docs: https://lmstudio.ai/docs/app/mcp
   arguments, env), with inline tool-approval cards. AGPL-3.0, very active.
 - Runs models via its built-in llama.cpp engine, or against Ollama as an
   OpenAI-compatible provider (`http://localhost:11434/v1`).
-- Gotcha: tool calling is a **per-model capability toggle** in Jan's model
-  settings — easy to miss; nothing works until it's on.
+- Gotchas (all verified the hard way — see [LOCAL-SETUP.md](LOCAL-SETUP.md) for
+  the full walkthrough):
+  - **Tool calling is a per-model capability toggle** — off by default. Until
+    it's on, Jan sends no tools and the model narrates instead of calling
+    (its trace says *"No tools are available"*). This is the #1 gotcha.
+  - **MCP arguments must be one per line** (`mcp`, `--repo`, `/path`); a single
+    `mcp --repo …` string is passed as one bogus argument. macOS Smart Dashes
+    also rewrites `--` to `—`, breaking the flag.
+  - **Chat sends `Origin: null`** → Ollama 403s ("Generation failed: Forbidden")
+    unless `OLLAMA_ORIGINS` includes `null` (set via the GUI's launchd env, not
+    `.zshrc`).
+  - Its default assistant may carry a **web-search system prompt** that steers
+    the model away from your tools — use a clean/minimal assistant.
 
 Docs: https://www.jan.ai/docs/desktop/mcp
 

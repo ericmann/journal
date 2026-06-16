@@ -7,6 +7,18 @@ versioning. Build-time design rationale lives in
 
 ## [Unreleased]
 
+### Documentation
+
+- **Fully documented Jan as a local MCP client.** LOCAL-SETUP and CLIENTS now
+  cover every Jan gotcha verified in practice: the per-model **Tools capability
+  toggle** (required — without it Jan attaches no tools and the model just
+  narrates), **one-argument-per-line** MCP config (plus the macOS Smart-Dashes
+  `--`→`—` trap), the **`Origin: null`** CORS 403 and its launchd-env/LaunchAgent
+  fix, the placeholder API key, and steering clear of Jan's web-search assistant
+  prompt. Corrects the earlier wrong guidance to allowlist `http://tauri.localhost`.
+
+## [2.4.2] — 2026-06-16
+
 ### Fixed
 
 - **`local_only` + a non-`ollama` `synth_provider` is now a clear config error.**
