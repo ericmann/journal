@@ -83,8 +83,10 @@ local_only: true                 # hard-disable every cloud path
 local_only_mcp: allow            # MCP stays available for the LOCAL client below
 ```
 
-`local_only: true` refuses cloud synthesis, disables `journal sync`, and
-requires loopback Ollama. `local_only_mcp: allow` is your attestation that the
+`local_only: true` refuses cloud synthesis and requires loopback Ollama. (It
+does *not* disable `journal sync` — backing up to your own git remote isn't
+cloud-AI egress; keep `sync_enabled: false` if you want nothing to leave at
+all.) `local_only_mcp: allow` is your attestation that the
 MCP client you're about to configure runs a local model — the server can't
 verify that itself ([DATA-FLOWS.md](DATA-FLOWS.md) explains the trust model).
 Leave it as `block` (the default) until the client is actually set up.
@@ -191,10 +193,12 @@ threads, meetings, todos, done, capture — is documented in
 journal doctor
 ```
 
-The `egress` line should read: `local_only: synthesis via ollama (gemma4:12b),
-sync disabled, mcp allowed by attestation (local_only_mcp: allow) — egress now
-depends on your MCP client`. With Jan chatting through localhost Ollama, that
-dependency is satisfied and nothing leaves the machine. Spot-check if you like:
+The `egress` line should read something like: `local_only: no cloud-AI egress
+(synth local: gemma4:12b); mcp allowed by attestation (local_only_mcp: allow —
+egress depends on your MCP client); sync off`. With Jan chatting through
+localhost Ollama, that dependency is satisfied and nothing leaves the machine.
+(If you've enabled `sync_enabled`, the line notes `sync on → your git remote` —
+that's backup to your own remote, not cloud-AI egress.) Spot-check if you like:
 run a search from Jan with Wi-Fi off — everything still works.
 
 ## Alternative: LM Studio (more polish, second runtime)

@@ -151,10 +151,12 @@ type Config struct {
 	SynthNumCtx int `yaml:"synth_num_ctx"`
 	// SynthMaxTokens caps the synthesis response length.
 	SynthMaxTokens int `yaml:"synth_max_tokens"`
-	// LocalOnly is the egress kill-switch. When true: cloud synthesis is
-	// refused (synth_provider must be "ollama"), `journal sync` is disabled,
-	// `journal mcp` is disabled unless local_only_mcp is "allow", and
-	// ollama_base_url must point at loopback. See docs/DATA-FLOWS.md.
+	// LocalOnly is the cloud-AI egress kill-switch. When true: cloud synthesis
+	// is refused (synth_provider must be "ollama"), `journal mcp` is disabled
+	// unless local_only_mcp is "allow", and ollama_base_url must point at
+	// loopback. It deliberately does NOT touch `journal sync` — that backs up to
+	// the user's own remote and stays governed by sync_enabled. See
+	// docs/DATA-FLOWS.md.
 	LocalOnly bool `yaml:"local_only"`
 	// LocalOnlyMCP controls `journal mcp` under local_only: "block" (default)
 	// or "allow" — an attestation that the MCP client runs a local model and

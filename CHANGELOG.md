@@ -5,6 +5,17 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **`local_only` no longer disables `journal sync`.** `local_only` targets
+  cloud-AI egress (cloud synthesis, MCP clients, networked Ollama); git sync
+  backs up to your *own* remote and is now governed solely by `sync_enabled`, so
+  local-only AI and git backup can coexist. For a fully sealed "nothing leaves
+  this machine" posture, keep `sync_enabled: false` (the default). `journal
+  doctor`'s `egress` line reflects which posture you're in.
+
 ## [2.4.1] — 2026-06-16
 
 ### Changed

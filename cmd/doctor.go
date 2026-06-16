@@ -129,12 +129,22 @@ func synthCheck(cfg *config.Config) check {
 // egress is a policy choice, not an error.
 func egressCheck(cfg *config.Config) check {
 	if cfg.LocalOnly {
-		mcpDesc := "mcp blocked — no note content leaves this machine"
-		if cfg.LocalOnlyMCP == config.LocalOnlyMCPAllow {
-			mcpDesc = "mcp allowed by attestation (local_only_mcp: allow) — egress now depends on your MCP client; see docs/CLIENTS.md"
+		mcpClean := cfg.LocalOnlyMCP != config.LocalOnlyMCPAllow
+		mcpDesc := "mcp blocked"
+		if !mcpClean {
+			mcpDesc = "mcp allowed by attestation (local_only_mcp: allow — egress depends on your MCP client)"
 		}
-		return check{Name: "egress", OK: true,
-			Detail: fmt.Sprintf("local_only: synthesis via ollama (%s), sync disabled, %s", cfg.SynthOllamaModel, mcpDesc)}
+		// local_only guarantees no cloud-AI egress; git sync (to your own
+		// remote) is governed by sync_enabled, not local_only.
+		syncDesc := "sync off"
+		if cfg.SyncEnabled {
+			syncDesc = "sync on → your git remote"
+		}
+		detail := fmt.Sprintf("local_only: no cloud-AI egress (synth local: %s); %s; %s", cfg.SynthOllamaModel, mcpDesc, syncDesc)
+		if mcpClean && !cfg.SyncEnabled {
+			detail += " — nothing leaves this machine"
+		}
+		return check{Name: "egress", OK: true, Detail: detail}
 	}
 	synthDesc := fmt.Sprintf("synth provider %s (local: %s)", cfg.SynthProvider, cfg.ActiveSynthModel())
 	if cfg.SynthProvider == config.SynthProviderAnthropic {
@@ -145,7 +155,7 @@ func egressCheck(cfg *config.Config) check {
 		syncDesc = "sync on"
 	}
 	return check{Name: "egress", OK: true,
-		Detail: fmt.Sprintf("%s, %s, mcp available — set `local_only: true` to hard-disable all egress", synthDesc, syncDesc)}
+		Detail: fmt.Sprintf("%s, %s, mcp available — set `local_only: true` to block cloud-AI egress", synthDesc, syncDesc)}
 }
 
 func modelCheck(name, model string, tags []string) check {

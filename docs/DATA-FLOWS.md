@@ -27,7 +27,7 @@ loopback). The complete list of potential egress paths:
 | Path | Trigger | Where it goes | Closed by |
 | --- | --- | --- | --- |
 | Cloud synthesis | `journal synth --write` or the answer above `journal search` results, with `synth_provider: anthropic` | Assembled prompt (note excerpts) → Anthropic API | `synth_provider: ollama` or `local_only: true` |
-| Git backup | `journal sync` (opt-in, `sync_enabled: true`) | Your notes → *your* git remote | `sync_enabled: false` (default) or `local_only: true` |
+| Git backup | `journal sync` (opt-in, `sync_enabled: true`) | Your notes → *your* git remote | `sync_enabled: false` (default) — not affected by `local_only`, since it's your own remote, not a cloud-AI service |
 | MCP client | `journal mcp` serving an MCP client | The server itself is local stdio — but the **client** (e.g. Claude Desktop) typically forwards retrieved note content to a cloud model | `local_only: true`; or use a local-model MCP client ([CLIENTS.md](CLIENTS.md)) |
 | Networked Ollama | `ollama_base_url` pointed at another host | Note content → that host | Loopback URL (default); enforced under `local_only` |
 
@@ -36,11 +36,12 @@ no network connection outside the table above.
 
 ## `local_only: true`
 
-One config line hard-disables every egress path:
+One config line blocks **cloud-AI egress** — note content reaching a
+third-party inference service:
 
 - **Cloud synthesis is refused** — `synth --write` and `search` answers error
   unless `synth_provider: ollama` (see [SYNTHESIS.md](SYNTHESIS.md)).
-- **`journal sync` is disabled**, regardless of `sync_enabled`.
+- **`ollama_base_url` must be loopback** — a networked Ollama host is egress.
 - **`journal mcp` is blocked by default** — the typical MCP client sends
   retrieved content to a cloud model. If you run a local-model client
   ([CLIENTS.md](CLIENTS.md)), set `local_only_mcp: allow`. That setting is an
@@ -48,6 +49,16 @@ One config line hard-disables every egress path:
   trustworthy client identity, so the binary cannot tell LM Studio from Claude
   Desktop — `allow` shifts responsibility for the MCP path's egress to you.
   Every other `local_only` guarantee remains enforced.
+
+**`local_only` does *not* disable `journal sync`.** Sync backs your notes up to
+*your own* git remote — that's data you control, not a third-party AI service,
+so it stays governed solely by `sync_enabled`. This means local AI **and** git
+backup coexist: `local_only: true` + `sync_enabled: true`. For a fully sealed
+"nothing leaves this machine" posture, keep `sync_enabled: false` (the default);
+`journal doctor`'s `egress` check shows which of these you're in. Note that for
+strict HIPAA, pushing notes to a hosted git remote is itself disclosure to that
+host (e.g. GitHub) and would need its own BAA — which is exactly why sync is
+off by default and a deliberate opt-in.
 - **`ollama_base_url` must be loopback** (localhost / 127.0.0.0/8 / ::1) —
   validated at config load, since a networked Ollama host is egress.
 

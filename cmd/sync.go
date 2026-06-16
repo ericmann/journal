@@ -53,9 +53,10 @@ func conflictStrategy(mode string) string {
 // having no upstream is a clean no-op.
 func runSync(ctx context.Context, cfg *config.Config, e embed.Embedder, dryRun bool, out io.Writer) error {
 	root := cfg.Root()
-	if cfg.LocalOnly {
-		return fmt.Errorf("sync is disabled when local_only is enabled: it pushes notes to a git remote (see docs/DATA-FLOWS.md)")
-	}
+	// NB: local_only does NOT gate sync. local_only targets cloud-AI egress
+	// (synthesis providers, MCP clients); git sync backs up to the user's *own*
+	// remote and is governed solely by sync_enabled. A fully-sealed posture is
+	// local_only + sync_enabled:false (the default). See docs/DATA-FLOWS.md.
 	if !cfg.SyncEnabled {
 		fmt.Fprintln(out, "sync is disabled (sync_enabled: false in .journal/config.yaml).")
 		fmt.Fprintln(out, "It backs notes up to a git remote and can rewrite local history on a")

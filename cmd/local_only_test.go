@@ -73,20 +73,34 @@ func TestAnswerClientRespectsProviderAndLocalOnly(t *testing.T) {
 	}
 }
 
-func TestLocalOnlyDisablesSyncAndMCP(t *testing.T) {
+func TestLocalOnlyBlocksMCPNotSync(t *testing.T) {
 	cfg := testRepo(t, nil)
 	cfg.LocalOnly = true
-	cfg.SyncEnabled = true
 
-	var out bytes.Buffer
-	err := runSync(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), false, &out)
-	if err == nil || !strings.Contains(err.Error(), "local_only") {
-		t.Errorf("sync under local_only: err = %v, want local_only refusal", err)
+	// MCP stays blocked under local_only (a client may forward to a cloud model).
+	if err := runMCP(context.Background(), cfg, embed.NewFake(cfg.EmbedDim)); err == nil ||
+		!strings.Contains(err.Error(), "local_only_mcp: allow") {
+		t.Errorf("mcp under local_only: err = %v, want refusal with opt-in hint", err)
 	}
 
-	err = runMCP(context.Background(), cfg, embed.NewFake(cfg.EmbedDim))
-	if err == nil || !strings.Contains(err.Error(), "local_only_mcp: allow") {
-		t.Errorf("mcp under local_only: err = %v, want refusal with opt-in hint", err)
+	// Sync is NOT gated by local_only — it backs up to the user's own remote and
+	// is governed by sync_enabled. Disabled: the normal opt-in message, never a
+	// local_only refusal.
+	cfg.SyncEnabled = false
+	var out bytes.Buffer
+	if err := runSync(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), false, &out); err != nil {
+		t.Fatalf("disabled sync should no-op, got: %v", err)
+	}
+	if strings.Contains(out.String(), "local_only") {
+		t.Errorf("sync output must not mention local_only: %s", out.String())
+	}
+
+	// Enabled under local_only: it proceeds past any local_only gate (here it
+	// fails later because the test repo has no git remote — NOT a local_only error).
+	cfg.SyncEnabled = true
+	if err := runSync(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), true, &out); err != nil &&
+		strings.Contains(err.Error(), "local_only") {
+		t.Errorf("sync must not be blocked by local_only, got: %v", err)
 	}
 }
 
@@ -115,13 +129,27 @@ func TestEgressCheckReportsPosture(t *testing.T) {
 		t.Errorf("default egress check = %+v", c)
 	}
 
+	// local_only, mcp blocked, sync off → fully sealed.
 	cfg.LocalOnly = true
 	cfg.SynthProvider = config.SynthProviderOllama
 	c = egressCheck(cfg)
-	if !c.OK || !strings.Contains(c.Detail, "no note content leaves this machine") {
-		t.Errorf("local_only egress check = %+v", c)
+	if !c.OK || !strings.Contains(c.Detail, "no cloud-AI egress") || !strings.Contains(c.Detail, "nothing leaves this machine") {
+		t.Errorf("sealed local_only egress check = %+v", c)
 	}
 
+	// local_only + sync enabled: still no cloud-AI egress, but git backup runs,
+	// so the "nothing leaves" guarantee must drop.
+	cfg.SyncEnabled = true
+	c = egressCheck(cfg)
+	if !c.OK || !strings.Contains(c.Detail, "no cloud-AI egress") || !strings.Contains(c.Detail, "your git remote") {
+		t.Errorf("local_only+sync egress check = %+v", c)
+	}
+	if strings.Contains(c.Detail, "nothing leaves this machine") {
+		t.Errorf("guarantee must drop when sync is on: %+v", c)
+	}
+
+	// mcp attestation surfaces the client dependency.
+	cfg.SyncEnabled = false
 	cfg.LocalOnlyMCP = config.LocalOnlyMCPAllow
 	c = egressCheck(cfg)
 	if !c.OK || !strings.Contains(c.Detail, "depends on your MCP client") {

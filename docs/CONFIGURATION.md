@@ -37,7 +37,7 @@ synth_max_tokens: 4096
 voice_profile: docs/VOICE_PROFILE.md   # optional style reference for synth
 
 # --- Egress kill-switch (see docs/DATA-FLOWS.md) ---
-local_only: false                      # true = refuse cloud synth, disable sync + mcp
+local_only: false                      # true = block cloud-AI egress (refuse cloud synth, block mcp, loopback Ollama)
 local_only_mcp: block                  # block | allow — allow = "my MCP client is local" (docs/CLIENTS.md)
 
 # --- Git integration ---
@@ -82,7 +82,7 @@ schema_version: "2.0"                  # config schema; `journal init` upgrades 
 | `synth_ollama_model` | `gemma4:12b` | Ollama model, used when `synth_provider: ollama`. Pull it with `ollama pull`. 64GB machines can step up to `gemma4:26b`. |
 | `synth_num_ctx` | `32768` | Context window requested per Ollama synthesis call. Always sent explicitly — Ollama's server default is 4096 and it **truncates silently**. |
 | `synth_max_tokens` | `4096` | Cap on synthesis response length. |
-| `local_only` | `false` | **Egress kill-switch.** When `true`: cloud synthesis is refused (`synth_provider` must be `ollama`), `journal sync` is disabled, `journal mcp` is blocked (see `local_only_mcp`), and `ollama_base_url` must be loopback. See [DATA-FLOWS.md](DATA-FLOWS.md). |
+| `local_only` | `false` | **Cloud-AI egress kill-switch.** When `true`: cloud synthesis is refused (`synth_provider` must be `ollama`), `journal mcp` is blocked (see `local_only_mcp`), and `ollama_base_url` must be loopback. Does **not** touch `journal sync` — that backs up to your own remote and stays governed by `sync_enabled` (keep it `false` for a fully sealed posture). See [DATA-FLOWS.md](DATA-FLOWS.md). |
 | `local_only_mcp` | `block` | Under `local_only`, whether `journal mcp` runs: `block` (default) or `allow`. `allow` is an **attestation** — the server can't verify its client, so it means "my MCP client runs a local model" (e.g. LM Studio/Jan, see [CLIENTS.md](CLIENTS.md)). Ignored when `local_only` is `false`. |
 | `voice_profile` | `docs/VOICE_PROFILE.md` | Optional markdown style reference injected into synth prompts. |
 | `git_autocommit` | `true` | Auto-commit note changes during `capture`/`index`/`index --watch` when the repo root is a git work tree. No-op outside git. |
