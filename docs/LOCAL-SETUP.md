@@ -134,18 +134,52 @@ one-runtime stack.
 > [janhq/jan#7485](https://github.com/janhq/jan/issues/7485)). The fix appends
 > to Ollama's defaults, it never replaces them:
 >
+> The one-liner below fixes the running session; the LaunchAgent after it makes
+> it permanent. `OLLAMA_ORIGINS` **appends** to Ollama's defaults, never
+> replaces them.
+>
 > ```sh
-> # macOS desktop app (launchd env), then restart Ollama:
+> # Fix the current session, then restart Ollama:
 > launchctl setenv OLLAMA_ORIGINS "http://tauri.localhost,https://tauri.localhost"
-> # Linux (systemd): systemctl edit ollama → Environment=OLLAMA_ORIGINS=...
 > ```
 >
-> macOS caveat: `launchctl setenv` does **not** survive a reboot — re-run it,
-> or persist it with a login LaunchAgent. Windows users hit this 403 reliably
-> (Tauri always uses `http://tauri.localhost` there); set the same value as a
-> user environment variable. Avoid `OLLAMA_ORIGINS="*"`, especially if
-> Ollama's "expose to network" setting is on — wildcard origins plus a
-> non-loopback bind opens your Ollama to any browser page and any LAN device.
+> `launchctl setenv` does **not** survive a reboot. Install a login LaunchAgent
+> so it's set once and forgotten — it re-applies the origin at every login and
+> restarts Ollama only if it's already running:
+>
+> ```sh
+> mkdir -p ~/Library/LaunchAgents
+> cat > ~/Library/LaunchAgents/com.example.ollama-origins.plist <<'PLIST'
+> <?xml version="1.0" encoding="UTF-8"?>
+> <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+> <plist version="1.0">
+> <dict>
+>     <key>Label</key>
+>     <string>com.example.ollama-origins</string>
+>     <key>RunAtLoad</key>
+>     <true/>
+>     <key>ProgramArguments</key>
+>     <array>
+>         <string>/bin/sh</string>
+>         <string>-c</string>
+>         <string>/bin/launchctl setenv OLLAMA_ORIGINS "http://tauri.localhost,https://tauri.localhost"; if /usr/bin/pgrep -x Ollama &gt;/dev/null; then /usr/bin/pkill -x Ollama; /bin/sleep 2; /usr/bin/open -a Ollama; fi</string>
+>     </array>
+> </dict>
+> </plist>
+> PLIST
+> launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.ollama-origins.plist
+> ```
+>
+> Remove it with `launchctl bootout gui/$(id -u)/com.example.ollama-origins`
+> then delete the plist. **Linux (systemd):** `systemctl edit ollama` → add
+> `Environment="OLLAMA_ORIGINS=http://tauri.localhost,https://tauri.localhost"`
+> (persists across reboots already). **Windows:** this 403 is guaranteed (Tauri
+> always uses `http://tauri.localhost`); set the same value as a user
+> environment variable via `setx`.
+>
+> Avoid `OLLAMA_ORIGINS="*"`, especially with Ollama's "expose to network"
+> setting on — wildcard origins plus a non-loopback bind opens your Ollama to
+> any browser page and any LAN device.
 
 The full tool surface the model gets — search, show, recent, decisions,
 threads, meetings, todos, done, capture — is documented in
