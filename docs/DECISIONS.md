@@ -298,6 +298,11 @@ and keep the search index fresh.
   and casks are the recommended path for prebuilt binaries). A checksum-verifying
   `install.sh` covers Linux/macOS without a package manager. The repo went public
   to make release assets downloadable unauthenticated.
+- **Tap moved to `ericmann/tap` (v2.4.1).** The Homebrew cask now publishes to
+  `ericmann/homebrew-tap` — install via `brew install ericmann/tap/journal`. The
+  old `DisplaceTech/homebrew-tap` cask is deprecated (frozen at v2.4.0 with a
+  `deprecate!` pointer); the tool is a personal project, so the install path no
+  longer routes through the DisplaceTech org. Code repo stays at `ericmann/journal`.
 
 ## v2.0.0 — Quill / meeting-transcript integration
 

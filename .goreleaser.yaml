@@ -85,12 +85,12 @@ nfpms:
 homebrew_casks:
   - name: journal
     repository:
-      owner: DisplaceTech
+      owner: ericmann
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
-    homepage: https://displace.tech
+    homepage: https://github.com/ericmann/journal
     description: Local-first developer journal with semantic search and AI synthesis
     caveats: |
       journal needs a local Ollama for indexing and search:

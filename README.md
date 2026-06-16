@@ -13,7 +13,7 @@
   <a href="https://github.com/ericmann/journal/releases/latest"><img src="https://img.shields.io/github/v/release/ericmann/journal?sort=semver" alt="Latest release" /></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go 1.26+" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License" /></a>
-  <img src="https://img.shields.io/badge/brew-displacetech%2Ftap-orange" alt="Homebrew tap" />
+  <img src="https://img.shields.io/badge/brew-ericmann%2Ftap-orange" alt="Homebrew tap" />
 </p>
 
 ---
@@ -61,7 +61,7 @@ features (index, search, synth) need it.
 "Allow Anyway" prompt:
 
 ```sh
-brew install displacetech/tap/journal
+brew install ericmann/tap/journal
 ```
 
 **Install script** (Linux/macOS) — downloads the latest release, **verifies its
