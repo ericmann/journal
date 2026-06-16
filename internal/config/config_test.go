@@ -148,6 +148,9 @@ func TestValidateRejectsBadValues(t *testing.T) {
 			c.LocalOnly = true
 			c.OllamaBaseURL = "http://gpu-box.local:11434"
 		},
+		"local_only with cloud provider": func(c *Config) {
+			c.LocalOnly = true // synth_provider stays anthropic (default)
+		},
 		"bad local_only_mcp": func(c *Config) { c.LocalOnlyMCP = "maybe" },
 	}
 	for name, mutate := range cases {

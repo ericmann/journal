@@ -9,6 +9,11 @@ versioning. Build-time design rationale lives in
 
 ### Fixed
 
+- **`local_only` + a non-`ollama` `synth_provider` is now a clear config error.**
+  Previously the combination loaded silently and then `synth --write` failed at
+  call time (cloud synthesis is refused under `local_only`), and `journal doctor`
+  showed contradictory `synth`/`egress` lines. `Validate` now rejects it with a
+  message that names the right key (`synth_provider`, not `synth_model`).
 - **`local_only` no longer disables `journal sync`.** `local_only` targets
   cloud-AI egress (cloud synthesis, MCP clients, networked Ollama); git sync
   backs up to your *own* remote and is now governed solely by `sync_enabled`, so

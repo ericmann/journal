@@ -349,6 +349,9 @@ func (c *Config) Validate() error {
 	if c.SynthMaxTokens <= 0 {
 		return fmt.Errorf("synth_max_tokens must be > 0, got %d", c.SynthMaxTokens)
 	}
+	if c.LocalOnly && c.SynthProvider != SynthProviderOllama {
+		return fmt.Errorf("local_only is enabled but synth_provider is %q — cloud synthesis is refused under local_only, so this never works; set `synth_provider: ollama` (note: the provider switch is `synth_provider`, not `synth_model`)", c.SynthProvider)
+	}
 	if c.LocalOnly && !isLoopbackURL(c.OllamaBaseURL) {
 		return fmt.Errorf("local_only is enabled but ollama_base_url %q is not loopback — a network Ollama host is egress; point it at localhost or disable local_only", c.OllamaBaseURL)
 	}
