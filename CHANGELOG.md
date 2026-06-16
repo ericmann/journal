@@ -5,6 +5,14 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [2.4.4] — 2026-06-16
+
+### Fixed
+
+- **LICENSE copyright set to Eric Mann.** The MIT holder was left as the
+  templated default `Displace Technologies, LLC` placeholder; corrected to the
+  personal attribution (matching note in DECISIONS.md fixed too).
+
 ## [2.4.3] — 2026-06-16
 
 ### Documentation
