@@ -138,10 +138,31 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		"empty ollamaurl":  func(c *Config) { c.OllamaBaseURL = "" },
 		"bad strategy":     func(c *Config) { c.ChunkStrategy = "paragraph" },
 		"empty storepath":  func(c *Config) { c.StorePath = "" },
-		"bad provider":     func(c *Config) { c.SynthProvider = "openai" },
+		"bad provider":     func(c *Config) { c.SynthProvider = "gemini" },
 		"ollama provider w/o model": func(c *Config) {
 			c.SynthProvider = SynthProviderOllama
 			c.SynthOllamaModel = ""
+		},
+		"openai synth w/o model": func(c *Config) {
+			c.SynthProvider = SynthProviderOpenAI // SynthOpenAIModel defaults to ""
+		},
+		"openai synth w/o base url": func(c *Config) {
+			c.SynthProvider = SynthProviderOpenAI
+			c.SynthOpenAIModel = "gpt-4o-mini"
+			c.SynthOpenAIBaseURL = ""
+		},
+		"bad embed provider":     func(c *Config) { c.EmbedProvider = "cohere" },
+		"openai embed w/o model": func(c *Config) { c.EmbedProvider = EmbedProviderOpenAI },
+		"openai embed w/o base url": func(c *Config) {
+			c.EmbedProvider = EmbedProviderOpenAI
+			c.EmbedOpenAIModel = "text-embedding-3-small"
+			c.EmbedOpenAIBaseURL = ""
+		},
+		"local_only with remote embed": func(c *Config) {
+			c.LocalOnly = true
+			c.SynthProvider = SynthProviderOllama // isolate the embed check
+			c.EmbedProvider = EmbedProviderOpenAI
+			c.EmbedOpenAIModel = "text-embedding-3-small"
 		},
 		"zero num_ctx": func(c *Config) { c.SynthNumCtx = 0 },
 		"local_only with network ollama": func(c *Config) {
@@ -189,6 +210,11 @@ func TestActiveSynthModel(t *testing.T) {
 	c.SynthProvider = SynthProviderOllama
 	if got := c.ActiveSynthModel(); got != c.SynthOllamaModel {
 		t.Errorf("ollama provider model = %q, want %q", got, c.SynthOllamaModel)
+	}
+	c.SynthProvider = SynthProviderOpenAI
+	c.SynthOpenAIModel = "google/gemma-3-27b-it:free"
+	if got := c.ActiveSynthModel(); got != c.SynthOpenAIModel {
+		t.Errorf("openai provider model = %q, want %q", got, c.SynthOpenAIModel)
 	}
 }
 

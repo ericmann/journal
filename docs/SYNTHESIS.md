@@ -1,8 +1,9 @@
-# Synthesis (cloud Claude or local Ollama)
+# Synthesis (cloud Claude, OpenAI-compatible, or local Ollama)
 
 `journal synth` turns the indexed firehose into curated drafts using the
-configured provider — the Anthropic API (default) or a local Ollama model. It
-runs scheduled or on demand — never in the capture/search hot path. See also
+configured provider — the Anthropic API (default), any OpenAI-compatible
+endpoint (OpenRouter, Groq, …), or a local Ollama model. It runs scheduled or on
+demand — never in the capture/search hot path. See also
 [Usage](USAGE.md) · [Configuration](CONFIGURATION.md).
 
 ```sh
@@ -64,6 +65,37 @@ rollups) the local tier is close to cloud Sonnet. The gap shows in long-form
 stylistic writing — if you use a voice profile and care about register, you may
 prefer keeping `weekly` on the anthropic provider and running `daily`/answers
 locally; the provider is one config line to flip either way.
+
+## Other providers (OpenAI-compatible: OpenRouter, Groq, …)
+
+`synth_provider: openai` points synthesis at **any OpenAI-compatible Chat
+Completions endpoint** — OpenAI, OpenRouter, Groq, Together, or a local server.
+This is the middle path between "pay Anthropic" and "run a big model locally":
+e.g. **OpenRouter exposes free Gemma instances**, so you can get capable cloud
+synthesis without a Claude bill and without local GPU/RAM.
+
+```yaml
+synth_provider: openai
+synth_openai_base_url: https://openrouter.ai/api/v1
+synth_openai_model: google/gemma-3-27b-it:free   # check https://openrouter.ai/models for the current free Gemma id
+```
+
+Then put the provider's key in the environment (it's read only from there, never
+written to config):
+
+```sh
+export OPENAI_API_KEY="<your OpenRouter key>"   # same var for OpenAI, Groq, etc.
+```
+
+Notes:
+- The model id is the **provider's** id, not an Ollama tag — e.g.
+  `google/gemma-3-27b-it:free` on OpenRouter, `gpt-4o-mini` on OpenAI. Free
+  OpenRouter models change and are rate-limited; check their model list.
+- This is **cloud egress** (your note excerpts go to that provider), so it's
+  refused under `local_only` just like the anthropic provider.
+- The same `OPENAI_API_KEY` also drives `embed_provider: openai` if you use
+  remote embeddings — see [CONFIGURATION.md](CONFIGURATION.md). Most setups keep
+  embeddings local (tiny model) and only point *synthesis* at OpenRouter.
 
 ## Writing in your voice
 

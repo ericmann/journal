@@ -127,6 +127,13 @@ func answerClient(cfg *config.Config) (client synth.Client, available bool, reas
 	if cfg.LocalOnly {
 		return nil, false, fmt.Errorf("local_only is enabled: cloud answers are disabled — set `synth_provider: ollama` for local answers (see docs/DATA-FLOWS.md)")
 	}
+	if cfg.SynthProvider == config.SynthProviderOpenAI {
+		if _, err := config.OpenAIAPIKey(); err != nil {
+			return nil, false, fmt.Errorf("--answer needs %s set in the environment", config.OpenAIKeyEnv)
+		}
+		key, _ := config.OpenAIAPIKey()
+		return synth.NewOpenAI(cfg.SynthOpenAIBaseURL, key), true, nil
+	}
 	if _, err := config.AnthropicAPIKey(); err != nil {
 		return nil, false, fmt.Errorf("--answer needs %s set in the environment", config.AnthropicKeyEnv)
 	}

@@ -26,7 +26,8 @@ loopback). The complete list of potential egress paths:
 
 | Path | Trigger | Where it goes | Closed by |
 | --- | --- | --- | --- |
-| Cloud synthesis | `journal synth --write` or the answer above `journal search` results, with `synth_provider: anthropic` | Assembled prompt (note excerpts) → Anthropic API | `synth_provider: ollama` or `local_only: true` |
+| Cloud synthesis | `journal synth --write` or the answer above `journal search`, with `synth_provider: anthropic` *or* `openai` | Assembled prompt (note excerpts) → Anthropic, or your OpenAI-compatible endpoint (OpenRouter/…) | `synth_provider: ollama` or `local_only: true` |
+| Remote embeddings | indexing/search with `embed_provider: openai` | Note text → your OpenAI-compatible `/embeddings` endpoint | `embed_provider: ollama` (default) or `local_only: true` |
 | Git backup | `journal sync` (opt-in, `sync_enabled: true`) | Your notes → *your* git remote | `sync_enabled: false` (default) — not affected by `local_only`, since it's your own remote, not a cloud-AI service |
 | MCP client | `journal mcp` serving an MCP client | The server itself is local stdio — but the **client** (e.g. Claude Desktop) typically forwards retrieved note content to a cloud model | `local_only: true`; or use a local-model MCP client ([CLIENTS.md](CLIENTS.md)) |
 | Networked Ollama | `ollama_base_url` pointed at another host | Note content → that host | Loopback URL (default); enforced under `local_only` |
@@ -40,7 +41,10 @@ One config line blocks **cloud-AI egress** — note content reaching a
 third-party inference service:
 
 - **Cloud synthesis is refused** — `synth --write` and `search` answers error
-  unless `synth_provider: ollama` (see [SYNTHESIS.md](SYNTHESIS.md)).
+  unless `synth_provider: ollama` (a cloud `anthropic`/`openai` provider is
+  rejected; see [SYNTHESIS.md](SYNTHESIS.md)).
+- **Remote embeddings are refused** — `embed_provider` must be `ollama`
+  (`openai` ships note text off-machine).
 - **`ollama_base_url` must be loopback** — a networked Ollama host is egress.
 - **`journal mcp` is blocked by default** — the typical MCP client sends
   retrieved content to a cloud model. If you run a local-model client

@@ -22,8 +22,13 @@ const JournalDir = ".journal"
 // ConfigFile is the committed, non-secret settings file inside JournalDir.
 const ConfigFile = "config.yaml"
 
-// AnthropicKeyEnv is the only place the synthesis API key is read from.
+// AnthropicKeyEnv is the only place the Anthropic synthesis API key is read from.
 const AnthropicKeyEnv = "ANTHROPIC_API_KEY"
+
+// OpenAIKeyEnv is where the key for OpenAI-compatible providers (synth and/or
+// embeddings) is read from — for OpenRouter/Groq/etc. it holds that provider's
+// key. Read from the environment only, never persisted to config.
+const OpenAIKeyEnv = "OPENAI_API_KEY"
 
 // SyncConflict modes for the sync_conflict setting.
 const (
@@ -47,6 +52,22 @@ const (
 	// SynthProviderOllama runs synthesis against the local Ollama service —
 	// note content never leaves the machine.
 	SynthProviderOllama = "ollama"
+	// SynthProviderOpenAI sends synthesis prompts to any OpenAI-compatible Chat
+	// Completions endpoint (OpenAI, OpenRouter, Groq, Together, a local server,
+	// …) at synth_openai_base_url. Cloud egress, like anthropic.
+	SynthProviderOpenAI = "openai"
+)
+
+// Embedding providers for the embed_provider setting.
+const (
+	// EmbedProviderOllama embeds via the local Ollama service (default).
+	EmbedProviderOllama = "ollama"
+	// EmbedProviderOpenAI embeds via any OpenAI-compatible /embeddings endpoint
+	// (OpenAI, Together, a local server, …) at embed_openai_base_url. NOTE:
+	// remote embeddings can't do the Ollama LLM-as-reranker, and the chosen
+	// model's vector dimension must match embed_dim (+ a `journal index
+	// --rebuild`). Cloud egress for note content.
+	EmbedProviderOpenAI = "openai"
 )
 
 // Modes for the local_only_mcp setting (only consulted when local_only is true).
@@ -117,8 +138,18 @@ func defaultQuillDBPath() string {
 // The Anthropic API key is deliberately NOT a field here — it comes from the
 // environment only and must never be written to disk.
 type Config struct {
-	// EmbedModel is the Ollama embedding model (e.g. qwen3-embedding:4b).
+	// EmbedProvider selects the embedding backend: "ollama" (local, default) or
+	// "openai" (any OpenAI-compatible /embeddings endpoint; needs OPENAI_API_KEY).
+	EmbedProvider string `yaml:"embed_provider"`
+	// EmbedModel is the Ollama embedding model (e.g. qwen3-embedding:4b), used
+	// when embed_provider is "ollama".
 	EmbedModel string `yaml:"embed_model"`
+	// EmbedOpenAIBaseURL is the OpenAI-compatible API base (incl. version path,
+	// e.g. https://api.openai.com/v1) used when embed_provider is "openai".
+	EmbedOpenAIBaseURL string `yaml:"embed_openai_base_url"`
+	// EmbedOpenAIModel is the embedding model id when embed_provider is "openai"
+	// (e.g. "text-embedding-3-small" → set embed_dim: 1536).
+	EmbedOpenAIModel string `yaml:"embed_openai_model"`
 	// Reranker is optional. When empty, reranking is disabled and search uses
 	// vector-KNN order directly. When set, it names the Ollama generate model
 	// used for LLM-as-reranker scoring (Ollama has no native rerank API).
@@ -139,12 +170,21 @@ type Config struct {
 	// RetrievalInstruction is prefixed to queries when embedding for search.
 	RetrievalInstruction string `yaml:"retrieval_instruction"`
 	// SynthProvider selects who runs synthesis jobs and search answers:
-	// "anthropic" (cloud, needs ANTHROPIC_API_KEY) or "ollama" (local).
+	// "anthropic" (cloud, needs ANTHROPIC_API_KEY), "ollama" (local), or
+	// "openai" (any OpenAI-compatible Chat Completions endpoint — OpenAI,
+	// OpenRouter, Groq, Together, …; needs OPENAI_API_KEY).
 	SynthProvider string `yaml:"synth_provider"`
 	// SynthModel is the Anthropic model used when synth_provider is "anthropic".
 	SynthModel string `yaml:"synth_model"`
 	// SynthOllamaModel is the Ollama model used when synth_provider is "ollama".
 	SynthOllamaModel string `yaml:"synth_ollama_model"`
+	// SynthOpenAIBaseURL is the OpenAI-compatible API base (must end in the
+	// version path, e.g. https://openrouter.ai/api/v1) used when synth_provider
+	// is "openai". The client POSTs to {base}/chat/completions.
+	SynthOpenAIBaseURL string `yaml:"synth_openai_base_url"`
+	// SynthOpenAIModel is the model id used when synth_provider is "openai"
+	// (e.g. "google/gemma-3-27b-it:free" on OpenRouter, "gpt-4o-mini" on OpenAI).
+	SynthOpenAIModel string `yaml:"synth_openai_model"`
 	// SynthNumCtx is the context window requested per Ollama synthesis call.
 	// Ollama's server default is 4096 and it truncates silently, so we always
 	// send num_ctx explicitly. Ignored by the anthropic provider.
@@ -203,7 +243,10 @@ type Config struct {
 // Default returns a Config populated with the documented defaults. It is valid.
 func Default() Config {
 	return Config{
-		EmbedModel: "qwen3-embedding:4b",
+		EmbedProvider:      EmbedProviderOllama,
+		EmbedModel:         "qwen3-embedding:4b",
+		EmbedOpenAIBaseURL: "https://api.openai.com/v1",
+		EmbedOpenAIModel:   "",
 		// Reranking is off by default: Ollama has no native rerank API and there
 		// is no official reranker model. Vector KNN with qwen3-embedding is
 		// strong on its own. Set this to a generate model (e.g. "qwen3:4b") to
@@ -225,11 +268,16 @@ func Default() Config {
 		// gemma4:12b balances prose quality against memory (~8GB resident while
 		// loaded); 64GB machines can step up to gemma4:26b. See docs/SYNTHESIS.md.
 		SynthOllamaModel: "gemma4:12b",
-		SynthNumCtx:      32768,
-		SynthMaxTokens:   4096,
-		LocalOnly:        false,
-		LocalOnlyMCP:     LocalOnlyMCPBlock,
-		VoiceProfilePath: filepath.ToSlash(filepath.Join("docs", "VOICE_PROFILE.md")),
+		// OpenAI-compatible defaults: base points at OpenAI itself; override for
+		// OpenRouter etc. (e.g. https://openrouter.ai/api/v1). Model is empty so
+		// the user picks one when selecting this provider. See docs/SYNTHESIS.md.
+		SynthOpenAIBaseURL: "https://api.openai.com/v1",
+		SynthOpenAIModel:   "",
+		SynthNumCtx:        32768,
+		SynthMaxTokens:     4096,
+		LocalOnly:          false,
+		LocalOnlyMCP:       LocalOnlyMCPBlock,
+		VoiceProfilePath:   filepath.ToSlash(filepath.Join("docs", "VOICE_PROFILE.md")),
 		// Auto-commit note changes during index/watch (no-op outside a git repo);
 		// unsigned by default to avoid signing prompts in an unattended watcher.
 		GitAutocommit:     true,
@@ -316,8 +364,21 @@ func (c *Config) QuillDBPath() string {
 
 // Validate checks invariants on non-secret settings.
 func (c *Config) Validate() error {
-	if c.EmbedModel == "" {
-		return errors.New("embed_model must not be empty")
+	switch c.EmbedProvider {
+	case EmbedProviderOllama, EmbedProviderOpenAI:
+	default:
+		return fmt.Errorf("embed_provider %q unsupported (want ollama|openai)", c.EmbedProvider)
+	}
+	if c.EmbedProvider == EmbedProviderOllama && c.EmbedModel == "" {
+		return errors.New("embed_model must not be empty when embed_provider is \"ollama\"")
+	}
+	if c.EmbedProvider == EmbedProviderOpenAI {
+		if c.EmbedOpenAIBaseURL == "" {
+			return errors.New("embed_openai_base_url must not be empty when embed_provider is \"openai\"")
+		}
+		if c.EmbedOpenAIModel == "" {
+			return errors.New("embed_openai_model must not be empty when embed_provider is \"openai\" (and set embed_dim to its output dimension, e.g. 1536 for text-embedding-3-small)")
+		}
 	}
 	// Reranker may be empty (reranking disabled) — no validation needed.
 	if c.OllamaBaseURL == "" {
@@ -333,15 +394,23 @@ func (c *Config) Validate() error {
 		return errors.New("store_path must not be empty")
 	}
 	switch c.SynthProvider {
-	case SynthProviderAnthropic, SynthProviderOllama:
+	case SynthProviderAnthropic, SynthProviderOllama, SynthProviderOpenAI:
 	default:
-		return fmt.Errorf("synth_provider %q unsupported (want anthropic|ollama)", c.SynthProvider)
+		return fmt.Errorf("synth_provider %q unsupported (want anthropic|ollama|openai)", c.SynthProvider)
 	}
 	if c.SynthModel == "" {
 		return errors.New("synth_model must not be empty")
 	}
 	if c.SynthProvider == SynthProviderOllama && c.SynthOllamaModel == "" {
 		return errors.New("synth_ollama_model must not be empty when synth_provider is \"ollama\"")
+	}
+	if c.SynthProvider == SynthProviderOpenAI {
+		if c.SynthOpenAIBaseURL == "" {
+			return errors.New("synth_openai_base_url must not be empty when synth_provider is \"openai\"")
+		}
+		if c.SynthOpenAIModel == "" {
+			return errors.New("synth_openai_model must not be empty when synth_provider is \"openai\" (pick one from your provider, e.g. google/gemma-3-27b-it:free on OpenRouter)")
+		}
 	}
 	if c.SynthNumCtx <= 0 {
 		return fmt.Errorf("synth_num_ctx must be > 0, got %d", c.SynthNumCtx)
@@ -351,6 +420,9 @@ func (c *Config) Validate() error {
 	}
 	if c.LocalOnly && c.SynthProvider != SynthProviderOllama {
 		return fmt.Errorf("local_only is enabled but synth_provider is %q — cloud synthesis is refused under local_only, so this never works; set `synth_provider: ollama` (note: the provider switch is `synth_provider`, not `synth_model`)", c.SynthProvider)
+	}
+	if c.LocalOnly && c.EmbedProvider != EmbedProviderOllama {
+		return fmt.Errorf("local_only is enabled but embed_provider is %q — remote embeddings send your note text off-machine; set `embed_provider: ollama`", c.EmbedProvider)
 	}
 	if c.LocalOnly && !isLoopbackURL(c.OllamaBaseURL) {
 		return fmt.Errorf("local_only is enabled but ollama_base_url %q is not loopback — a network Ollama host is egress; point it at localhost or disable local_only", c.OllamaBaseURL)
@@ -379,10 +451,14 @@ func (c *Config) Validate() error {
 // ActiveSynthModel returns the model name synthesis will actually use, per the
 // configured provider.
 func (c *Config) ActiveSynthModel() string {
-	if c.SynthProvider == SynthProviderOllama {
+	switch c.SynthProvider {
+	case SynthProviderOllama:
 		return c.SynthOllamaModel
+	case SynthProviderOpenAI:
+		return c.SynthOpenAIModel
+	default:
+		return c.SynthModel
 	}
-	return c.SynthModel
 }
 
 // isLoopbackURL reports whether the URL's host resolves textually to loopback
@@ -456,6 +532,16 @@ func AnthropicAPIKey() (string, error) {
 	key := os.Getenv(AnthropicKeyEnv)
 	if key == "" {
 		return "", fmt.Errorf("%s is not set in the environment", AnthropicKeyEnv)
+	}
+	return key, nil
+}
+
+// OpenAIAPIKey returns the key for OpenAI-compatible providers from the
+// environment. Never read from or written to config; callers must never log it.
+func OpenAIAPIKey() (string, error) {
+	key := os.Getenv(OpenAIKeyEnv)
+	if key == "" {
+		return "", fmt.Errorf("%s is not set in the environment", OpenAIKeyEnv)
 	}
 	return key, nil
 }

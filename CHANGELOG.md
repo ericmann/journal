@@ -5,6 +5,25 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Added — pluggable OpenAI-compatible providers
+
+- **`synth_provider: openai`** points synthesis and grounded search answers at
+  any OpenAI-compatible Chat Completions endpoint (OpenAI, **OpenRouter**, Groq,
+  Together, a local server, …) via `synth_openai_base_url` + `synth_openai_model`,
+  authed with `OPENAI_API_KEY`. Lets you use, e.g., OpenRouter's free Gemma for
+  synthesis without a Claude bill or a local GPU. Cloud egress — refused under
+  `local_only`.
+- **`embed_provider: openai`** does the same for embeddings against an
+  OpenAI-compatible `/embeddings` endpoint. Caveats: no LLM-as-reranker (Ollama
+  only), and `embed_dim` must match the model (e.g. 1536 for
+  `text-embedding-3-small`) with a `journal index --rebuild`. Also cloud egress —
+  refused under `local_only`. Default stays `ollama` (local).
+- `journal doctor` reports the active synth/embed providers, only contacts
+  Ollama when something actually uses it, and fails if an `openai` provider is
+  selected without `OPENAI_API_KEY`. Keys are read from the environment only.
+
 ## [2.4.5] — 2026-06-17
 
 ### Fixed

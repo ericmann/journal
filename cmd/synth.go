@@ -32,8 +32,9 @@ var synthCmd = &cobra.Command{
 		"calling the API or writing anything (the default if neither --dry-run nor\n" +
 		"--write is given).\n\n" +
 		"The provider is set by synth_provider in .journal/config.yaml: \"anthropic\"\n" +
-		"(default; --write needs ANTHROPIC_API_KEY) or \"ollama\" (fully local, uses\n" +
-		"synth_ollama_model — no key, nothing leaves the machine).",
+		"(default; --write needs ANTHROPIC_API_KEY), \"openai\" (any OpenAI-compatible\n" +
+		"endpoint — OpenRouter/Groq/…; needs OPENAI_API_KEY), or \"ollama\" (fully local,\n" +
+		"no key, nothing leaves the machine).",
 	Args:      cobra.ExactArgs(1),
 	ValidArgs: []string{string(synth.KindWeekly), string(synth.KindDaily), string(synth.KindMeetings), string(synth.KindDecisions), string(synth.KindStale)},
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -124,19 +125,26 @@ func runSynth(ctx context.Context, cfg *config.Config, opts synth.Options, out i
 // synthClient builds the write-mode synthesis client for the configured
 // provider, enforcing the local_only egress guard.
 func synthClient(cfg *config.Config) (synth.Client, error) {
-	switch cfg.SynthProvider {
-	case config.SynthProviderOllama:
+	if cfg.SynthProvider == config.SynthProviderOllama {
 		return synth.NewOllama(cfg.OllamaBaseURL, cfg.SynthNumCtx), nil
-	default: // anthropic
-		if cfg.LocalOnly {
-			return nil, fmt.Errorf("local_only is enabled: cloud synthesis is disabled — set `synth_provider: ollama` in .journal/config.yaml (see docs/DATA-FLOWS.md)")
-		}
-		key, err := config.AnthropicAPIKey()
+	}
+	// anthropic and openai are both cloud egress (validation already forbids
+	// either under local_only; this is defense in depth).
+	if cfg.LocalOnly {
+		return nil, fmt.Errorf("local_only is enabled: cloud synthesis is disabled — set `synth_provider: ollama` in .journal/config.yaml (see docs/DATA-FLOWS.md)")
+	}
+	if cfg.SynthProvider == config.SynthProviderOpenAI {
+		key, err := config.OpenAIAPIKey()
 		if err != nil {
 			return nil, err
 		}
-		return synth.NewAnthropic(key), nil
+		return synth.NewOpenAI(cfg.SynthOpenAIBaseURL, key), nil
 	}
+	key, err := config.AnthropicAPIKey()
+	if err != nil {
+		return nil, err
+	}
+	return synth.NewAnthropic(key), nil
 }
 
 // readVoiceProfile loads the configured voice profile, returning "" if none is

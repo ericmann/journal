@@ -67,24 +67,37 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 	checks = append(checks, check{
 		Name:   "repo/config",
 		OK:     true,
-		Detail: fmt.Sprintf("root %s; embed_model=%s reranker=%s embed_dim=%d", cfg.Root(), cfg.EmbedModel, cfg.Reranker, cfg.EmbedDim),
+		Detail: fmt.Sprintf("root %s; embed_provider=%s embed_dim=%d reranker=%s", cfg.Root(), cfg.EmbedProvider, cfg.EmbedDim, cfg.Reranker),
 	})
 
-	tags, err := checker.Tags(ctx)
-	if err != nil {
-		detail := err.Error()
-		if errors.Is(err, embed.ErrUnreachable) {
-			detail += " — is Ollama running? install: https://ollama.com"
+	// Ollama is contacted only if embeddings, synthesis, or reranking use it.
+	ollamaUsed := cfg.EmbedProvider == config.EmbedProviderOllama ||
+		cfg.SynthProvider == config.SynthProviderOllama ||
+		cfg.Reranker != ""
+	if ollamaUsed {
+		tags, err := checker.Tags(ctx)
+		if err != nil {
+			detail := err.Error()
+			if errors.Is(err, embed.ErrUnreachable) {
+				detail += " — is Ollama running? install: https://ollama.com"
+			}
+			checks = append(checks, check{Name: "ollama", OK: false, Detail: detail})
+		} else {
+			checks = append(checks, check{Name: "ollama", OK: true, Detail: fmt.Sprintf("reachable at %s; %d models", cfg.OllamaBaseURL, len(tags))})
+			if cfg.EmbedProvider == config.EmbedProviderOllama {
+				checks = append(checks, modelCheck("embed_model", cfg.EmbedModel, tags))
+				checks = append(checks, embedDimCheck(ctx, cfg, checker, tags))
+				checks = append(checks, rerankerCheck(cfg.Reranker, tags))
+			}
+			if cfg.SynthProvider == config.SynthProviderOllama {
+				checks = append(checks, modelCheck("synth_ollama_model", cfg.SynthOllamaModel, tags))
+			}
 		}
-		checks = append(checks, check{Name: "ollama", OK: false, Detail: detail})
 	} else {
-		checks = append(checks, check{Name: "ollama", OK: true, Detail: fmt.Sprintf("reachable at %s; %d models", cfg.OllamaBaseURL, len(tags))})
-		checks = append(checks, modelCheck("embed_model", cfg.EmbedModel, tags))
-		checks = append(checks, rerankerCheck(cfg.Reranker, tags))
-		checks = append(checks, embedDimCheck(ctx, cfg, checker, tags))
-		if cfg.SynthProvider == config.SynthProviderOllama {
-			checks = append(checks, modelCheck("synth_ollama_model", cfg.SynthOllamaModel, tags))
-		}
+		checks = append(checks, check{Name: "ollama", OK: true, Detail: "not used (embeddings + synthesis are remote)"})
+	}
+	if cfg.EmbedProvider == config.EmbedProviderOpenAI {
+		checks = append(checks, embedOpenAICheck(cfg))
 	}
 
 	checks = append(checks, storeCheck(ctx, cfg))
@@ -106,22 +119,47 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 	return rep
 }
 
+// embedOpenAICheck reports the OpenAI-compatible embedding config. The API key
+// is required for indexing/search, so a missing key fails the verdict (like an
+// unreachable Ollama). No live probe — embed_dim mismatches surface at index
+// time with the exact number to set.
+func embedOpenAICheck(cfg *config.Config) check {
+	if _, err := config.OpenAIAPIKey(); err != nil {
+		return check{Name: "embed", OK: false, Detail: fmt.Sprintf(
+			"openai-compatible (%s @ %s) but %s is not set — required to index and search",
+			cfg.EmbedOpenAIModel, cfg.EmbedOpenAIBaseURL, config.OpenAIKeyEnv)}
+	}
+	return check{Name: "embed", OK: true, Detail: fmt.Sprintf(
+		"openai-compatible: %s @ %s (%s set); ensure embed_dim=%d matches the model's output (rebuild after changing)",
+		cfg.EmbedOpenAIModel, cfg.EmbedOpenAIBaseURL, config.OpenAIKeyEnv, cfg.EmbedDim)}
+}
+
 // synthCheck reports which synthesis provider is active and how to switch to
 // the other one, so both the cloud and local-first paths are discoverable.
 // Informational — synthesis is optional and never affects the verdict.
 func synthCheck(cfg *config.Config) check {
-	if cfg.SynthProvider == config.SynthProviderOllama {
+	switch cfg.SynthProvider {
+	case config.SynthProviderOllama:
 		return check{Name: "synth", OK: true, Detail: fmt.Sprintf(
-			"local: %s via Ollama — no API key, nothing leaves the machine (set `synth_provider: anthropic` for cloud Claude)",
+			"local: %s via Ollama — no API key, nothing leaves the machine (set `synth_provider: anthropic`/`openai` for a cloud model)",
 			cfg.SynthOllamaModel)}
+	case config.SynthProviderOpenAI:
+		key := config.OpenAIKeyEnv + " set"
+		if _, err := config.OpenAIAPIKey(); err != nil {
+			key = config.OpenAIKeyEnv + " not set — needed for `journal synth --write`"
+		}
+		return check{Name: "synth", OK: true, Detail: fmt.Sprintf(
+			"openai-compatible: %s @ %s (%s); set `synth_provider: ollama` to run fully local",
+			cfg.SynthOpenAIModel, cfg.SynthOpenAIBaseURL, key)}
+	default:
+		key := "ANTHROPIC_API_KEY set"
+		if _, err := config.AnthropicAPIKey(); err != nil {
+			key = "ANTHROPIC_API_KEY not set — needed only for `journal synth --write`"
+		}
+		return check{Name: "synth", OK: true, Detail: fmt.Sprintf(
+			"cloud: %s (%s); set `synth_provider: ollama` to run fully local",
+			cfg.SynthModel, key)}
 	}
-	key := "ANTHROPIC_API_KEY set"
-	if _, err := config.AnthropicAPIKey(); err != nil {
-		key = "ANTHROPIC_API_KEY not set — needed only for `journal synth --write`"
-	}
-	return check{Name: "synth", OK: true, Detail: fmt.Sprintf(
-		"cloud: %s (%s); set `synth_provider: ollama` to run fully local",
-		cfg.SynthModel, key)}
 }
 
 // egressCheck reports the repo's network-egress posture in one line, so "does
@@ -146,9 +184,12 @@ func egressCheck(cfg *config.Config) check {
 		}
 		return check{Name: "egress", OK: true, Detail: detail}
 	}
-	synthDesc := fmt.Sprintf("synth provider %s (local: %s)", cfg.SynthProvider, cfg.ActiveSynthModel())
-	if cfg.SynthProvider == config.SynthProviderAnthropic {
-		synthDesc = fmt.Sprintf("synth provider %s (cloud: %s)", cfg.SynthProvider, cfg.SynthModel)
+	synthDesc := fmt.Sprintf("synth provider ollama (local: %s)", cfg.SynthOllamaModel)
+	switch cfg.SynthProvider {
+	case config.SynthProviderAnthropic:
+		synthDesc = fmt.Sprintf("synth provider anthropic (cloud: %s)", cfg.SynthModel)
+	case config.SynthProviderOpenAI:
+		synthDesc = fmt.Sprintf("synth provider openai (cloud: %s @ %s)", cfg.SynthOpenAIModel, cfg.SynthOpenAIBaseURL)
 	}
 	syncDesc := "sync off"
 	if cfg.SyncEnabled {

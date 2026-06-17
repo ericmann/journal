@@ -24,7 +24,8 @@
 corpus — no server, daemon, or cloud store. Capture is frictionless and
 append-only; retrieval is a fully local RAG stack (Ollama embeddings + optional
 reranking, vectors in `sqlite-vec`); synthesis is on-demand — **cloud Claude
-(Sonnet by default) or a fully local Ollama model**, your choice.
+(Sonnet by default), any OpenAI-compatible endpoint (OpenRouter, Groq, …), or a
+fully local Ollama model**, your choice.
 
 **Markdown in git is the single source of truth** — the vector index is a
 disposable, rebuildable cache and is never committed. It all ships as one static
@@ -34,7 +35,7 @@ binary.
 - ✅ **Todos that close the loop** — `@todo` in any note becomes a tracked item: `journal todos` lists them, `journal done` checks them off (also via MCP, so Claude can too).
 - 🔎 **Local semantic search** — Ollama + `sqlite-vec`, optional LLM reranking; with synthesis configured (cloud or local), a grounded AI answer on top. Notes never leave your machine for retrieval.
 - 📺 **A daily home** — `journal today` (day at a glance), `journal tui` (interactive dashboard: notes, todos, search, meetings, stats), `journal stats` (streaks & volume).
-- 🤖 **AI synthesis** — daily/weekly rollups and decision digests in your own voice, via cloud Claude (default) **or** a fully local Ollama model (`synth_provider: ollama` — zero egress). See [LOCAL-SETUP.md](docs/LOCAL-SETUP.md).
+- 🤖 **AI synthesis** — daily/weekly rollups and decision digests in your own voice. Pick your `synth_provider`: cloud Claude (default), any **OpenAI-compatible** endpoint (OpenRouter's free Gemma, Groq, …), or a **fully local** Ollama model (zero egress). See [SYNTHESIS.md](docs/SYNTHESIS.md) · [LOCAL-SETUP.md](docs/LOCAL-SETUP.md).
 - 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); search, list, and digest them. *(v2.0; Quill is macOS/Windows.)*
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
 - 🔌 **Integrations** — an MCP server exposes search/recent/decisions/meetings to Claude Desktop and Claude Code.
@@ -47,9 +48,11 @@ binary.
 - **[Ollama](https://ollama.com) + an embedding model** — for indexing and search
   (all local). Default: `ollama pull qwen3-embedding:4b`. Verify with `journal doctor`.
 - **A synthesis provider** *(only for `journal synth` + grounded search answers)* —
-  **cloud Claude** (default; set `ANTHROPIC_API_KEY`, never stored in config) **or a
-  fully local Ollama model** (`synth_provider: ollama` — no key, nothing leaves your
-  machine). Skip both if you don't synthesize.
+  **cloud Claude** (default; set `ANTHROPIC_API_KEY`), an **OpenAI-compatible**
+  endpoint (`synth_provider: openai` + `OPENAI_API_KEY` — OpenRouter, Groq, …), or a
+  **fully local** Ollama model (`synth_provider: ollama` — no key, nothing leaves
+  your machine). Keys are read from the env, never stored in config. Skip all of
+  them if you don't synthesize.
 - **[Quill](https://www.quillmeetings.com)** *(optional, macOS/Windows)* — only for
   `journal quill-sync` to pull meeting transcripts. Everything else works without it.
 
@@ -155,7 +158,7 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal tui` | Interactive dashboard: today, todos, semantic search, recent, meetings, stats |
 | `journal stats` | Capture volume, streaks, marker counts, top tags |
 | `journal quill-sync` | Pull Quill meeting transcripts into `transcripts/` ([Quill](docs/QUILL.md)) |
-| `journal synth weekly\|daily\|meetings\|decisions\|stale` | AI synthesis — cloud Claude or local Ollama (`synth_provider`) |
+| `journal synth weekly\|daily\|meetings\|decisions\|stale` | AI synthesis — cloud Claude, OpenAI-compatible (OpenRouter/…), or local Ollama (`synth_provider`) |
 | `journal sync` | Back up to / pull from a git remote (opt-in) |
 | `journal doctor` | Health-check Ollama, models, the index |
 | `journal mcp` | MCP server for Claude Desktop / Claude Code |

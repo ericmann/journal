@@ -81,9 +81,14 @@ func loadConfigFrom(start string) (*config.Config, error) {
 	return config.Load(root)
 }
 
-// newEmbedder builds the live Ollama embedder from config. Tests inject a fake
-// Embedder directly into the run* helpers instead of calling this.
+// newEmbedder builds the live embedder for the configured provider. Tests inject
+// a fake Embedder directly into the run* helpers instead of calling this.
 func newEmbedder(cfg *config.Config) embed.Embedder {
+	if cfg.EmbedProvider == config.EmbedProviderOpenAI {
+		// Empty key is tolerated here; the embedder returns a clear error on use.
+		key, _ := config.OpenAIAPIKey()
+		return embed.NewOpenAI(cfg.EmbedOpenAIBaseURL, key, cfg.EmbedOpenAIModel)
+	}
 	return embed.NewOllama(cfg.OllamaBaseURL, cfg.EmbedModel, cfg.Reranker)
 }
 
