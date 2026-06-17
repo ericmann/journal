@@ -5,6 +5,20 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **`journal index` crash on Go 1.26 / linux-amd64
+  ([#2](https://github.com/ericmann/journal/issues/2)).** The bundled wazero
+  (the Wasm runtime that executes the embedded SQLite via `ncruces/go-sqlite3`)
+  was pinned at v1.8.2, which mis-JIT-compiles under the Go 1.26 runtime ABI and
+  faulted (`SIGSEGV` in `runtime.memmove`) the moment indexing touched the
+  store. Bumped the wazero floor to **v1.12.0** — no source changes;
+  `ncruces/go-sqlite3` v0.21.3 compiles unchanged against it. Also resolves the
+  intermittent `internal/store` "wasm out of bounds" CI flake (same root cause).
+  Added an end-to-end index→search regression test through the real wazero store.
+
 ## [2.4.4] — 2026-06-16
 
 ### Fixed

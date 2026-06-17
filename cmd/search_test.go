@@ -55,6 +55,34 @@ func TestSearchReturnsRelevantCitation(t *testing.T) {
 	}
 }
 
+// TestIndexThenSearchEndToEnd_Issue2 is a regression guard for
+// https://github.com/ericmann/journal/issues/2: `journal index` crashed with a
+// SIGSEGV inside wazero-JIT-compiled SQLite Wasm (a bad `runtime.memmove` call)
+// under Go 1.26 + bundled wazero v1.8.2 on linux/amd64. It drives the exact
+// faulting path end to end — chunk → embed → real sqlite-vec store upsert
+// (wazero) → KNN search (wazero) — using a realistic multi-KB body so the
+// SQLite blob movement the fault rode on is genuinely exercised, not a one-line
+// fixture. On a supported Go+wazero combination it must index and retrieve
+// cleanly; a regressed toolchain/wazero pairing faults here (most visibly in CI
+// on linux/amd64).
+func TestIndexThenSearchEndToEnd_Issue2(t *testing.T) {
+	// ~8 KB body — a plausible journal entry / transcript chunk.
+	body := strings.Repeat("Worked through the FDE triage queue and the local-only synthesis design. ", 110)
+	cfg, fake := indexedRepo(t, map[string]string{
+		"daily/2026/06/2026-06-17.md": "# 2026-06-17\n\n## 10:00 #fde\n" + body + "\n",
+	})
+	results, err := runSearch(context.Background(), cfg, fake, "FDE triage local-only synthesis", 3, store.Filter{})
+	if err != nil {
+		t.Fatalf("index→search through wazero-backed SQLite failed: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("no results — the wazero/SQLite round-trip returned nothing")
+	}
+	if !strings.HasPrefix(results[0].Citation(), "daily/2026/06/2026-06-17.md:") {
+		t.Errorf("unexpected top citation: %q", results[0].Citation())
+	}
+}
+
 func TestSearchHonorsK(t *testing.T) {
 	cfg, fake := indexedRepo(t, map[string]string{
 		"daily/2026/06/d.md": "# 2026-06-01\n\n## 09:00\nalpha\n\n## 09:01\nbeta\n\n## 09:02\ngamma\n",
