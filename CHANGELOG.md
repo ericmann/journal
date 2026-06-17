@@ -5,7 +5,7 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
-## [Unreleased]
+## [2.4.5] — 2026-06-17
 
 ### Fixed
 
