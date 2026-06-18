@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,57 @@ func TestChunkTranscriptWindowsAndTags(t *testing.T) {
 	for i := range chunks {
 		if chunks[i].ID != again[i].ID {
 			t.Errorf("chunk %d ID not stable across runs", i)
+		}
+	}
+}
+
+func TestChunkTranscriptSummaryIsItsOwnChunk(t *testing.T) {
+	var body strings.Builder
+	body.WriteString("---\ntitle: \"CAB\"\nparticipants: [\"SPEAKER_00\", \"SPEAKER_01\"]\ntags: [\"meeting\"]\nsource: whisperx\n---\n\n")
+	body.WriteString("# CAB\n\n")
+	body.WriteString("## Notes\n\nOverview: we decided to ship Answer Engine Optimization work.\n\n")
+	body.WriteString("## Transcript\n\n")
+	for i := 0; i < 80; i++ {
+		body.WriteString(fmt.Sprintf("**[0:%02d] SPEAKER_00:** utterance number %d here\n\n", i, i))
+	}
+	chunks := ChunkTranscript("transcripts/cab.md", body.String(), time.Now().UTC(), "meeting")
+
+	// The Notes section is exactly one chunk, with its heading and no frontmatter
+	// or transcript bleed.
+	var notes *store.Chunk
+	for i := range chunks {
+		if chunks[i].Heading == "Notes" {
+			if notes != nil {
+				t.Fatal("expected exactly one Notes chunk")
+			}
+			notes = &chunks[i]
+		}
+	}
+	if notes == nil {
+		t.Fatal("no Notes chunk emitted")
+	}
+	if !strings.Contains(notes.Body, "Answer Engine Optimization") {
+		t.Errorf("Notes chunk missing the summary: %q", notes.Body)
+	}
+	for _, leak := range []string{"participants:", "source: whisperx", "SPEAKER_00:** utterance"} {
+		if strings.Contains(notes.Body, leak) {
+			t.Errorf("Notes chunk leaked %q (frontmatter/transcript bleed): %q", leak, notes.Body)
+		}
+	}
+	// The long transcript body is still windowed into multiple chunks.
+	windows := 0
+	for _, c := range chunks {
+		if strings.Contains(c.Body, "SPEAKER_00:** utterance") {
+			windows++
+		}
+	}
+	if windows < 2 {
+		t.Errorf("transcript body should be windowed into >=2 chunks, got %d", windows)
+	}
+	// Frontmatter is not indexed at all.
+	for _, c := range chunks {
+		if strings.Contains(c.Body, "source: whisperx") {
+			t.Errorf("frontmatter leaked into a chunk: %q", c.Body)
 		}
 	}
 }

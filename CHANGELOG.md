@@ -5,6 +5,19 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Changed
+
+- **Transcript chunking is now section-aware**, so a transcript's `## Notes`
+  summary is its own clean, high-signal chunk instead of being diluted in a
+  line-window with YAML frontmatter and the participant list. `ChunkTranscript`
+  now drops the frontmatter, emits each short `##` section (notably `## Notes`)
+  as a single chunk, and line-windows only the long transcript body. Benefits
+  both Quill and `journal transcribe` (WhisperX) transcripts — both share the
+  `## Notes` / `## Transcript` shape. Transcripts re-chunk (and re-embed) on the
+  next `journal index`; no `--rebuild` needed (per-file reconcile handles it).
+
 ## [2.6.0] — 2026-06-18
 
 ### Added — `journal transcribe` for non-Quill recordings
