@@ -253,7 +253,12 @@ func (o *Ollama) postJSON(ctx context.Context, path string, body []byte, out any
 			continue // server-side transient: retry
 		}
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("ollama %s: status %d: %s", path, resp.StatusCode, truncate(string(data), 200))
+			bodyStr := string(data)
+			if isTransientEmbedFailure(resp.StatusCode, bodyStr) {
+				lastErr = fmt.Errorf("ollama %s: status %d: %s", path, resp.StatusCode, truncate(bodyStr, 200))
+				continue // transient embed-server crash: retry
+			}
+			return fmt.Errorf("ollama %s: status %d: %s", path, resp.StatusCode, truncate(bodyStr, 200))
 		}
 		if readErr != nil {
 			return readErr
@@ -261,6 +266,20 @@ func (o *Ollama) postJSON(ctx context.Context, path string, body []byte, out any
 		return json.Unmarshal(data, out)
 	}
 	return fmt.Errorf("after %d retries: %w", o.maxRetries, lastErr)
+}
+
+// isTransientEmbedFailure reports whether a non-200 response is a transient
+// embed-server crash (e.g. Ollama's llama-server child died mid-request) rather
+// than a genuine client error. Only called for 4xx responses; the signatures
+// below appear in real Ollama EOF crashes and must not match payload errors like
+// "model not found" or "invalid dimensions".
+func isTransientEmbedFailure(status int, body string) bool {
+	if status != http.StatusBadRequest {
+		return false
+	}
+	return strings.Contains(body, "EOF") ||
+		strings.Contains(body, "connection refused") ||
+		strings.Contains(body, "do embedding request")
 }
 
 func backoff(attempt int) time.Duration {
