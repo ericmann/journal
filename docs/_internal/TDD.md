@@ -56,7 +56,7 @@ This document specifies `journal`, a single-binary command-line tool that turns 
 
 ### System Interactions
 - **Ollama** (`http://localhost:11434`): embeddings (`/api/embed`) and reranking. Local HTTP, no auth.
-- **Anthropic API** (cloud Claude, A8c Enterprise token for A8c work): heavier synthesis reasoning. Invoked by synthesis jobs only, never by capture/search.
+- **Anthropic API** (cloud Claude, a work Enterprise token): heavier synthesis reasoning. Invoked by synthesis jobs only, never by capture/search.
 - **git / GitHub** (personal account): version control of the markdown source of truth. The tool does not call git itself; the user commits.
 - **cron / launchd**: triggers scheduled synthesis jobs.
 
@@ -186,7 +186,7 @@ Cloud-infra subsections from the platform template (Availability SLA, multi-AZ s
 
 ### Configuration & Secrets
 - Config lives in `.journal/config.yaml` (committed) for non-secret settings: model names, chunk strategy, exclude globs, store path, Ollama base URL.
-- **Secrets** (`ANTHROPIC_API_KEY`) come from the environment only — never written to config or committed. The A8c Enterprise token is used for A8c-workspace synthesis; a personal key for personal work. The tool reads whatever is in the env at invocation; workspace separation is enforced by which repo you're in and which env is loaded, not by the tool.
+- **Secrets** (`ANTHROPIC_API_KEY`) come from the environment only — never written to config or committed. The work Enterprise token is used for work-workspace synthesis; a personal key for personal work. The tool reads whatever is in the env at invocation; workspace separation is enforced by which repo you're in and which env is loaded, not by the tool.
 
 ### Testability
 - Unit coverage target **80%+** on pure logic: chunking, hashing, citation formatting, SQL query building, config parsing.
@@ -280,7 +280,7 @@ tags: [canton, displace]
 | Metadata queries | Plain SQL in the same `.db` | `decisions`/`recent`/`threads` are `WHERE` clauses; no second system. |
 | Embeddings | `qwen3-embedding` (4B default, 8B optional) via Ollama | Top-tier MTEB retrieval; 4B is ample for short journal chunks on 48 GB; supports retrieval instructions + flexible dims. |
 | Reranking | `qwen3-reranker` via Ollama | Same family; cheap, high-leverage precision lift when notes share vocabulary. |
-| Heavy reasoning | Cloud Claude (Anthropic API) | Synthesis needs strong long-context reasoning; runs scheduled, not in the hot path; respects A8c/personal token separation via env. |
+| Heavy reasoning | Cloud Claude (Anthropic API) | Synthesis needs strong long-context reasoning; runs scheduled, not in the hot path; respects work/personal token separation via env. |
 | CLI framework | Cobra | Standard Go command tree; subcommands map cleanly to the SKILL surface. |
 
 ---
