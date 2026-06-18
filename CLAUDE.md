@@ -119,6 +119,7 @@ comment on the issue** rather than building the wrong thing.
 - **Secrets come from the environment**, never committed or written to config files. `internal/config`
   loads non-secret settings only.
 - **Keep it gofmt-clean and vet-clean** — CI fails otherwise. Run `make fmt vet` before finishing.
+- **In `httptest` server handlers, write `_, _ = w.Write(…)`** — bare `w.Write(…)` passes `go vet` and tests but fails the `errcheck` linter.
 - Commit style is **Conventional Commits** (`feat:`, `fix:`, `chore:`, …). Branches: `feature/…`,
   `fix/…`, and the agent flow uses `agent/issue-<n>`.
 - **PR issue links use `Closes #NNN`** (with the `#`) — a bare number won't auto-close.

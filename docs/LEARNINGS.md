@@ -12,6 +12,24 @@ automatically and can't silently regress; prefer that over prose where possible.
 
 ---
 
+## Test HTTP handlers: bare `w.Write(...)` fails `errcheck` — always discard the return with `_, _ =`
+
+**Symptom:** An agent PR introduces `httptest.NewServer` handlers with bare `w.Write(...)` calls.
+All behavioral tests pass and `go vet` is clean, but `golangci-lint` fails with `errcheck` errors
+on the write calls — requiring a fix-up commit after the owner notices the CI failure.
+
+**Root cause:** `http.ResponseWriter.Write()` returns `(int, error)`. The `errcheck` linter requires
+every returned error to be explicitly checked or discarded. Bare `w.Write(...)` (no assignment, no
+`_`) fails `errcheck` even though `go vet` and `go test` both pass. Agents writing tests without
+being able to run `make lint` locally will consistently miss this — it is invisible until CI.
+
+**Guardrail:** In any `httptest.NewServer` handler, write `_, _ = w.Write(...)` — never bare
+`w.Write(...)`. Added to CLAUDE.md "Conventions to follow" so agents learn the pattern before
+writing new test code. No automated test is feasible for a lint rule; the rule in CLAUDE.md is
+the mechanism.
+
+---
+
 ## Headless CI must force `bypassPermissions` via `claude_args` — not `acceptEdits`, not `settings:` alone
 
 **Symptom:** An `agent-ready` issue triggers a run that reports "success" but opens **no PR**.
