@@ -49,12 +49,12 @@ func TestSpeakersDistinctInOrder(t *testing.T) {
 func TestRenderShapeAndCoalescing(t *testing.T) {
 	segs, _ := ParseWhisperX([]byte(sampleJSON))
 	date := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
-	md := Render("WPVIP CAB", date, segs, "OVERVIEW: a meeting.", []string{"meeting"})
+	md := Render("Acme Q2 Planning", date, segs, "OVERVIEW: a meeting.", []string{"meeting"})
 
 	for _, want := range []string{
-		"title: \"WPVIP CAB\"", "date: \"2026-06-02\"", "source: whisperx",
+		"title: \"Acme Q2 Planning\"", "date: \"2026-06-02\"", "source: whisperx",
 		"participants: [\"SPEAKER_00\", \"SPEAKER_01\"]", "tags: [\"meeting\"]",
-		"# WPVIP CAB", "## Notes\n\nOVERVIEW: a meeting.", "## Transcript",
+		"# Acme Q2 Planning", "## Notes\n\nOVERVIEW: a meeting.", "## Transcript",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("rendered md missing %q\n---\n%s", want, md)
@@ -83,7 +83,7 @@ func TestRenderOmitsEmptyNotes(t *testing.T) {
 
 func TestFilename(t *testing.T) {
 	d := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
-	if got := Filename(d, "WPVIP Customer Advisory Board 6/2"); got != "2026-06-02-wpvip-customer-advisory-board-6-2.md" {
+	if got := Filename(d, "Acme Customer Advisory Board 6/2"); got != "2026-06-02-acme-customer-advisory-board-6-2.md" {
 		t.Errorf("Filename = %q", got)
 	}
 	if got := Filename(time.Time{}, ""); got != "undated-meeting.md" {

@@ -21,7 +21,7 @@ const transcribeJSON = `{"segments":[
 
 func writeTempJSON(t *testing.T, content string) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "2026-06-02-wpvip-cab.json")
+	p := filepath.Join(t.TempDir(), "2026-06-02-acme-q2-planning.json")
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -36,13 +36,13 @@ func TestRunTranscribeWritesSummaryAndIndexes(t *testing.T) {
 
 	var out bytes.Buffer
 	err := runTranscribe(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), fakeSynth,
-		transcribeOptions{jsonPath: jsonPath, title: "WPVIP CAB", date: date}, &out)
+		transcribeOptions{jsonPath: jsonPath, title: "Acme Q2 Planning", date: date}, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// File landed in the transcripts zone with the dated, slugged name.
-	abs := filepath.Join(cfg.TranscriptsAbsPath(), "2026-06-02-wpvip-cab.md")
+	abs := filepath.Join(cfg.TranscriptsAbsPath(), "2026-06-02-acme-q2-planning.md")
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		t.Fatalf("transcript not written: %v", err)

@@ -200,13 +200,13 @@ can tell failure from an empty result set.
 
 ---
 
-## Workspace separation (personal vs. A8c)
+## Workspace separation (personal vs. work)
 
 The whole pattern clones to a second workspace by copying a repo and swapping a
 config + env token (validated in Phase 6):
 
 - Separate repo → separate gitignored `.journal/index/` (its own embeddings).
-- Separate `ANTHROPIC_API_KEY` in the env that launches the tool (A8c Enterprise
+- Separate `ANTHROPIC_API_KEY` in the env that launches the tool (work Enterprise
   token vs. personal). journal never stores the key; which repo you're in and
   which env is loaded determines the workspace.
 - Ollama is shared and local — no per-workspace state there.

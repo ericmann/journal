@@ -158,7 +158,7 @@ func transcribeSummaryPrompt(title, transcript string) string {
 }
 
 // titleFromPath derives a human-ish title from a JSON filename stem when --title
-// is omitted: "2026-06-02-wpvip-cab.json" -> "2026 06 02 wpvip cab".
+// is omitted: "2026-06-02-acme-q2-planning.json" -> "2026 06 02 acme q2 planning".
 func titleFromPath(p string) string {
 	stem := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
 	stem = strings.NewReplacer("-", " ", "_", " ").Replace(stem)

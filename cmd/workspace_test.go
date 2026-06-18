@@ -105,8 +105,8 @@ func TestWorkspaceSeparateSecrets(t *testing.T) {
 		t.Errorf("key = %q, want the env value", k)
 	}
 	// Swapping the env (as a second workspace would) swaps the effective token.
-	t.Setenv("ANTHROPIC_API_KEY", "sk-a8c-token")
-	if k, _ := config.AnthropicAPIKey(); k != "sk-a8c-token" {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-work-token")
+	if k, _ := config.AnthropicAPIKey(); k != "sk-work-token" {
 		t.Errorf("key = %q, want the swapped env value", k)
 	}
 }

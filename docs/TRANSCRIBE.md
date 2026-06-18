@@ -10,7 +10,7 @@ It's a two-command pipeline once set up:
 ```sh
 export HF_TOKEN=hf_...                                   # never type this inline; see below
 python scripts/transcribe.py meeting.mp4 --min-speakers 3 --max-speakers 12
-journal transcribe ./out/meeting.json --title "WPVIP CAB" --date 2026-06-02
+journal transcribe ./out/meeting.json --title "Acme Q2 Planning" --date 2026-06-02
 ```
 
 The first command is the heavy ML step (slow, Python, GPU-optional); the second
@@ -86,7 +86,7 @@ python scripts/transcribe.py meeting.mp4 --min-speakers 3 --max-speakers 12
 ## Step 2 — JSON → indexed transcript
 
 ```sh
-journal transcribe ./out/meeting.json --title "WPVIP CAB" --date 2026-06-02
+journal transcribe ./out/meeting.json --title "Acme Q2 Planning" --date 2026-06-02
 ```
 
 This renders speaker-labeled, timestamped Markdown into your `transcripts/`
