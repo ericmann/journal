@@ -13,6 +13,7 @@ import (
 	"github.com/ericmann/journal/internal/embed"
 	"github.com/ericmann/journal/internal/note"
 	"github.com/ericmann/journal/internal/store"
+	"github.com/ericmann/journal/internal/synth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 )
@@ -93,6 +94,19 @@ type captureInput struct {
 	Tags    []string `json:"tags,omitempty" jsonschema:"tags to attach"`
 	Project string   `json:"project,omitempty" jsonschema:"capture into this project instead of the daily file"`
 	Marker  string   `json:"marker,omitempty" jsonschema:"one of: decision, question, todo"`
+}
+
+type askInput struct {
+	Query   string   `json:"query" jsonschema:"the question to answer, grounded in journal notes"`
+	K       int      `json:"k,omitempty" jsonschema:"max source chunks to retrieve (default 5)"`
+	Tag     []string `json:"tag,omitempty" jsonschema:"only chunks having all of these tags"`
+	Project string   `json:"project,omitempty" jsonschema:"restrict to this project slug"`
+	Since   string   `json:"since,omitempty" jsonschema:"only notes within this window, e.g. 2w, 14d, 36h"`
+}
+
+type askResponse struct {
+	Answer    string   `json:"answer"`
+	Citations []string `json:"citations"`
 }
 
 type statsInput struct{}
@@ -191,6 +205,17 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 		Description: "Your day at a glance: today's daily note path, open todos (up to 10), and today's meetings. Use for 'what does my day look like'.",
 	}, toolHandler(func(ctx context.Context, in todayMCPInput) (string, error) {
 		return mcpToday(ctx, cfg)
+	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "ask",
+		Description: "Ask a question answered from the journal: retrieve relevant chunks then synthesize a grounded answer with path:line citations. Returns {answer, citations}. Honors synth_provider and local_only; returns an error if synthesis is unavailable.",
+	}, toolHandler(func(ctx context.Context, in askInput) (string, error) {
+		client, available, reason := answerClient(cfg)
+		if !available {
+			return "", reason
+		}
+		return mcpAsk(ctx, cfg, e, client, in)
 	}))
 
 	return s.Run(ctx, &mcp.StdioTransport{})
@@ -386,6 +411,39 @@ func mcpToday(ctx context.Context, cfg *config.Config) (string, error) {
 		return "", err
 	}
 	b, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func mcpAsk(ctx context.Context, cfg *config.Config, e embed.Embedder, client synth.Client, in askInput) (string, error) {
+	if strings.TrimSpace(in.Query) == "" {
+		return "", fmt.Errorf("query must not be empty")
+	}
+	f, err := sinceFilter(store.Filter{Tags: in.Tag, Project: in.Project}, in.Since)
+	if err != nil {
+		return "", err
+	}
+	scored, err := searchChunks(ctx, cfg, e, in.Query, in.K, f)
+	if err != nil {
+		return "", err
+	}
+	if len(scored) == 0 {
+		b, _ := json.MarshalIndent(askResponse{Answer: "No relevant notes found.", Citations: []string{}}, "", "  ")
+		return string(b), nil
+	}
+	chunks := make([]store.Chunk, len(scored))
+	citations := make([]string, len(scored))
+	for i, sc := range scored {
+		chunks[i] = sc.chunk
+		citations[i] = fmt.Sprintf("%s:%d-%d", sc.chunk.Path, sc.chunk.LineStart, sc.chunk.LineEnd)
+	}
+	answer, err := answerQuery(ctx, client, cfg.ActiveSynthModel(), cfg.SynthMaxTokens, in.Query, chunks)
+	if err != nil {
+		return "", fmt.Errorf("synthesis: %w", err)
+	}
+	b, err := json.MarshalIndent(askResponse{Answer: answer, Citations: citations}, "", "  ")
 	if err != nil {
 		return "", err
 	}
