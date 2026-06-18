@@ -5,7 +5,7 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
-## [Unreleased]
+## [2.6.0] — 2026-06-18
 
 ### Added — `journal transcribe` for non-Quill recordings
 
