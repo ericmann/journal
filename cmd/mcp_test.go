@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ericmann/journal/internal/embed"
 )
@@ -145,5 +146,55 @@ func TestErrorJSONShape(t *testing.T) {
 	}
 	if env["error"] == "" {
 		t.Errorf("errorJSON missing error field: %s", s)
+	}
+}
+
+func TestMCPStatsReturnsJSON(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00 #cabot @todo\nfix the router\n\n## 10:00 @decision\nchose pure go\n",
+	})
+	out, err := mcpStats(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep StatsReport
+	if err := json.Unmarshal([]byte(out), &rep); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if rep.NoteChunks == 0 {
+		t.Error("expected note_chunks > 0")
+	}
+	if rep.OpenTodos != 1 {
+		t.Errorf("open_todos = %d, want 1", rep.OpenTodos)
+	}
+	if rep.Decisions != 1 {
+		t.Errorf("decisions = %d, want 1", rep.Decisions)
+	}
+}
+
+func TestMCPTodayReturnsJSON(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00 @todo\nfinish the dashboard\n",
+	})
+	out, err := mcpToday(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep todayReport
+	if err := json.Unmarshal([]byte(out), &rep); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if rep.Date != today {
+		t.Errorf("date = %q, want %q", rep.Date, today)
+	}
+	if !rep.Notes {
+		t.Error("notes = false, want true (today's file exists)")
+	}
+	if len(rep.Todos) != 1 {
+		t.Errorf("todos = %d, want 1", len(rep.Todos))
 	}
 }
