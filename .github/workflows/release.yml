@@ -3,6 +3,9 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Also dispatchable on a tag ref — prepare-release.yml triggers this after it
+  # creates the tag (a tag pushed by GITHUB_TOKEN does not auto-fire workflows).
+  workflow_dispatch: {}
 
 permissions:
   contents: write   # create the GitHub release + upload assets
@@ -31,13 +34,28 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
+      # Use the curated CHANGELOG section for this tag as the release notes
+      # (falls back to GoReleaser's auto-generated notes if the section is absent).
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          notes="$(bash scripts/changelog-section.sh "$GITHUB_REF_NAME" || true)"
+          if [ -n "$notes" ]; then
+            printf '%s\n' "$notes" > release-notes.md
+            echo "args=--release-notes=release-notes.md" >> "$GITHUB_OUTPUT"
+            echo "Using the CHANGELOG section for $GITHUB_REF_NAME as release notes."
+          else
+            echo "args=" >> "$GITHUB_OUTPUT"
+            echo "::notice::No CHANGELOG section for $GITHUB_REF_NAME — GoReleaser will auto-generate notes."
+          fi
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean ${{ steps.notes.outputs.args }}
         env:
           # Default token: creates the release + uploads assets on this repo.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # PAT with write access to DisplaceTech/homebrew-tap for the cask push.
+          # PAT with write access to ericmann/homebrew-tap for the cask push.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
