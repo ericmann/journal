@@ -5,6 +5,26 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Added — `journal transcribe` for non-Quill recordings
+
+- **`journal transcribe <whisperx.json>`** ingests any recording's WhisperX JSON
+  into an indexed transcript: speaker-labeled, timestamped Markdown (same shape
+  as Quill transcripts — frontmatter + `# Title` + `## Notes` + `## Transcript`,
+  stamped `source: whisperx`) in the `transcripts/` landing zone, dated to the
+  meeting, then indexed. `--title`, `--date`, `--no-summary`.
+- **Generated `## Notes` summary for retrieval.** It summarizes the transcript
+  with your configured `synth_provider` (Ollama / Anthropic / OpenAI-compatible)
+  and puts it at the top, so search hits a concise entry point instead of
+  trawling a multi-hour meeting's windows — the same benefit Quill's AI notes
+  give. Falls back to transcript-only (with a notice) if no provider is reachable.
+- **Bundled helper + docs.** `scripts/transcribe.py` wraps the heavy
+  ffmpeg+WhisperX step (reads the HF token from `HF_TOKEN`, never argv) and
+  `docs/TRANSCRIBE.md` documents the full pipeline and the gotchas (HF token,
+  accepting gated pyannote models, Python/dep conflicts). The binary stays
+  pure-Go — the transcription step is an optional, documented external tool.
+
 ## [2.5.0] — 2026-06-17
 
 ### Added — pluggable OpenAI-compatible providers

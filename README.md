@@ -36,7 +36,7 @@ binary.
 - 🔎 **Local semantic search** — Ollama + `sqlite-vec`, optional LLM reranking; with synthesis configured (cloud or local), a grounded AI answer on top. Notes never leave your machine for retrieval.
 - 📺 **A daily home** — `journal today` (day at a glance), `journal tui` (interactive dashboard: notes, todos, search, meetings, stats), `journal stats` (streaks & volume).
 - 🤖 **AI synthesis** — daily/weekly rollups and decision digests in your own voice. Pick your `synth_provider`: cloud Claude (default), any **OpenAI-compatible** endpoint (OpenRouter's free Gemma, Groq, …), or a **fully local** Ollama model (zero egress). See [SYNTHESIS.md](docs/SYNTHESIS.md) · [LOCAL-SETUP.md](docs/LOCAL-SETUP.md).
-- 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); search, list, and digest them. *(v2.0; Quill is macOS/Windows.)*
+- 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); or ingest any recording via `journal transcribe` (WhisperX → summarized, indexed transcript — see [TRANSCRIBE.md](docs/TRANSCRIBE.md)). Search, list, and digest them all. *(v2.0; Quill is macOS/Windows.)*
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
 - 🔌 **Integrations** — an MCP server exposes search/recent/decisions/meetings to Claude Desktop and Claude Code.
 
@@ -158,6 +158,7 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal tui` | Interactive dashboard: today, todos, semantic search, recent, meetings, stats |
 | `journal stats` | Capture volume, streaks, marker counts, top tags |
 | `journal quill-sync` | Pull Quill meeting transcripts into `transcripts/` ([Quill](docs/QUILL.md)) |
+| `journal transcribe <whisperx.json>` | Ingest a non-Quill recording: render + summarize + index ([Transcribe](docs/TRANSCRIBE.md)) |
 | `journal synth weekly\|daily\|meetings\|decisions\|stale` | AI synthesis — cloud Claude, OpenAI-compatible (OpenRouter/…), or local Ollama (`synth_provider`) |
 | `journal sync` | Back up to / pull from a git remote (opt-in) |
 | `journal doctor` | Health-check Ollama, models, the index |
@@ -177,6 +178,7 @@ Full flags, the note format, and search internals are in [**Usage**](docs/USAGE.
 | --- | --- |
 | [Usage](docs/USAGE.md) | Capture conventions, command surface, retrieval, the watcher, auto-commit |
 | [Meeting transcripts (Quill)](docs/QUILL.md) | Pulling Quill meetings into the index — the v2.0 feature (macOS/Windows) |
+| [Transcribing recordings](docs/TRANSCRIBE.md) | Non-Quill audio/video → WhisperX → summarized, indexed transcript (`journal transcribe`) |
 | [Configuration](docs/CONFIGURATION.md) | Every `config.yaml` key, defaults, and secrets |
 | [Synthesis](docs/SYNTHESIS.md) | `journal synth` and writing in your voice |
 | [Remote backup](docs/SYNC.md) | `journal sync`: enabling, conflict modes, cron/launchd/systemd |
