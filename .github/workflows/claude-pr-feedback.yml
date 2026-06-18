@@ -1,0 +1,61 @@
+# Lets a human revise an OPEN PR by commenting "@claude ..." on it (or in a PR review).
+# The action checks out the PR's head branch, reads the text after "@claude" as its
+# instruction, makes the change, and pushes back to the same branch — re-running CI.
+#
+# Closes the in-PR feedback loop (the base template is one-shot-per-issue). Fires only
+# on comments authored by a real user that contain "@claude"; bot pushes do not
+# re-trigger workflows (GITHUB_TOKEN suppression), so there is no loop.
+
+name: Claude PR Feedback
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  claude-pr-feedback:
+    if: |
+      (vars.AGENT_PROVIDER == 'claude' || vars.AGENT_PROVIDER == '') && (
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && github.event.review.body != null && contains(github.event.review.body, '@claude'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code — PR Feedback
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          trigger_phrase: "@claude"
+          # show_full_output: true   # uncomment to stream SDK output for debugging
+          # Headless CI must not block on tool-approval prompts. See docs/LEARNINGS.md.
+          claude_args: |
+            --permission-mode bypassPermissions
+          settings: |
+            {
+              "permissions": {
+                "defaultMode": "bypassPermissions"
+              }
+            }
+          additional_permissions: |
+            actions: read
