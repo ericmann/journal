@@ -3,11 +3,13 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ericmann/journal/internal/embed"
+	"github.com/ericmann/journal/internal/synth"
 )
 
 func TestMCPSearchReturnsResultsJSON(t *testing.T) {
@@ -196,5 +198,77 @@ func TestMCPTodayReturnsJSON(t *testing.T) {
 	}
 	if len(rep.Todos) != 1 {
 		t.Errorf("todos = %d, want 1", len(rep.Todos))
+	}
+}
+
+func TestMCPAskReturnsAnswerWithCitations(t *testing.T) {
+	cfg, fake := indexedRepo(t, map[string]string{
+		"daily/2026/06/d.md": "# 2026-06-01\n\n## 09:14 #cabot\nlitellm fallback routing is broken\n",
+	})
+	fakeClient := &synth.Fake{Reply: "litellm fallback is broken [daily/2026/06/d.md:3-4]"}
+	out, err := mcpAsk(context.Background(), cfg, fake, fakeClient, askInput{Query: "litellm fallback", K: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got askResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if got.Answer == "" {
+		t.Error("answer must not be empty")
+	}
+	if len(got.Citations) == 0 {
+		t.Error("citations must not be empty")
+	}
+	for _, c := range got.Citations {
+		if !strings.Contains(c, ":") {
+			t.Errorf("citation %q missing colon (want path:line-line form)", c)
+		}
+	}
+	if fakeClient.CallCount != 1 {
+		t.Errorf("synth client called %d times, want 1", fakeClient.CallCount)
+	}
+}
+
+func TestMCPAskEmptyQueryErrors(t *testing.T) {
+	cfg := testRepo(t, nil)
+	if _, err := mcpAsk(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), &synth.Fake{}, askInput{Query: "  "}); err == nil {
+		t.Error("expected error on empty query")
+	}
+}
+
+func TestMCPAskSynthErrorPropagates(t *testing.T) {
+	cfg, fake := indexedRepo(t, map[string]string{
+		"daily/2026/06/d.md": "# 2026-06-01\n\n## 09:14\nlitellm fallback routing\n",
+	})
+	boom := errors.New("synth unavailable")
+	fakeClient := &synth.Fake{ForcedErr: boom}
+	_, err := mcpAsk(context.Background(), cfg, fake, fakeClient, askInput{Query: "litellm fallback"})
+	if err == nil {
+		t.Fatal("expected error from failing synth client")
+	}
+	if !strings.Contains(err.Error(), "synthesis") {
+		t.Errorf("error should mention synthesis, got: %v", err)
+	}
+}
+
+func TestMCPAskNoResultsReturnsEmptyCitations(t *testing.T) {
+	// Empty repo: no notes indexed, so no chunks found.
+	cfg := testRepo(t, nil)
+	fakeClient := &synth.Fake{}
+	out, err := mcpAsk(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), fakeClient, askInput{Query: "anything"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got askResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if len(got.Citations) != 0 {
+		t.Errorf("citations = %v, want empty", got.Citations)
+	}
+	// Synth must not be called when there are no chunks to ground the answer.
+	if fakeClient.CallCount != 0 {
+		t.Errorf("synth client called %d times, want 0 (no chunks)", fakeClient.CallCount)
 	}
 }
