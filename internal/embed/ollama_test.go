@@ -82,11 +82,11 @@ func TestEmbed_TransientRetry(t *testing.T) {
 		if callCount == 1 {
 			// First call: simulate transient embed-server crash.
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error":"do embedding request: Post \"http://127.0.0.1:12345/v1/embeddings\": EOF"}`))
+			_, _ = w.Write([]byte(`{"error":"do embedding request: Post \"http://127.0.0.1:12345/v1/embeddings\": EOF"}`))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write(okBody)
+		_, _ = w.Write(okBody)
 	}))
 	defer srv.Close()
 
@@ -112,7 +112,7 @@ func TestEmbed_NonTransientNotRetried(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"model \"nomodel\" not found"}`))
+		_, _ = w.Write([]byte(`{"error":"model \"nomodel\" not found"}`))
 	}))
 	defer srv.Close()
 
@@ -138,7 +138,7 @@ func TestEmbed_ExhaustedRetries(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"do embedding request: Post \"http://127.0.0.1:12345/v1/embeddings\": EOF"}`))
+		_, _ = w.Write([]byte(`{"error":"do embedding request: Post \"http://127.0.0.1:12345/v1/embeddings\": EOF"}`))
 	}))
 	defer srv.Close()
 
