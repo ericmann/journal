@@ -47,3 +47,7 @@ docs/VOICE_PROFILE.md
 
 # generated shell completions (GoReleaser before-hook output)
 completions/
+
+# Per-user local Claude Code settings. Never commit: the SDK loads it as a settings
+# source in CI and it overrides the workflow's permission mode. See docs/LEARNINGS.md.
+.claude/settings.local.json

@@ -1,0 +1,72 @@
+name: Prepare Release
+
+# Cut a release in one click: finalize the CHANGELOG's "## [Unreleased]" section
+# to the given version + today's date, commit it, create + push the annotated
+# tag, then trigger the Release workflow on that tag. Release.yml turns the
+# finalized CHANGELOG section into the GitHub Release notes.
+#
+# Deterministic — no agent involved. Project-specific (not part of the reusable
+# agentic-workflow template).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. v2.6.2"
+        required: true
+
+permissions:
+  contents: write   # commit the CHANGELOG + push the tag
+  actions: write    # dispatch the Release workflow on the new tag
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Finalize CHANGELOG, tag, and trigger release
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # 1. Validate the version string.
+          case "$VERSION" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::version must look like v2.6.2 (got '$VERSION')"; exit 1 ;;
+          esac
+          ver="${VERSION#v}"
+
+          # 2. Refuse if the tag already exists.
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::tag $VERSION already exists"; exit 1
+          fi
+
+          # 3. Refuse if there's nothing under ## [Unreleased].
+          unreleased="$(awk '/^## \[Unreleased\]/{c=1;next} c&&/^## \[/{exit} c{print}' CHANGELOG.md)"
+          if [ -z "$(printf '%s' "$unreleased" | tr -d '[:space:]')" ]; then
+            echo "::error::## [Unreleased] is empty — nothing to release"; exit 1
+          fi
+
+          # 4. Rename the first "## [Unreleased]" heading to "## [ver] — <today>".
+          today="$(date -u +%Y-%m-%d)"
+          sed -i "0,/^## \[Unreleased\]/s//## [$ver] — $today/" CHANGELOG.md
+
+          # 5. Commit, tag, push.
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs: changelog $VERSION"
+          git push origin HEAD
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
+
+          # 6. Trigger the Release workflow on the new tag. A tag pushed with the
+          #    default GITHUB_TOKEN does not auto-trigger workflows, so dispatch
+          #    release.yml explicitly (it reads the CHANGELOG section for notes).
+          gh workflow run release.yml --ref "$VERSION"
+          echo "::notice::Tagged $VERSION and dispatched the Release workflow."

@@ -5,6 +5,17 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Added
+
+- **One-click releases.** A `prepare-release` workflow (Actions → Prepare Release →
+  version) finalizes the `## [Unreleased]` CHANGELOG section to the version, tags,
+  and triggers the Release workflow; and the GitHub Release notes now come from the
+  curated CHANGELOG section (`scripts/changelog-section.sh` + GoReleaser
+  `--release-notes`) instead of an auto-generated commit list. See
+  [docs/RELEASING.md](docs/RELEASING.md). Deterministic, project-specific tooling.
+
 ## [2.6.1] — 2026-06-18
 
 ### Changed
