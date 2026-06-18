@@ -3,8 +3,9 @@
 # instruction, makes the change, and pushes back to the same branch — re-running CI.
 #
 # Closes the in-PR feedback loop (the base template is one-shot-per-issue). Fires only
-# on comments authored by a real user that contain "@claude"; bot pushes do not
-# re-trigger workflows (GITHUB_TOKEN suppression), so there is no loop.
+# on "@claude" comments from a collaborator with write/admin access (see the
+# permission gate below); bot pushes do not re-trigger workflows (GITHUB_TOKEN
+# suppression), so there is no loop.
 
 name: Claude PR Feedback
 
@@ -37,12 +38,44 @@ jobs:
       actions: read
 
     steps:
+      # Authorization gate: only repo collaborators with write/admin may drive the
+      # agent. Without this, on a public repo ANY user could comment "@claude …" and
+      # run an agent with write access + bypassPermissions. Mirrors plan-approval-gate.yml.
+      - name: Check commenter permissions
+        id: permission-check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const p = context.payload;
+            const commenter = (p.comment && p.comment.user.login) || (p.review && p.review.user.login);
+            const prNumber = (p.issue && p.issue.number) || (p.pull_request && p.pull_request.number);
+            let permLevel = 'none';
+            try {
+              const r = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner, repo: context.repo.repo, username: commenter,
+              });
+              permLevel = r.data.permission;
+            } catch (err) {
+              permLevel = 'none';
+            }
+            const allowed = ['write', 'admin'].includes(permLevel);
+            console.log(`Commenter ${commenter} has permission: ${permLevel} — allowed: ${allowed}`);
+            if (!allowed && prNumber) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber,
+                body: `@${commenter} Only collaborators with write access can drive \`@claude\` here — request ignored.`,
+              });
+            }
+            core.setOutput('allowed', allowed ? 'true' : 'false');
+
       - name: Checkout
+        if: steps.permission-check.outputs.allowed == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Run Claude Code — PR Feedback
+        if: steps.permission-check.outputs.allowed == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
