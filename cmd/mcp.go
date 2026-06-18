@@ -95,6 +95,10 @@ type captureInput struct {
 	Marker  string   `json:"marker,omitempty" jsonschema:"one of: decision, question, todo"`
 }
 
+type statsInput struct{}
+
+type todayMCPInput struct{}
+
 // runMCP registers the tools and serves over stdio until the client disconnects.
 func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 	// The MCP server itself is local stdio, but its *client* (e.g. Claude
@@ -173,6 +177,20 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 		Description: "Complete an open @todo: rewrites its @todo marker to @done with today's date in the note file. ref is a citation from the todos tool (path:line) or a unique text fragment.",
 	}, toolHandler(func(ctx context.Context, in doneInput) (string, error) {
 		return mcpDone(ctx, cfg, e, in)
+	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "stats",
+		Description: "Journal metrics: note volume, streaks, open todos, decisions, top tags. Use for 'how's my note volume' or 'what's my writing streak'.",
+	}, toolHandler(func(ctx context.Context, in statsInput) (string, error) {
+		return mcpStats(ctx, cfg)
+	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "today",
+		Description: "Your day at a glance: today's daily note path, open todos (up to 10), and today's meetings. Use for 'what does my day look like'.",
+	}, toolHandler(func(ctx context.Context, in todayMCPInput) (string, error) {
+		return mcpToday(ctx, cfg)
 	}))
 
 	return s.Run(ctx, &mcp.StdioTransport{})
@@ -347,6 +365,30 @@ func mcpCapture(cfg *config.Config, in captureInput) (string, error) {
 		return "", err
 	}
 	b, _ := json.Marshal(map[string]string{"captured": relTo(cfg.Root(), path)})
+	return string(b), nil
+}
+
+func mcpStats(ctx context.Context, cfg *config.Config) (string, error) {
+	rep, err := gatherStats(ctx, cfg, now())
+	if err != nil {
+		return "", err
+	}
+	b, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func mcpToday(ctx context.Context, cfg *config.Config) (string, error) {
+	rep, _, err := gatherToday(ctx, cfg)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return "", err
+	}
 	return string(b), nil
 }
 
