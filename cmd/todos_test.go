@@ -49,7 +49,7 @@ func TestCompleteTodoByTextRewritesFile(t *testing.T) {
 	cfg, fake := indexedRepo(t, map[string]string{"daily/2026/06/2026-06-01.md": todoFixture})
 	ctx := context.Background()
 
-	res, err := completeTodo(ctx, cfg, fake, "call bob", nil)
+	res, err := completeTodo(ctx, cfg, fake, "call bob", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestCompleteTodoByCitation(t *testing.T) {
 		t.Fatal("fixture has no open todos")
 	}
 	ref := open[0].Citation()
-	res, err := completeTodo(context.Background(), cfg, fake, ref, nil)
+	res, err := completeTodo(context.Background(), cfg, fake, ref, "", nil)
 	if err != nil {
 		t.Fatalf("citation %q: %v", ref, err)
 	}
@@ -98,11 +98,11 @@ func TestCompleteTodoAmbiguousAndMissing(t *testing.T) {
 	// "the" appears in both open todo bodies? "call bob about pricing" no 'the'…
 	// Use a fragment in both: none. Both contain "o"? Use "a" — too broad. Craft:
 	// "pricing" unique; "janus" unique; both contain " " — use " " (space).
-	_, err := completeTodo(ctx, cfg, fake, "a", nil)
+	_, err := completeTodo(ctx, cfg, fake, "a", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "matches") {
 		t.Errorf("ambiguous fragment should error with candidates, got %v", err)
 	}
-	_, err = completeTodo(ctx, cfg, fake, "no such todo text", nil)
+	_, err = completeTodo(ctx, cfg, fake, "no such todo text", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "no open todo") {
 		t.Errorf("missing fragment should error, got %v", err)
 	}
@@ -116,9 +116,46 @@ func TestCompleteTodoStaleIndex(t *testing.T) {
 	if err := os.WriteFile(abs, []byte(strings.ReplaceAll(string(data), "@todo", "@question")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := completeTodo(context.Background(), cfg, fake, "call bob", nil)
+	_, err := completeTodo(context.Background(), cfg, fake, "call bob", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Errorf("expected stale-index error, got %v", err)
+	}
+}
+
+func TestCompleteTodoWithResolutionNote(t *testing.T) {
+	cfg, fake := indexedRepo(t, map[string]string{"daily/2026/06/2026-06-01.md": todoFixture})
+	ctx := context.Background()
+
+	_, err := completeTodo(ctx, cfg, fake, "janus SOW", "sent draft to client", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	abs := filepath.Join(cfg.Root(), "daily", "2026", "06", "2026-06-01.md")
+	data, _ := os.ReadFile(abs)
+	got := string(data)
+	if !strings.Contains(got, "Resolution: sent draft to client") {
+		t.Errorf("resolution line missing:\n%s", got)
+	}
+	// The other blocks must remain untouched.
+	if !strings.Contains(got, "## 09:00 @todo") {
+		t.Errorf("unrelated todo disturbed:\n%s", got)
+	}
+}
+
+func TestCompleteTodoResolutionWhitespaceIsStripped(t *testing.T) {
+	cfg, fake := indexedRepo(t, map[string]string{"daily/2026/06/2026-06-01.md": todoFixture})
+	ctx := context.Background()
+
+	_, err := completeTodo(ctx, cfg, fake, "call bob", "  trimmed resolution  ", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	abs := filepath.Join(cfg.Root(), "daily", "2026", "06", "2026-06-01.md")
+	data, _ := os.ReadFile(abs)
+	if !strings.Contains(string(data), "Resolution: trimmed resolution") {
+		t.Errorf("resolution not trimmed:\n%s", string(data))
 	}
 }
 
@@ -140,7 +177,7 @@ func TestMCPTodosAndDone(t *testing.T) {
 		t.Fatalf("mcp todos = %d, want 2", len(env.Results))
 	}
 
-	dout, err := mcpDone(ctx, cfg, embed.NewFake(cfg.EmbedDim), doneInput{Ref: "janus SOW"})
+	dout, err := mcpDone(ctx, cfg, embed.NewFake(cfg.EmbedDim), doneInput{Ref: "janus SOW", Resolution: ""})
 	if err != nil {
 		t.Fatal(err)
 	}

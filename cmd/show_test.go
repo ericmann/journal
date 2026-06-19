@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,6 +74,80 @@ func TestGatherTodayAndCompose(t *testing.T) {
 	md2 := composeToday(rep2, notes2)
 	if !strings.Contains(md2, "No notes yet today") || strings.Contains(md2, "Open todos") {
 		t.Errorf("empty dashboard wrong:\n%s", md2)
+	}
+}
+
+func TestGatherTodayIncludesRecentDecisions(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00 @decision\nchose sqlite-vec for vectors\n",
+	})
+	rep, _, err := gatherToday(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Decisions) != 1 {
+		t.Errorf("decisions = %d, want 1", len(rep.Decisions))
+	}
+	if !strings.Contains(rep.Decisions[0].Snippet, "chose sqlite-vec") {
+		t.Errorf("decision snippet = %q, want 'chose sqlite-vec'", rep.Decisions[0].Snippet)
+	}
+}
+
+func TestComposeTodayDecisionsSection(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	fixture := "# " + today + "\n\n## 09:00 @decision\nchose sqlite-vec for vectors\n"
+	cfg, _ := indexedRepo(t, map[string]string{rel: fixture})
+
+	rep, notesMD, err := gatherToday(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := composeToday(rep, notesMD)
+	if !strings.Contains(md, "Recent decisions") {
+		t.Errorf("dashboard missing 'Recent decisions' section:\n%s", md)
+	}
+	if !strings.Contains(md, "chose sqlite-vec for vectors") {
+		t.Errorf("dashboard missing decision statement:\n%s", md)
+	}
+}
+
+func TestGatherTodayDecisionsExcludesOld(t *testing.T) {
+	// A decision from > 2 weeks ago should not appear in today's dashboard.
+	cfg, _ := indexedRepo(t, map[string]string{
+		"daily/2020/01/2020-01-01.md": "# 2020-01-01\n\n## 09:00 @decision\nvery old decision\n",
+	})
+	rep, _, err := gatherToday(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Decisions) != 0 {
+		t.Errorf("stale decision should not appear: %+v", rep.Decisions)
+	}
+}
+
+func TestGatherTodayDecisionsJSONShape(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00 @decision\ntest decision\n",
+	})
+	rep, _, err := gatherToday(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["decisions"]; !ok {
+		t.Error("todayReport JSON missing 'decisions' key")
 	}
 }
 
