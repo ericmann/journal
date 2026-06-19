@@ -7,6 +7,10 @@ versioning. Build-time design rationale lives in
 
 ## [Unreleased]
 
+This release rounds out the **MCP surface** (the agent-facing side of journal),
+makes **decisions & todos** first-class, and adds project tooling — a docs site,
+a curated release pipeline, and the agentic-workflow layer.
+
 ### Added
 
 - **MCP `synth` tool.** The MCP server now exposes synthesis as a `synth` tool so
@@ -18,13 +22,68 @@ versioning. Build-time design rationale lives in
   `synth_provider`, `local_only`, and `voice_profile` exactly as the CLI does;
   returns a clean `{"error":"…"}` when synthesis is unavailable.
   Optional scoping params: `kind` (default `weekly`), `days`, `project`, `date`.
-
+- **MCP `ask` tool** — runs retrieve→synthesize and returns
+  `{answer, citations}` (grounded text + `path:line` references) so clients get a
+  direct "what did I decide about X" answer instead of raw chunks. When no chunks
+  match, returns "No relevant notes found." rather than calling the model
+  ungrounded. Honors `local_only` / provider availability with a clear error
+  ([#32](https://github.com/ericmann/journal/issues/32)).
+- **MCP `stats` and `today` tools** — the same stable JSON as
+  `journal stats --json` / `journal today --json`, for "how's my note volume" and
+  "what does my day look like" ([#31](https://github.com/ericmann/journal/issues/31)).
+- **MCP resources** — `journal://today`, `journal://recent`, and
+  `journal://projects/{slug}/index` expose raw Markdown as addressable context via
+  `resources/list` / `resources/read`, so clients can pull journal context without
+  orchestrating tool calls. URIs are stable across server runs
+  ([#37](https://github.com/ericmann/journal/issues/37)).
+- **MCP prompts** — `weekly reflection`, `decisions review`, and `project status`
+  are exposed as first-class, one-click prompts with journal context pre-assembled
+  (reusing `synth.AssembleWeekly` / `AssembleDecisions`)
+  ([#44](https://github.com/ericmann/journal/issues/44)).
+- **`journal tags`** — list distinct `#tags` with usage counts, and
+  `journal tags rename <old> <new>` rewrites a tag across all notes, re-indexes the
+  affected files, and auto-commits (`--dry-run` previews). Boundary-aware so `#foo`
+  isn't matched inside `#foobar` ([#33](https://github.com/ericmann/journal/issues/33)).
+- **First-class decisions & todos.** Dedicated capture commands, crisp
+  date/statement/citation rendering, proactive surfacing in `journal today`, and
+  resolution notes on `journal done`. Fully backward compatible — existing
+  `@decision`/`@todo`/`@done` blocks parse and surface unchanged
+  ([#47](https://github.com/ericmann/journal/issues/47)).
+- **Documentation site** at **<https://journal.eamann.com>** — an mdBook site
+  (Catppuccin Latte) with warm, second-person prose across 14 chapters (install,
+  capture, search, synthesis, meetings, configuration, integrations). Additive: the
+  `docs/` tree is untouched ([#38](https://github.com/ericmann/journal/issues/38)).
 - **One-click releases.** A `prepare-release` workflow (Actions → Prepare Release →
   version) finalizes the `## [Unreleased]` CHANGELOG section to the version, tags,
   and triggers the Release workflow; and the GitHub Release notes now come from the
   curated CHANGELOG section (`scripts/changelog-section.sh` + GoReleaser
   `--release-notes`) instead of an auto-generated commit list. See
   [docs/RELEASING.md](docs/RELEASING.md). Deterministic, project-specific tooling.
+- **Agentic-workflow layer + `CLAUDE.md`.** GitHub Actions for agent-ready issues
+  (auto-label → trigger → PR), a planning-approval gate for high-complexity work,
+  `@claude` PR feedback (gated to write-access collaborators), and a retro flow;
+  plus issue/PR templates, a label set, and a contributor guide grounded in the
+  real layout. Contributor/CI tooling — no change to the shipped binary
+  ([#25](https://github.com/ericmann/journal/issues/25)).
+
+### Changed
+
+- **Better LLM-as-reranker quality.** The rerank prompt is now a structured
+  relevance rubric (0/5/10 anchors) instead of "reply with only the number", and
+  score parsing is a robust multi-strategy parser (`N/10` fraction → labelled
+  `Score: N` → last in-range number, skipping negatives). More reliable precision
+  on the optional reranking path ([#36](https://github.com/ericmann/journal/issues/36)).
+
+### Fixed
+
+- **`journal index --watch` survives transient embed failures.** A per-file embed
+  error during a watch pass is now logged and skipped (`continue`) instead of
+  aborting the whole batch; only context cancellation still stops the run.
+  Debounce coalescing of rapid edits is now covered by tests
+  ([#35](https://github.com/ericmann/journal/issues/35)).
+- **Indexing retries transient Ollama embed-server failures** (sporadic `400` /
+  EOF) instead of failing the run, hardening large `journal index` passes
+  ([#7](https://github.com/ericmann/journal/issues/7)).
 
 ## [2.6.1] — 2026-06-18
 
