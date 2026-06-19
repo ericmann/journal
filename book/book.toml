@@ -1,0 +1,20 @@
+[book]
+title = "journal"
+description = "A local-first developer journal with semantic search and AI synthesis."
+language = "en"
+src = "src"
+
+[output.html]
+site-url = "/"
+git-repository-url = "https://github.com/ericmann/journal"
+edit-url-template = "https://github.com/ericmann/journal/edit/main/book/src/{path}"
+additional-css = ["theme/catppuccin.css"]
+default-theme = "latte"
+preferred-dark-scheme = "mocha"
+
+[output.html.search]
+enable = true
+
+[preprocessor.linkcheck]
+warning-policy = "error"
+follow-web-links = false
