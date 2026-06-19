@@ -12,6 +12,35 @@ automatically and can't silently regress; prefer that over prose where possible.
 
 ---
 
+## Feature PRs ship code + tests but skip the doc surface — name every doc target in "done"
+
+**Symptom:** The optional **reranker** landed (`#21` added support; `#36` improved quality and
+recommended `qwen3:4b`) but the user-facing "going fully local" chapter
+(`book/src/local-only.md`) never mentions it, and the README only says "optional LLM reranking"
+with no setup guidance. A wider sweep of the v2.7.0 features found the same drift: `journal tags`
+(`#33`) is undocumented *anywhere*; the README and the Claude Desktop/Code integration chapters
+still enumerate ~6 of the now-13 MCP tools (missing `today`, `stats`, `ask`, `synth`, `done`,
+`show`, `capture`); MCP **resources** (`#37`) and **prompts** (`#44`) are absent from user docs.
+All of it passed review with green CI.
+
+**Root cause:** "Done" is gated on code + tests + CI, but docs live across **three** surfaces with
+no single owner — the README (feature bullets *and* the MCP tool list), the `docs/*.md` reference
+set, and the mdBook `book/src/` user narrative. An issue's acceptance criteria and an agent's edits
+target the code path (and at most one doc file); nothing *tests* doc coverage, so CI stays green
+while docs fall behind as features accrete. Cross-cutting features (a new MCP tool, a new command,
+a new local-only knob) are hit hardest because their docs are spread across files none of which the
+PR obviously "owns."
+
+**Guardrail:** Treat documentation as part of the contract. Every feature issue's acceptance
+criteria must **enumerate the doc targets** it touches — README (incl. the MCP tool list), the
+relevant `docs/*.md`, the matching `book/src/` chapter, and a CHANGELOG entry — and the PR template
+carries a "Docs updated: …" line. For the MCP surface, add the test-style guardrail that can't
+silently regress: a unit test asserting every tool/resource/prompt registered in `cmd/mcp.go`
+appears in the README tool list and the integration chapter. `#21`/`#36` is the worked example — a
+feature can be fully built, tested, and merged and still be invisible to users.
+
+---
+
 ## Test HTTP handlers: bare `w.Write(...)` fails `errcheck` — always discard the return with `_, _ =`
 
 **Symptom:** An agent PR introduces `httptest.NewServer` handlers with bare `w.Write(...)` calls.
