@@ -40,9 +40,12 @@ jobs:
         id: notes
         run: |
           notes="$(bash scripts/changelog-section.sh "$GITHUB_REF_NAME" || true)"
+          # Write the notes file OUTSIDE the work tree: GoReleaser refuses to run
+          # against a dirty git state, and an untracked release-notes.md in-repo
+          # tripped that guard ("git is in a dirty state").
           if [ -n "$notes" ]; then
-            printf '%s\n' "$notes" > release-notes.md
-            echo "args=--release-notes=release-notes.md" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "$notes" > "$RUNNER_TEMP/release-notes.md"
+            echo "args=--release-notes=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_OUTPUT"
             echo "Using the CHANGELOG section for $GITHUB_REF_NAME as release notes."
           else
             echo "args=" >> "$GITHUB_OUTPUT"
