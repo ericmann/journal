@@ -401,6 +401,223 @@ func TestExtractProjectSlug(t *testing.T) {
 	}
 }
 
+// --- Prompt unit tests ---
+
+func TestPromptWeeklyReflectionAssemblesContext(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00 #cabot\ndebugged the pipeline\n",
+	})
+	res, err := promptWeeklyReflection(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Description == "" {
+		t.Error("description must not be empty")
+	}
+	if len(res.Messages) != 1 {
+		t.Fatalf("want 1 message, got %d", len(res.Messages))
+	}
+	msg := res.Messages[0]
+	if msg.Role != "user" {
+		t.Errorf("role = %q, want user", msg.Role)
+	}
+	tc, ok := msg.Content.(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("content is %T, want *mcp.TextContent", msg.Content)
+	}
+	if !strings.Contains(tc.Text, "weekly") && !strings.Contains(tc.Text, "Week") {
+		t.Errorf("prompt should mention weekly context, got: %q", tc.Text[:min(200, len(tc.Text))])
+	}
+	if !strings.Contains(tc.Text, "debugged the pipeline") {
+		t.Errorf("prompt should include note body, got: %q", tc.Text[:min(200, len(tc.Text))])
+	}
+}
+
+func TestPromptWeeklyReflectionEmptyRepo(t *testing.T) {
+	cfg := testRepo(t, nil)
+	res, err := promptWeeklyReflection(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Messages) != 1 {
+		t.Fatalf("want 1 message, got %d", len(res.Messages))
+	}
+	tc, ok := res.Messages[0].Content.(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("content is %T, want *mcp.TextContent", res.Messages[0].Content)
+	}
+	if strings.TrimSpace(tc.Text) == "" {
+		t.Error("prompt text must not be empty even with no notes")
+	}
+}
+
+func TestPromptDecisionsReviewAssemblesContext(t *testing.T) {
+	cfg, _ := indexedRepo(t, map[string]string{
+		"daily/2026/06/d.md": "# 2026-06-01\n\n## 09:00 @decision\nadopted pure-go driver\n\n## 10:00 @todo\nwrite docs\n",
+	})
+	res, err := promptDecisionsReview(context.Background(), cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Messages) != 1 {
+		t.Fatalf("want 1 message, got %d", len(res.Messages))
+	}
+	tc, ok := res.Messages[0].Content.(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("content is %T, want *mcp.TextContent", res.Messages[0].Content)
+	}
+	if !strings.Contains(tc.Text, "adopted pure-go driver") {
+		t.Errorf("prompt should include decision body, got: %q", tc.Text[:min(300, len(tc.Text))])
+	}
+	if strings.Contains(tc.Text, "write docs") {
+		t.Errorf("non-decision (@todo) should not appear in decisions prompt")
+	}
+}
+
+func TestPromptDecisionsReviewScopedToProject(t *testing.T) {
+	cfg, _ := indexedRepo(t, map[string]string{
+		"projects/cabot/notes/2026-06-01.md": "# 2026-06-01\n\n## 09:00 @decision\ncabot chose go\n",
+		"projects/other/notes/2026-06-01.md": "# 2026-06-01\n\n## 09:00 @decision\nother chose rust\n",
+	})
+	res, err := promptDecisionsReview(context.Background(), cfg, "cabot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc, ok := res.Messages[0].Content.(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("content is %T, want *mcp.TextContent", res.Messages[0].Content)
+	}
+	if !strings.Contains(tc.Text, "cabot chose go") {
+		t.Errorf("prompt should include cabot decision, got: %q", tc.Text[:min(300, len(tc.Text))])
+	}
+	if strings.Contains(tc.Text, "other chose rust") {
+		t.Errorf("non-cabot decision should not appear when scoped to cabot")
+	}
+}
+
+func TestPromptProjectStatusAssemblesContext(t *testing.T) {
+	cfg, _ := indexedRepo(t, map[string]string{
+		"projects/canton/notes/2026-06-01.md": "# 2026-06-01\n\n## 09:00 #canton\nset up the workspace\n",
+	})
+	res, err := promptProjectStatus(context.Background(), cfg, "canton", "4w")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Messages) != 1 {
+		t.Fatalf("want 1 message, got %d", len(res.Messages))
+	}
+	tc, ok := res.Messages[0].Content.(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("content is %T, want *mcp.TextContent", res.Messages[0].Content)
+	}
+	if !strings.Contains(tc.Text, "set up the workspace") {
+		t.Errorf("prompt should include project note, got: %q", tc.Text[:min(300, len(tc.Text))])
+	}
+	if !strings.Contains(res.Description, "canton") {
+		t.Errorf("description should mention project slug, got: %q", res.Description)
+	}
+}
+
+func TestPromptProjectStatusMissingProject(t *testing.T) {
+	cfg := testRepo(t, nil)
+	_, err := promptProjectStatus(context.Background(), cfg, "", "2w")
+	if err == nil {
+		t.Error("expected error for empty project slug")
+	}
+}
+
+func TestPromptProjectStatusInvalidSince(t *testing.T) {
+	cfg := testRepo(t, nil)
+	_, err := promptProjectStatus(context.Background(), cfg, "canton", "bogus")
+	if err == nil {
+		t.Error("expected error for invalid since")
+	}
+}
+
+// TestMCPPromptsRoundTrip exercises prompts/list and prompts/get over the MCP
+// in-memory transport — same protocol layer as stdio but without I/O.
+func TestMCPPromptsRoundTrip(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel:                                   "# " + today + "\n\n## 09:00 @decision\ndecided to use go\n\n## 10:00 #canton\nset up canton project\n",
+		"projects/canton/notes/2026-06-01.md": "# 2026-06-01\n\n## 09:00\ncanton work\n",
+	})
+
+	s := mcp.NewServer(&mcp.Implementation{Name: "journal-test", Version: "0"}, nil)
+	addPrompts(s, cfg)
+
+	c := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0"}, nil)
+
+	t1, t2 := mcp.NewInMemoryTransports()
+	ctx := context.Background()
+	if _, err := s.Connect(ctx, t1, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := c.Connect(ctx, t2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+
+	// prompts/list must include all three prompts.
+	wantPrompts := map[string]bool{
+		"weekly-reflection": true,
+		"decisions-review":  true,
+		"project-status":    true,
+	}
+	for p, err := range cs.Prompts(ctx, nil) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		delete(wantPrompts, p.Name)
+	}
+	for name := range wantPrompts {
+		t.Errorf("prompts/list missing %q", name)
+	}
+
+	// prompts/get: weekly-reflection returns assembled context.
+	weekRes, err := cs.GetPrompt(ctx, &mcp.GetPromptParams{Name: "weekly-reflection"})
+	if err != nil {
+		t.Fatalf("GetPrompt(weekly-reflection): %v", err)
+	}
+	if len(weekRes.Messages) == 0 {
+		t.Fatal("weekly-reflection: no messages")
+	}
+	if tc, ok := weekRes.Messages[0].Content.(*mcp.TextContent); !ok || tc.Text == "" {
+		t.Error("weekly-reflection: message content must be non-empty text")
+	}
+
+	// prompts/get: decisions-review returns assembled context.
+	decRes, err := cs.GetPrompt(ctx, &mcp.GetPromptParams{Name: "decisions-review"})
+	if err != nil {
+		t.Fatalf("GetPrompt(decisions-review): %v", err)
+	}
+	if len(decRes.Messages) == 0 {
+		t.Fatal("decisions-review: no messages")
+	}
+
+	// prompts/get: project-status with required project argument.
+	projRes, err := cs.GetPrompt(ctx, &mcp.GetPromptParams{
+		Name:      "project-status",
+		Arguments: map[string]string{"project": "canton"},
+	})
+	if err != nil {
+		t.Fatalf("GetPrompt(project-status): %v", err)
+	}
+	if len(projRes.Messages) == 0 {
+		t.Fatal("project-status: no messages")
+	}
+
+	// prompts/get: project-status without project argument should return an error.
+	_, err = cs.GetPrompt(ctx, &mcp.GetPromptParams{Name: "project-status"})
+	if err == nil {
+		t.Error("project-status without project arg should return an error")
+	}
+}
+
 // TestMCPResourcesRoundTrip exercises resources/list and resources/read over
 // the MCP in-memory transport — same protocol layer as stdio but without I/O.
 func TestMCPResourcesRoundTrip(t *testing.T) {

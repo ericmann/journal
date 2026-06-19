@@ -223,6 +223,11 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 	// calls. URIs use the "journal://" scheme and are stable across server runs.
 	addResources(s, cfg)
 
+	// Prompts: weekly-reflection, decisions-review, project-status.
+	// Each returns a pre-assembled synthesis prompt so the client's model can run
+	// it without hand-crafting the request. No cloud calls are made server-side.
+	addPrompts(s, cfg)
+
 	return s.Run(ctx, &mcp.StdioTransport{})
 }
 
@@ -575,6 +580,160 @@ func mcpAsk(ctx context.Context, cfg *config.Config, e embed.Embedder, client sy
 		return "", err
 	}
 	return string(b), nil
+}
+
+// isoWeekLabel returns the ISO week label for t, e.g. "2026-W23".
+func isoWeekLabel(t time.Time) string {
+	y, w := t.ISOWeek()
+	return fmt.Sprintf("%d-W%02d", y, w)
+}
+
+// isoWeekStart returns midnight on the Monday of t's ISO week.
+func isoWeekStart(t time.Time) time.Time {
+	offset := (int(t.Weekday()) + 6) % 7
+	d := t.AddDate(0, 0, -offset)
+	return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, t.Location())
+}
+
+// chronological reverses a newest-first slice to oldest-first order for prompts.
+func chronological(chunks []store.Chunk) []store.Chunk {
+	out := make([]store.Chunk, len(chunks))
+	for i, c := range chunks {
+		out[len(chunks)-1-i] = c
+	}
+	return out
+}
+
+// addPrompts registers the three pre-built MCP prompts on s. Each handler
+// opens the store, assembles a synthesis prompt from the journal context, and
+// returns it as a user-role message for the client's model to run. The server
+// makes no cloud calls itself.
+func addPrompts(s *mcp.Server, cfg *config.Config) {
+	s.AddPrompt(&mcp.Prompt{
+		Name:        "weekly-reflection",
+		Title:       "Weekly reflection",
+		Description: "Assemble a weekly-reflection prompt from this week's journal notes. The client's model synthesizes the result.",
+	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		return promptWeeklyReflection(ctx, cfg)
+	})
+
+	s.AddPrompt(&mcp.Prompt{
+		Name:        "decisions-review",
+		Title:       "Decisions review",
+		Description: "Assemble a decisions-review prompt from all @decision notes, optionally scoped to a project.",
+		Arguments: []*mcp.PromptArgument{
+			{Name: "project", Description: "restrict to this project slug (optional)"},
+		},
+	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		project := req.Params.Arguments["project"]
+		return promptDecisionsReview(ctx, cfg, project)
+	})
+
+	s.AddPrompt(&mcp.Prompt{
+		Name:        "project-status",
+		Title:       "Project status",
+		Description: "Assemble a project-status prompt from recent notes for the given project slug.",
+		Arguments: []*mcp.PromptArgument{
+			{Name: "project", Description: "the project slug to report on", Required: true},
+			{Name: "since", Description: "only notes within this window, e.g. 2w, 14d (default 2w)"},
+		},
+	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		project := req.Params.Arguments["project"]
+		since := req.Params.Arguments["since"]
+		if since == "" {
+			since = "2w"
+		}
+		return promptProjectStatus(ctx, cfg, project, since)
+	})
+}
+
+// promptWeeklyReflection gathers this week's chunks and returns a weekly
+// reflection prompt ready for the client's model.
+func promptWeeklyReflection(ctx context.Context, cfg *config.Config) (*mcp.GetPromptResult, error) {
+	s, err := store.Open(cfg.StoreAbsPath(), cfg.EmbedDim)
+	if err != nil {
+		return nil, fmt.Errorf("opening store: %w", err)
+	}
+	defer s.Close()
+
+	n := now()
+	label := isoWeekLabel(n)
+	start := isoWeekStart(n)
+	chunks, err := s.Recent(ctx, store.Filter{Since: start}, 0)
+	if err != nil {
+		return nil, fmt.Errorf("gathering weekly chunks: %w", err)
+	}
+	chunks = chronological(chunks)
+	text := synth.AssembleWeekly(label, readVoiceProfile(cfg), chunks)
+	return &mcp.GetPromptResult{
+		Description: "Weekly reflection for " + label,
+		Messages: []*mcp.PromptMessage{
+			{Role: "user", Content: &mcp.TextContent{Text: text}},
+		},
+	}, nil
+}
+
+// promptDecisionsReview gathers @decision chunks (optionally scoped to a
+// project) and returns a decisions-review prompt ready for the client's model.
+func promptDecisionsReview(ctx context.Context, cfg *config.Config, project string) (*mcp.GetPromptResult, error) {
+	s, err := store.Open(cfg.StoreAbsPath(), cfg.EmbedDim)
+	if err != nil {
+		return nil, fmt.Errorf("opening store: %w", err)
+	}
+	defer s.Close()
+
+	scope := "all projects"
+	f := store.Filter{Markers: []string{note.MarkerDecision}}
+	if strings.TrimSpace(project) != "" {
+		scope = project
+		f.Project = project
+	}
+	chunks, err := s.Recent(ctx, f, 0)
+	if err != nil {
+		return nil, fmt.Errorf("gathering decision chunks: %w", err)
+	}
+	chunks = chronological(chunks)
+	text := synth.AssembleDecisions(scope, readVoiceProfile(cfg), chunks)
+	return &mcp.GetPromptResult{
+		Description: "Decisions review — " + scope,
+		Messages: []*mcp.PromptMessage{
+			{Role: "user", Content: &mcp.TextContent{Text: text}},
+		},
+	}, nil
+}
+
+// promptProjectStatus gathers recent chunks for a project and returns a
+// project-status prompt (framed as a weekly reflection scoped to the project).
+func promptProjectStatus(ctx context.Context, cfg *config.Config, project, sinceStr string) (*mcp.GetPromptResult, error) {
+	if strings.TrimSpace(project) == "" {
+		return nil, fmt.Errorf("project argument is required")
+	}
+	since, err := parseSince(sinceStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid since %q: %w", sinceStr, err)
+	}
+	s, err := store.Open(cfg.StoreAbsPath(), cfg.EmbedDim)
+	if err != nil {
+		return nil, fmt.Errorf("opening store: %w", err)
+	}
+	defer s.Close()
+
+	f := store.Filter{Project: project}
+	if since > 0 {
+		f.Since = now().Add(-since)
+	}
+	chunks, err := s.Recent(ctx, f, 0)
+	if err != nil {
+		return nil, fmt.Errorf("gathering project chunks: %w", err)
+	}
+	chunks = chronological(chunks)
+	text := synth.AssembleWeekly("project:"+project, readVoiceProfile(cfg), chunks)
+	return &mcp.GetPromptResult{
+		Description: "Project status — " + project,
+		Messages: []*mcp.PromptMessage{
+			{Role: "user", Content: &mcp.TextContent{Text: text}},
+		},
+	}, nil
 }
 
 func init() {
