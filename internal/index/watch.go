@@ -3,7 +3,6 @@ package index
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -196,8 +195,10 @@ func (w *Watcher) Run(ctx context.Context) error {
 }
 
 // ProcessChanges re-indexes the given repo-relative paths. A path whose file no
-// longer exists has its chunks removed. It is the unit-testable core of the
-// watch loop.
+// longer exists has its chunks removed. Transient per-file errors (read or embed
+// failures) are logged and skipped so the rest of the batch still processes; only
+// context cancellation bubbles up as an error. It is the unit-testable core of
+// the watch loop.
 func (w *Watcher) ProcessChanges(ctx context.Context, relPaths []string) (Stats, error) {
 	var total Stats
 	for _, rel := range relPaths {
@@ -210,11 +211,16 @@ func (w *Watcher) ProcessChanges(ctx context.Context, relPaths []string) (Stats,
 		case errors.Is(err, os.ErrNotExist):
 			content = nil // deleted: re-index empty -> removes its chunks
 		case err != nil:
-			return total, fmt.Errorf("reading %s: %w", rel, err)
+			w.logf("watch: skipping %s (read error): %v", rel, err)
+			continue
 		}
 		st, err := w.ix.IndexContent(ctx, rel, string(content))
 		if err != nil {
-			return total, err
+			if ctx.Err() != nil {
+				return total, ctx.Err()
+			}
+			w.logf("watch: skipping %s (index error): %v", rel, err)
+			continue
 		}
 		total.FilesScanned++
 		total.Embedded += st.Embedded
@@ -277,7 +283,8 @@ func (w *Watcher) ProcessTranscriptChanges(ctx context.Context, relPaths []strin
 				continue // a removed .qm: nothing to do (its .md is managed separately)
 			}
 			if err != nil {
-				return total, fmt.Errorf("reading %s: %w", rel, err)
+				w.logf("watch: skipping transcript %s (read error): %v", rel, err)
+				continue
 			}
 			md, ok := w.tr.QMRender(string(content))
 			if !ok {
@@ -287,7 +294,8 @@ func (w *Watcher) ProcessTranscriptChanges(ctx context.Context, relPaths []strin
 			mdRel := strings.TrimSuffix(rel, filepath.Ext(rel)) + ".md"
 			mdAbs := filepath.Join(w.root, filepath.FromSlash(mdRel))
 			if err := os.WriteFile(mdAbs, []byte(md), 0o644); err != nil {
-				return total, fmt.Errorf("writing %s: %w", mdRel, err)
+				w.logf("watch: skipping transcript %s (render write error): %v", rel, err)
+				continue
 			}
 			rel, abs = mdRel, mdAbs
 		}
@@ -299,7 +307,8 @@ func (w *Watcher) ProcessTranscriptChanges(ctx context.Context, relPaths []strin
 			content = nil // deleted: re-index empty -> removes its chunks
 			mtime = time.Now()
 		case err != nil:
-			return total, fmt.Errorf("reading %s: %w", rel, err)
+			w.logf("watch: skipping transcript %s (read error): %v", rel, err)
+			continue
 		default:
 			if info, serr := os.Stat(abs); serr == nil {
 				mtime = info.ModTime()
@@ -309,7 +318,11 @@ func (w *Watcher) ProcessTranscriptChanges(ctx context.Context, relPaths []strin
 		}
 		st, err := w.ix.IndexTranscript(ctx, rel, string(content), mtime, w.tr.Tag)
 		if err != nil {
-			return total, err
+			if ctx.Err() != nil {
+				return total, ctx.Err()
+			}
+			w.logf("watch: skipping transcript %s (index error): %v", rel, err)
+			continue
 		}
 		total.FilesScanned++
 		total.Embedded += st.Embedded

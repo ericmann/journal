@@ -2,6 +2,8 @@ package index
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,22 @@ import (
 	"github.com/ericmann/journal/internal/embed"
 	"github.com/ericmann/journal/internal/store"
 )
+
+// errEmbedder wraps Fake but returns a configurable error for the first failN
+// Embed calls, then delegates to Fake. Used to simulate transient Ollama EOF.
+type errEmbedder struct {
+	*embed.Fake
+	failN int
+	calls int
+}
+
+func (e *errEmbedder) Embed(ctx context.Context, texts []string, instruction string) ([][]float32, error) {
+	e.calls++
+	if e.calls <= e.failN {
+		return nil, errors.New("transient embed failure (EOF)")
+	}
+	return e.Fake.Embed(ctx, texts, instruction)
+}
 
 func newWatchFixture(t *testing.T) (*Watcher, *store.Store, *embed.Fake, string) {
 	t.Helper()
@@ -272,6 +290,105 @@ func TestWatchRunReindexesOnEdit(t *testing.T) {
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
+	cancel()
+	<-done
+}
+
+// TestProcessChangesContinuesOnEmbedError verifies that a transient embed
+// failure for one file does not abort processing of the remaining files in the
+// batch: the error is logged, the failed file is skipped, and the watcher loop
+// keeps running.
+func TestProcessChangesContinuesOnEmbedError(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "j.db"), 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	var logs []string
+	logf := func(msg string, args ...any) {
+		logs = append(logs, fmt.Sprintf(msg, args...))
+	}
+
+	// Fail only the first Embed call to simulate a transient Ollama EOF on a.md.
+	ee := &errEmbedder{Fake: embed.NewFake(16), failN: 1}
+	root := t.TempDir()
+	w := NewWatcher(root, nil, NewIndexer(s, ee), 20*time.Millisecond, logf, false, false, nil)
+
+	write(t, root, "daily/a.md", "# 2026-06-01\n\n## 09:00\nalpha chunk\n")
+	write(t, root, "daily/b.md", "# 2026-06-01\n\n## 10:00\nbeta chunk\n")
+
+	ctx := context.Background()
+	// a.md is processed first; its embed call fails. b.md should still succeed.
+	st, err := w.ProcessChanges(ctx, []string{"daily/a.md", "daily/b.md"})
+	if err != nil {
+		t.Fatalf("ProcessChanges returned %v; want nil (log-and-continue)", err)
+	}
+	// Only b.md succeeded.
+	if st.FilesScanned != 1 {
+		t.Errorf("FilesScanned = %d, want 1 (only the successful file)", st.FilesScanned)
+	}
+	if st.Embedded != 1 {
+		t.Errorf("Embedded = %d, want 1", st.Embedded)
+	}
+	// A log message must mention the failed file.
+	mentioned := false
+	for _, l := range logs {
+		if strings.Contains(l, "daily/a.md") {
+			mentioned = true
+			break
+		}
+	}
+	if !mentioned {
+		t.Errorf("no log entry mentioning daily/a.md; got logs: %v", logs)
+	}
+}
+
+// TestWatchDebounceCoalescesRapidWrites verifies that multiple rapid writes to
+// the same file within the debounce window result in a single re-index pass,
+// not one pass per event.
+func TestWatchDebounceCoalescesRapidWrites(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "j.db"), 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	fake := embed.NewFake(16)
+	root := t.TempDir()
+
+	// Longer debounce (150 ms) so all rapid writes clearly fall within one window.
+	w := NewWatcher(root, nil, NewIndexer(s, fake), 150*time.Millisecond, nil, false, false, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := os.MkdirAll(filepath.Join(root, "daily"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	// Let the initial (empty-dir) index pass finish.
+	time.Sleep(80 * time.Millisecond)
+	before := fake.EmbedTexts
+
+	// Write the same file 5 times in rapid succession (≈25 ms total),
+	// well within the 150 ms debounce window.
+	for i := 0; i < 5; i++ {
+		write(t, root, "daily/d.md", fmt.Sprintf("# 2026-06-01\n\n## s%d\ntext\n", i))
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Wait for the debounce to fire and the single re-index to complete.
+	time.Sleep(500 * time.Millisecond)
+
+	// All 5 writes should have been coalesced: the final content has one chunk,
+	// so we expect at most a small number of embed calls (not 5).
+	if got := fake.EmbedTexts - before; got > 3 {
+		t.Errorf("5 rapid writes caused %d embed calls; debounce should coalesce to ≤3", got)
+	}
+
 	cancel()
 	<-done
 }
