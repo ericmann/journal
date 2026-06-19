@@ -872,3 +872,51 @@ func TestMCPSynthAvailableClientRejectsLocalOnly(t *testing.T) {
 		t.Errorf("reason should mention local_only, got: %v", reason)
 	}
 }
+
+// TestMCPDocCoverage is a guardrail: every tool, resource, and prompt registered
+// in cmd/mcp.go must appear in the README and integration docs. If you add new
+// MCP surface, add its name/URI to the lists below AND update the docs.
+func TestMCPDocCoverage(t *testing.T) {
+	// Keep these lists in sync with mcp.AddTool / addResources / addPrompts in mcp.go.
+	wantTools := []string{
+		"search", "recent", "decisions", "threads", "show", "capture",
+		"meetings", "todos", "done", "stats", "today", "ask", "synth",
+	}
+	wantResourceURIs := []string{
+		"journal://today", "journal://recent", "journal://projects/{slug}/index",
+	}
+	wantPrompts := []string{
+		"weekly-reflection", "decisions-review", "project-status",
+	}
+
+	docPaths := []string{
+		"../README.md",
+		"../docs/INTEGRATIONS.md",
+		"../book/src/integrations/claude-desktop.md",
+	}
+	var sb strings.Builder
+	for _, p := range docPaths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("reading %s: %v", p, err)
+		}
+		sb.WriteString(string(data))
+	}
+	combined := sb.String()
+
+	for _, name := range wantTools {
+		if !strings.Contains(combined, name) {
+			t.Errorf("MCP tool %q not found in docs (README.md, docs/INTEGRATIONS.md, book/src/integrations/claude-desktop.md); update docs when adding new tools", name)
+		}
+	}
+	for _, uri := range wantResourceURIs {
+		if !strings.Contains(combined, uri) {
+			t.Errorf("MCP resource URI %q not found in docs; update docs/INTEGRATIONS.md and book/src/integrations/claude-desktop.md", uri)
+		}
+	}
+	for _, name := range wantPrompts {
+		if !strings.Contains(combined, name) {
+			t.Errorf("MCP prompt %q not found in docs; update docs/INTEGRATIONS.md and book/src/integrations/claude-desktop.md", name)
+		}
+	}
+}

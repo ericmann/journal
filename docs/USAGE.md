@@ -75,6 +75,8 @@ journal today   [--json]                          # day at a glance (notes + tod
 journal show    [date|path]                       # render a day's notes or any note file
 journal edit    [date]                            # open a daily file in your editor
 journal stats   [--json]                          # volume, streaks, markers, top tags
+journal tags    [--json]                          # list #tags with usage counts
+journal tags rename <old> <new> [--dry-run]       # rewrite a tag across all notes, re-index, auto-commit
 journal tui                                       # interactive dashboard
 journal sync    [--dry-run]                      # back up notes to/from the git remote
 journal synth   weekly|daily|meetings|decisions|stale [--dry-run] [--write] [--project slug] [--days N] [--date YYYY-MM-DD]
@@ -89,10 +91,13 @@ source. Filter search with `--source notes|transcript|all`, list them with
 `journal meetings`, and digest them with `journal synth meetings`. The MCP server
 mirrors this: a `source` param on `search` and a `meetings` tool.
 
-`journal mcp` exposes `search`/`recent`/`decisions`/`threads`/`capture` as MCP
-tools (same JSON as `--json`) — see [INTEGRATIONS.md](INTEGRATIONS.md) §3b for the
-one-block config. Synthesis is documented in [SYNTHESIS.md](SYNTHESIS.md); backup
-in [SYNC.md](SYNC.md).
+`journal mcp` runs an MCP server (stdio) exposing 13 tools — `search`, `recent`,
+`decisions`, `threads`, `show`, `capture`, `meetings`, `todos`, `done`, `stats`,
+`today`, `ask`, `synth` — plus read resources (`journal://today`, `journal://recent`,
+`journal://projects/{slug}/index`) and pre-built prompts (`weekly-reflection`,
+`decisions-review`, `project-status`). See [INTEGRATIONS.md](INTEGRATIONS.md) §3b
+for the one-block config. Synthesis is documented in [SYNTHESIS.md](SYNTHESIS.md);
+backup in [SYNC.md](SYNC.md).
 
 ## Retrieval & queries
 
@@ -144,6 +149,28 @@ Completing a todo rewrites that one `@todo` token to `@done YYYY-MM-DD` in the
 note file (the content is otherwise untouched — it's the markdown equivalent of
 checking a checkbox), re-indexes, and auto-commits. The same `todos`/`done`
 operations are exposed as MCP tools, so a connected Claude can check items off.
+
+## Tags
+
+`journal tags` lists every distinct `#tag` in the indexed corpus with its usage count — useful
+for auditing consistency (`#redis` vs `#Redis`) and deciding which tags to consolidate:
+
+```sh
+journal tags           # sorted by frequency
+journal tags --json    # {"tags": [{"tag": "redis", "count": 12}, ...]}
+```
+
+`journal tags rename` rewrites a tag across all notes, re-indexes the changed files, and
+auto-commits:
+
+```sh
+journal tags rename redis redis-cache        # #redis → #redis-cache in all notes
+journal tags rename redis redis-cache --dry-run   # preview: which files would change?
+```
+
+The leading `#` is optional on both arguments. The rename is atomic from the user's
+perspective: all files are rewritten before re-indexing begins; a re-index failure
+is non-fatal (the watcher or a subsequent `journal index` will catch up).
 
 ## Reading your notes
 

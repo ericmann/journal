@@ -84,6 +84,28 @@ journal search "what did I work on"   # semantic search, fully local
 
 ---
 
+## Optional: Enable the reranker
+
+The **reranker** is a local quality boost for search results. Without it, results are in vector-distance order — already high quality for most queries. With it, the top vector-KNN candidates are re-scored by a small generate model before returning, giving a precision lift especially on longer or ambiguous queries.
+
+Pull a small generate model and add one line to your config:
+
+```sh
+ollama pull qwen3:4b   # ~2.5 GB — the recommended reranker model
+```
+
+In `.journal/config.yaml`:
+
+```yaml
+reranker: qwen3:4b
+```
+
+That's it. `journal doctor` confirms the reranker is configured. It runs on the same loopback Ollama — no network egress. The extra RAM cost is transient (~2.5 GB while reranking; Ollama unloads the model after ~5 min of inactivity).
+
+The reranker is **off by default**. `qwen3-embedding:4b` is strong enough for most queries on its own; the reranker matters most when you're getting subtly irrelevant hits and want to tighten precision.
+
+---
+
 ## Adding a local MCP chat client (optional)
 
 If you want to chat with your notes using a local AI model (no Claude), you can pair journal's MCP server with [Jan](https://jan.ai) or [LM Studio](https://lmstudio.ai). Both can connect to Ollama and call journal tools.

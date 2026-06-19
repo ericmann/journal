@@ -167,6 +167,29 @@ the same stable JSON as the CLI's `--json`):
 | `today`     | —                                          | today's note path, open todos, today's meetings |
 | `synth`     | `kind?`, `days?`, `project?`, `persist?`, `date?` | `{kind, text, output_path, wrote}` (AI synthesis digest) |
 
+### MCP resources
+
+In addition to tools, the server exposes read-only resources that MCP clients can pull
+directly as raw Markdown — no tool call needed:
+
+| URI | Contents |
+|-------------|---------|
+| `journal://today` | Today's daily note (raw Markdown). Returns a stub if no note exists yet. |
+| `journal://recent` | The 50 most recent note chunks, newest first, as a Markdown listing. |
+| `journal://projects/{slug}/index` | A project's `_index.md` — replace `{slug}` with the project name. Returns `ResourceNotFound` if the project has no index. |
+
+### MCP prompts
+
+Pre-assembled synthesis prompts that the client's model can run without hand-crafting the
+request. The server assembles context from the journal index and returns it as a user-role
+message — **no cloud calls are made server-side**:
+
+| Prompt name | Arguments | Returns |
+|-------------|-----------|---------|
+| `weekly-reflection` | — | This week's notes assembled into a weekly-reflection prompt |
+| `decisions-review` | `project` (optional) | All `@decision` notes assembled into a review prompt, optionally scoped to a project |
+| `project-status` | `project` (required), `since` (optional, default `2w`) | Recent notes for a project assembled into a status prompt |
+
 Register it in the desktop app's MCP config (`claude_desktop_config.json`).
 Point `command` at the `journal` binary and use `--repo` (or the working
 directory) to bind it to a specific journal repo:

@@ -61,6 +61,25 @@ Once the skill is active, Claude can:
 
 Every result includes a `path:line_start-line_end` reference. Claude cites these in its responses, so you can open the exact section of your notes to verify. In most terminals and editors, these are clickable.
 
+## Using the MCP server (alternative)
+
+If you prefer MCP over the CLI skill, you can register `journal mcp` as an MCP server for Claude Code. This gives Claude Code access to the same 13 tools available to Claude Desktop — no need to shell out to `journal` CLI commands manually.
+
+Add to your Claude Code MCP config:
+
+```json
+{
+  "mcpServers": {
+    "journal": {
+      "command": "/usr/local/bin/journal",
+      "args": ["mcp", "--repo", "/path/to/your/journal"]
+    }
+  }
+}
+```
+
+See [Claude Desktop](claude-desktop.md) for the full tool, resource, and prompt reference — both integrations share the same MCP server.
+
 ## The JSON schema
 
 If you want to use journal with your own scripts or agents, the search output looks like:

@@ -99,6 +99,26 @@ journal decisions --json | jq '.results[].snippet'
 
 The schema is stable across versions. An empty result set looks like `{"results": []}`, not an error — so you can tell the difference between "found nothing" and "something went wrong."
 
+## Managing tags
+
+`journal tags` lists every distinct `#tag` in your indexed corpus with its usage count — useful for spotting typos and inconsistencies (`#redis` vs `#Redis` vs `#redis-cache`):
+
+```sh
+journal tags           # list all tags with usage counts, sorted by frequency
+journal tags --json    # machine-readable: {"tags": [{"tag": "redis", "count": 12}, ...]}
+```
+
+### Renaming a tag
+
+```sh
+journal tags rename redis redis-cache           # rewrite #redis → #redis-cache in all notes
+journal tags rename redis redis-cache --dry-run # preview which files would change
+```
+
+`rename` rewrites the tag across all matching notes, re-indexes the changed files, and auto-commits — one command to tidy the whole corpus. The leading `#` is optional on both arguments.
+
+---
+
 ## How semantic search works (the short version)
 
 When you run `journal index`, each heading block in your notes gets turned into a vector (a list of numbers) that represents its meaning. Your search query gets the same treatment. journal then finds the notes whose vectors are closest to your query's vector — "closest" here means "most similar in meaning."
