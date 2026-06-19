@@ -5,7 +5,7 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
-## [Unreleased]
+## [2.7.0] — 2026-06-19
 
 This release rounds out the **MCP surface** (the agent-facing side of journal),
 makes **decisions & todos** first-class, and adds project tooling — a docs site,
