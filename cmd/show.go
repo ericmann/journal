@@ -12,6 +12,7 @@ import (
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/editor"
 	"github.com/ericmann/journal/internal/note"
+	"github.com/ericmann/journal/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -52,11 +53,12 @@ var todayJSON bool
 
 // todayReport is the --json shape for the today dashboard.
 type todayReport struct {
-	Date     string    `json:"date"`
-	Path     string    `json:"path"`
-	Notes    bool      `json:"notes"` // whether the daily file exists
-	Todos    []Result  `json:"todos"`
-	Meetings []Meeting `json:"meetings"`
+	Date      string    `json:"date"`
+	Path      string    `json:"path"`
+	Notes     bool      `json:"notes"` // whether the daily file exists
+	Todos     []Result  `json:"todos"`
+	Decisions []Result  `json:"decisions"`
+	Meetings  []Meeting `json:"meetings"`
 }
 
 var todayCmd = &cobra.Command{
@@ -106,6 +108,15 @@ func gatherToday(ctx context.Context, cfg *config.Config) (todayReport, string, 
 	}
 	rep.Todos = todos
 
+	decisions, err := listFromStore(ctx, cfg, store.Filter{
+		Markers: []string{note.MarkerDecision},
+		Since:   now().Add(-14 * 24 * time.Hour),
+	}, 5)
+	if err != nil {
+		return rep, "", err
+	}
+	rep.Decisions = decisions
+
 	midnight := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 	meetings, err := recentMeetings(ctx, cfg, midnight, 20)
 	if err != nil {
@@ -129,6 +140,14 @@ func composeToday(rep todayReport, notesMD string) string {
 		fmt.Fprintf(&b, "\n---\n\n## Open todos (%d)\n\n", len(rep.Todos))
 		for _, r := range rep.Todos {
 			fmt.Fprintf(&b, "- [ ] %s · `%s`\n", r.Snippet, r.Citation())
+		}
+	}
+	if len(rep.Decisions) > 0 {
+		fmt.Fprintf(&b, "\n---\n\n## Recent decisions (%d)\n\n", len(rep.Decisions))
+		for _, r := range rep.Decisions {
+			date := dateFromPath(r.Path)
+			stmt := decisionsStatement(r.Snippet)
+			fmt.Fprintf(&b, "- %s · %s · `%s`\n", date, stmt, r.Citation())
 		}
 	}
 	if len(rep.Meetings) > 0 {
@@ -224,7 +243,7 @@ func dateForArg(arg string) (time.Time, error) {
 }
 
 func init() {
-	todayCmd.Flags().BoolVar(&todayJSON, "json", false, "emit JSON ({date, path, todos, meetings})")
+	todayCmd.Flags().BoolVar(&todayJSON, "json", false, "emit JSON ({date, path, todos, decisions, meetings})")
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(todayCmd)
 	rootCmd.AddCommand(editCmd)

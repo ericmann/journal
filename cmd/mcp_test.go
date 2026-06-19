@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -199,6 +201,57 @@ func TestMCPTodayReturnsJSON(t *testing.T) {
 	}
 	if len(rep.Todos) != 1 {
 		t.Errorf("todos = %d, want 1", len(rep.Todos))
+	}
+}
+
+func TestMCPTodayIncludesDecisions(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00 @decision\nchose sqlite-vec\n",
+	})
+	out, err := mcpToday(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep todayReport
+	if err := json.Unmarshal([]byte(out), &rep); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if len(rep.Decisions) != 1 {
+		t.Errorf("decisions = %d, want 1", len(rep.Decisions))
+	}
+	if !strings.Contains(rep.Decisions[0].Snippet, "chose sqlite-vec") {
+		t.Errorf("decision snippet = %q, want 'chose sqlite-vec'", rep.Decisions[0].Snippet)
+	}
+}
+
+func TestMCPDoneWithResolution(t *testing.T) {
+	cfg, _ := indexedRepo(t, map[string]string{"daily/2026/06/2026-06-01.md": todoFixture})
+	ctx := context.Background()
+
+	dout, err := mcpDone(ctx, cfg, embed.NewFake(cfg.EmbedDim), doneInput{
+		Ref:        "janus SOW",
+		Resolution: "sent draft to client",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var denv struct {
+		Completed map[string]any `json:"completed"`
+	}
+	if err := json.Unmarshal([]byte(dout), &denv); err != nil {
+		t.Fatalf("invalid done JSON: %v\n%s", err, dout)
+	}
+	if denv.Completed["path"] == "" {
+		t.Errorf("done result missing path: %s", dout)
+	}
+
+	// Resolution line must appear in the file.
+	abs := filepath.Join(cfg.Root(), "daily", "2026", "06", "2026-06-01.md")
+	data, _ := os.ReadFile(abs)
+	if !strings.Contains(string(data), "Resolution: sent draft to client") {
+		t.Errorf("resolution line missing from file:\n%s", string(data))
 	}
 }
 

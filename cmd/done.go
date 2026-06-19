@@ -19,21 +19,26 @@ import (
 )
 
 var doneCmd = &cobra.Command{
-	Use:   "done <path:line | text fragment>",
+	Use:   "done <path:line | text fragment> [resolution]",
 	Short: "Complete an open @todo (rewrites it to @done with today's date)",
 	Long: "done finds the open @todo matching the reference — a citation from `journal\n" +
 		"todos` (path:line) or a unique text fragment — and rewrites that one @todo\n" +
 		"token to `@done YYYY-MM-DD` in the note file, then re-indexes and auto-commits.\n" +
+		"The optional second argument is a short resolution note appended to the block.\n" +
 		"The note's content is otherwise untouched.",
-	Args: cobra.ExactArgs(1),
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out := cmd.OutOrStdout()
 		cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}
+		resolution := ""
+		if len(args) == 2 {
+			resolution = args[1]
+		}
 		logf := func(format string, a ...any) { fmt.Fprintf(out, format+"\n", a...) }
-		res, err := completeTodo(cmd.Context(), cfg, newEmbedder(cfg), args[0], logf)
+		res, err := completeTodo(cmd.Context(), cfg, newEmbedder(cfg), args[0], resolution, logf)
 		if err != nil {
 			return err
 		}
@@ -53,11 +58,11 @@ var citationRe = regexp.MustCompile(`^(.+\.md):(\d+)(?:-(\d+))?$`)
 var todoTokenRe = regexp.MustCompile(`(^|\s)@todo\b`)
 
 // completeTodo finds the single open @todo matching ref, rewrites its @todo
-// token to "@done YYYY-MM-DD" in the source file, re-indexes that file (failure
-// non-fatal: the watcher catches up), and auto-commits. It is the shared core
-// for the done command, the MCP done tool, and the TUI. It returns the
-// completed item (its pre-completion citation/snippet).
-func completeTodo(ctx context.Context, cfg *config.Config, e embed.Embedder, ref string, logf func(string, ...any)) (Result, error) {
+// token to "@done YYYY-MM-DD" in the source file, optionally appends a
+// Resolution: line, re-indexes (failure non-fatal), and auto-commits. It is
+// the shared core for the done command, the MCP done tool, and the TUI.
+// It returns the completed item (its pre-completion citation/snippet).
+func completeTodo(ctx context.Context, cfg *config.Config, e embed.Embedder, ref, resolution string, logf func(string, ...any)) (Result, error) {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
@@ -114,6 +119,24 @@ func completeTodo(ctx context.Context, cfg *config.Config, e embed.Embedder, ref
 		return Result{}, fmt.Errorf("%s no longer contains @todo at lines %d-%d — the index is stale; run `journal index` and retry",
 			target.Path, target.LineStart, target.LineEnd)
 	}
+
+	// Optionally append a resolution note as the last line of the block.
+	if resolution = strings.TrimSpace(resolution); resolution != "" {
+		lastNonEmpty := start
+		for i := end - 1; i >= start; i-- {
+			if strings.TrimSpace(lines[i]) != "" {
+				lastNonEmpty = i
+				break
+			}
+		}
+		resLine := "Resolution: " + resolution
+		newLines := make([]string, 0, len(lines)+1)
+		newLines = append(newLines, lines[:lastNonEmpty+1]...)
+		newLines = append(newLines, resLine)
+		newLines = append(newLines, lines[lastNonEmpty+1:]...)
+		lines = newLines
+	}
+
 	newContent := strings.Join(lines, "\n")
 	if err := os.WriteFile(abs, []byte(newContent), 0o644); err != nil {
 		return Result{}, fmt.Errorf("writing %s: %w", target.Path, err)

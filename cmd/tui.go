@@ -207,7 +207,7 @@ func (m tuiModel) searchCmd(query string) tea.Cmd {
 func (m tuiModel) doneCmd(citation string) tea.Cmd {
 	cfg, e := m.cfg, m.e
 	return func() tea.Msg {
-		res, err := completeTodo(context.Background(), cfg, e, citation, nil)
+		res, err := completeTodo(context.Background(), cfg, e, citation, "", nil)
 		return doneMsg{res: res, err: err}
 	}
 }

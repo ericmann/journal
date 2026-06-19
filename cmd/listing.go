@@ -2,12 +2,66 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"regexp"
+	"strings"
 
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/note"
 	"github.com/ericmann/journal/internal/store"
 	"github.com/spf13/cobra"
 )
+
+// pathDateRe extracts a YYYY-MM-DD date from a note path like
+// daily/2026/06/2026-06-15.md or projects/foo/notes/2026-06-15.md.
+var pathDateRe = regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+
+// dateFromPath returns the YYYY-MM-DD date found in path, or "" if none.
+func dateFromPath(path string) string {
+	return pathDateRe.FindString(path)
+}
+
+// decisionsStatement returns the statement text from a (possibly collapsed)
+// chunk body: text before the first " Rationale:" occurrence, or the full text.
+func decisionsStatement(s string) string {
+	if idx := strings.Index(s, " Rationale:"); idx != -1 {
+		return strings.TrimSpace(s[:idx])
+	}
+	return strings.TrimSpace(s)
+}
+
+// decisionsRationale returns the "Rationale: ..." substring from a collapsed
+// body, or "" if not present.
+func decisionsRationale(s string) string {
+	if idx := strings.Index(s, " Rationale:"); idx != -1 {
+		return strings.TrimSpace(s[idx+1:])
+	}
+	return ""
+}
+
+// renderDecisions renders decisions as a dated, statement-first numbered list.
+// In JSON mode it delegates to renderResults for the stable {results:[...]} envelope.
+func renderDecisions(out io.Writer, results []Result, jsonMode bool) error {
+	if jsonMode {
+		return renderResults(out, results, true)
+	}
+	if len(results) == 0 {
+		fmt.Fprintln(out, "no decisions — capture one with `journal decide \"…\"` (decisions appear once indexed: `journal index` or the watcher)")
+		return nil
+	}
+	for i, r := range results {
+		date := dateFromPath(r.Path)
+		stmt := decisionsStatement(r.Snippet)
+		rationale := decisionsRationale(r.Snippet)
+		fmt.Fprintf(out, "%2d. %-12s  %s\n", i+1, date, r.Citation())
+		fmt.Fprintf(out, "    %s\n", stmt)
+		if rationale != "" {
+			fmt.Fprintf(out, "    %s\n", rationale)
+		}
+	}
+	return nil
+}
 
 var (
 	recentTag     []string
@@ -44,7 +98,7 @@ var decisionsCmd = &cobra.Command{
 		if err != nil {
 			return renderError(out, err, decisionsJSON)
 		}
-		return renderResults(out, results, decisionsJSON)
+		return renderDecisions(out, results, decisionsJSON)
 	},
 }
 

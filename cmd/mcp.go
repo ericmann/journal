@@ -66,7 +66,8 @@ type todosInput struct {
 }
 
 type doneInput struct {
-	Ref string `json:"ref" jsonschema:"the todo to complete: a citation from the todos tool (path:line) or a unique text fragment"`
+	Ref        string `json:"ref" jsonschema:"the todo to complete: a citation from the todos tool (path:line) or a unique text fragment"`
+	Resolution string `json:"resolution,omitempty" jsonschema:"optional short note describing how the todo was resolved"`
 }
 
 type recentInput struct {
@@ -203,7 +204,7 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "done",
-		Description: "Complete an open @todo: rewrites its @todo marker to @done with today's date in the note file. ref is a citation from the todos tool (path:line) or a unique text fragment.",
+		Description: "Complete an open @todo: rewrites its @todo marker to @done with today's date in the note file. ref is a citation from the todos tool (path:line) or a unique text fragment. resolution is an optional short note appended to the block describing how it was resolved.",
 	}, toolHandler(func(ctx context.Context, in doneInput) (string, error) {
 		return mcpDone(ctx, cfg, e, in)
 	}))
@@ -443,7 +444,7 @@ func mcpTodos(ctx context.Context, cfg *config.Config, in todosInput) (string, e
 }
 
 func mcpDone(ctx context.Context, cfg *config.Config, e embed.Embedder, in doneInput) (string, error) {
-	res, err := completeTodo(ctx, cfg, e, in.Ref, nil)
+	res, err := completeTodo(ctx, cfg, e, in.Ref, in.Resolution, nil)
 	if err != nil {
 		return "", err
 	}
