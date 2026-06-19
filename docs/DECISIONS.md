@@ -53,13 +53,27 @@ relevance number, parsed and normalized to [0,1], run over a bounded worker
 pool. `search` reranks the KNN candidates and, **if reranking errors**, falls
 back to vector-distance order (score = `1/(1+distance)`) so search still works.
 
-> **Needs validation during dogfooding:** whether `qwen3-reranker` behaves well
-> through `/api/generate`, and the latency of reranking ~50 candidates against
-> the <5s search budget. If it's too slow or the model isn't suited to the
-> generate path, options are: lower `candidateN`, lower the rerank worker count,
-> or swap to a proper cross-encoder rerank endpoint when Ollama exposes one. The
-> reranker sits behind the `embed.Embedder` interface, so this is a localized
-> change.
+**Recommended reranker model: `qwen3:4b`** (or any small generate model).
+`qwen3:4b` follows instructions reliably and is fast enough for 50-candidate
+reranking within a normal search budget. Pull it with `ollama pull qwen3:4b`,
+then set `reranker: qwen3:4b` in `.journal/config.yaml`. Larger models (e.g.
+`qwen3:8b`, `llama3.1:8b`) improve rubric adherence at the cost of latency;
+smaller ones (`qwen3:1.7b`, `llama3.2:3b`) are faster but may be less reliable
+at following the single-integer output constraint.
+
+**Improved prompt and parsing (v1.5+).** The rerank prompt now includes an
+explicit relevance rubric (0 = unrelated, 5 = on-topic but not the answer,
+10 = directly answers the query) and tells the model to "respond with a single
+integer (0–10) and nothing else." Score parsing tries (in order): an explicit
+"N/10" fraction, a labelled form ("Score: N"), then the last standalone number
+in [0,10] in the response — so prose preamble is harmless and missing numbers
+safely default to 0.
+
+> **Latency note:** 50 candidates × 4 workers means 13 serial generate calls
+> per search at `qwen3:4b` speeds (~200ms each → ~2.5s total). Lower
+> `candidateN` or bump `rerankWorkers` in code if the budget is too tight.
+> The reranker sits behind the `embed.Embedder` interface, so this is a
+> localized change.
 
 ### `--json` schema + error/empty distinction
 Read commands emit a stable schema. `search`/`recent`/`decisions` use

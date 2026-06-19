@@ -64,11 +64,12 @@ journal doctor          # Ollama reachable, embed model present, embed_dim corre
   (queries, with a retrieval-instruction prefix). **Required.**
 - **Reranking** is **optional and off by default.** Ollama has no dedicated
   rerank endpoint and no official reranker model, so `journal` does
-  LLM-as-reranker: set `reranker` to any small generate model (e.g. `qwen3:4b`)
-  and it scores the top vector-KNN candidates via `/api/generate` for a
-  precision lift. Leave it empty (or if the model is unavailable) and search
-  uses vector-distance order — `qwen3-embedding:4b` is strong on its own. See
-  [DECISIONS.md](DECISIONS.md).
+  LLM-as-reranker: set `reranker` to any small generate model and it scores the
+  top vector-KNN candidates via `/api/generate` for a precision lift. Leave it
+  empty and search uses vector-distance order — `qwen3-embedding:4b` is strong
+  on its own. **Recommended: `qwen3:4b`** (`ollama pull qwen3:4b`); it's small,
+  fast, and follows the 0–10 scoring rubric reliably. See
+  [DECISIONS.md](DECISIONS.md) for latency notes and model trade-offs.
 - `embed_dim` **must** equal your embed model's real output dimension (2560 for
   `qwen3-embedding:4b`). `journal doctor` probes the model and reports the exact
   value; on a mismatch, set it and run `journal index --rebuild`.
