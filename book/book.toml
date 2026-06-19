@@ -10,7 +10,11 @@ git-repository-url = "https://github.com/ericmann/journal"
 edit-url-template = "https://github.com/ericmann/journal/edit/main/book/src/{path}"
 additional-css = ["theme/catppuccin.css"]
 default-theme = "latte"
-preferred-dark-theme = "mocha"
+preferred-dark-scheme = "mocha"
 
 [output.html.search]
 enable = true
+
+[preprocessor.linkcheck]
+warning-policy = "error"
+follow-web-links = false
