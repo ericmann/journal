@@ -162,6 +162,10 @@ the same stable JSON as the CLI's `--json`):
 | `todos`     | `done?`, `project?`, `since?`              | `{results:[…]}` (@todo/@done)   |
 | `done`      | `ref` (citation or text fragment)          | `{completed:{…}}`               |
 | `capture`   | `text`, `tags[]?`, `project?`, `marker?`   | `{"captured":"<path>"}`         |
+| `ask`       | `query`, `k?`, `tag[]?`, `project?`, `since?` | `{answer, citations}` (grounded Q&A) |
+| `stats`     | —                                          | note volume, streaks, open todos, decisions, top tags |
+| `today`     | —                                          | today's note path, open todos, today's meetings |
+| `synth`     | `kind?`, `days?`, `project?`, `persist?`, `date?` | `{kind, text, output_path, wrote}` (AI synthesis digest) |
 
 Register it in the desktop app's MCP config (`claude_desktop_config.json`).
 Point `command` at the `journal` binary and use `--repo` (or the working

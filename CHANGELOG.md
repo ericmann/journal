@@ -9,6 +9,16 @@ versioning. Build-time design rationale lives in
 
 ### Added
 
+- **MCP `synth` tool.** The MCP server now exposes synthesis as a `synth` tool so
+  MCP clients (e.g. an agent drafting a weekly Slack summary) can run
+  `weekly|daily|meetings|decisions|stale` synthesis jobs without shelling out to
+  the CLI. By default the tool calls the synthesis provider and returns the
+  generated text without writing a file (`persist: false`); set `persist: true` to
+  also write the draft note to disk, mirroring `journal synth --write`. Honors
+  `synth_provider`, `local_only`, and `voice_profile` exactly as the CLI does;
+  returns a clean `{"error":"…"}` when synthesis is unavailable.
+  Optional scoping params: `kind` (default `weekly`), `days`, `project`, `date`.
+
 - **One-click releases.** A `prepare-release` workflow (Actions → Prepare Release →
   version) finalizes the `## [Unreleased]` CHANGELOG section to the version, tags,
   and triggers the Release workflow; and the GitHub Release notes now come from the

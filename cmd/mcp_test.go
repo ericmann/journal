@@ -688,3 +688,134 @@ func TestMCPResourcesRoundTrip(t *testing.T) {
 		t.Errorf("canton index content = %q, want 'project index'", idxRes.Contents[0].Text)
 	}
 }
+
+// --- synth tool tests ---
+
+func TestMCPSynthWeeklyReturnsText(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00 #cabot\nshipped the indexer\n",
+	})
+	fakeClient := &synth.Fake{Reply: "## Highlights\n- shipped the indexer\n"}
+	out, err := mcpSynth(context.Background(), cfg, fakeClient, synthMCPInput{Kind: "weekly"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got synthMCPResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if got.Kind != "weekly" {
+		t.Errorf("kind = %q, want weekly", got.Kind)
+	}
+	if !strings.Contains(got.Text, "Highlights") {
+		t.Errorf("text = %q, want highlights content", got.Text)
+	}
+	if fakeClient.CallCount != 1 {
+		t.Errorf("synth client called %d times, want 1", fakeClient.CallCount)
+	}
+}
+
+func TestMCPSynthDefaultKindIsWeekly(t *testing.T) {
+	cfg := testRepo(t, nil)
+	fakeClient := &synth.Fake{Reply: "weekly draft"}
+	out, err := mcpSynth(context.Background(), cfg, fakeClient, synthMCPInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got synthMCPResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if got.Kind != "weekly" {
+		t.Errorf("kind = %q, want weekly (default)", got.Kind)
+	}
+}
+
+func TestMCPSynthPersistFalseWritesNothing(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00\nsome work\n",
+	})
+	fakeClient := &synth.Fake{Reply: "draft text"}
+	out, err := mcpSynth(context.Background(), cfg, fakeClient, synthMCPInput{Kind: "weekly", Persist: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got synthMCPResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	// API is called (text returned) but no file is written.
+	if got.Text == "" {
+		t.Error("text must not be empty: API should have been called")
+	}
+	if got.Wrote {
+		t.Error("wrote=true but persist=false: no file should be written")
+	}
+	if fakeClient.CallCount != 1 {
+		t.Errorf("synth client called %d times, want 1", fakeClient.CallCount)
+	}
+}
+
+func TestMCPSynthPersistTrueWritesFile(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	cfg, _ := indexedRepo(t, map[string]string{
+		rel: "# " + today + "\n\n## 09:00\nsome work\n",
+	})
+	fakeClient := &synth.Fake{Reply: "## My weekly draft\n"}
+	out, err := mcpSynth(context.Background(), cfg, fakeClient, synthMCPInput{Kind: "weekly", Persist: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got synthMCPResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if !got.Wrote {
+		t.Error("wrote=false but persist=true: file should have been written")
+	}
+	if got.OutputPath == "" {
+		t.Error("output_path must not be empty when wrote=true")
+	}
+}
+
+func TestMCPSynthInvalidKindErrors(t *testing.T) {
+	cfg := testRepo(t, nil)
+	fakeClient := &synth.Fake{}
+	_, err := mcpSynth(context.Background(), cfg, fakeClient, synthMCPInput{Kind: "bogus"})
+	if err == nil {
+		t.Fatal("expected error for invalid kind")
+	}
+	if !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("error should mention the invalid kind, got: %v", err)
+	}
+}
+
+func TestMCPSynthUnavailableReturnsCleanError(t *testing.T) {
+	cfg := testRepo(t, nil)
+	boom := errors.New("synthesis unavailable: no provider configured")
+	fakeClient := &synth.Fake{ForcedErr: boom}
+	_, err := mcpSynth(context.Background(), cfg, fakeClient, synthMCPInput{Kind: "weekly"})
+	if err == nil {
+		t.Fatal("expected error when synth client fails")
+	}
+	if !strings.Contains(err.Error(), "synth weekly") {
+		t.Errorf("error should mention synth weekly context, got: %v", err)
+	}
+}
+
+func TestMCPSynthAvailableClientRejectsLocalOnly(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.LocalOnly = true
+	_, available, reason := synthAvailableClient(cfg)
+	if available {
+		t.Error("synthAvailableClient should report unavailable under local_only")
+	}
+	if reason == nil || !strings.Contains(reason.Error(), "local_only") {
+		t.Errorf("reason should mention local_only, got: %v", reason)
+	}
+}

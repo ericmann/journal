@@ -116,3 +116,31 @@ repo ([source](../cmd/templates/VOICE_PROFILE.example.md)) — copy it to
 `docs/VOICE_PROFILE.md` and make it yours. (In this source repo,
 `docs/VOICE_PROFILE.md` is gitignored so a personal profile is never committed
 here, and `docs/**` is excluded from indexing so it never pollutes search.)
+
+## MCP `synth` tool
+
+The MCP server (`journal mcp`) exposes synthesis as a tool so an MCP client
+(e.g. an agent drafting a weekly Slack summary) can call it without shelling out
+to the CLI.
+
+```jsonc
+// Tool call from any MCP client:
+{ "name": "synth", "arguments": { "kind": "weekly" } }
+// Returns: { "kind": "weekly", "text": "## Highlights\n...", "output_path": "...", "wrote": false }
+```
+
+**Arguments:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `kind` | string | `weekly` | Synthesis kind: `weekly`, `daily`, `meetings`, `decisions`, `stale` |
+| `days` | int | per-kind | Staleness/window threshold in days (`stale` default 14, `meetings` default 7) |
+| `project` | string | — | Scope to this project slug (`decisions`, `stale`) |
+| `persist` | bool | `false` | Write the draft to disk (default: return text only, no file written) |
+| `date` | string | today | `daily` only: day to summarize as `YYYY-MM-DD` |
+
+**Behavior:**
+- Always calls the configured synthesis provider (honors `synth_provider`, `local_only`, and `voice_profile` exactly as the CLI does).
+- Returns `{"error":"…"}` if synthesis is unavailable (no provider configured, cloud blocked by `local_only`, or missing API key) — matching the `ask` tool's behavior.
+- `persist: false` (the default): calls the API and returns the generated text without writing a file — safe for external agents that want the draft but manage their own storage.
+- `persist: true`: calls the API, writes the draft file under `reflections/` (or appends a rollup block for `decisions --project`), and returns the text with `"wrote": true`.

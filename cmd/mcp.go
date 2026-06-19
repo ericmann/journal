@@ -104,6 +104,21 @@ type askInput struct {
 	Since   string   `json:"since,omitempty" jsonschema:"only notes within this window, e.g. 2w, 14d, 36h"`
 }
 
+type synthMCPInput struct {
+	Kind    string `json:"kind,omitempty" jsonschema:"synthesis kind: weekly (default), daily, meetings, decisions, stale"`
+	Days    int    `json:"days,omitempty" jsonschema:"staleness/window threshold in days (stale default 14, meetings default 7)"`
+	Project string `json:"project,omitempty" jsonschema:"scope to this project slug (decisions and stale)"`
+	Persist bool   `json:"persist,omitempty" jsonschema:"write the draft note to disk (default false: return text only without writing)"`
+	Date    string `json:"date,omitempty" jsonschema:"daily: day to summarize as YYYY-MM-DD (default today)"`
+}
+
+type synthMCPResponse struct {
+	Kind       string `json:"kind"`
+	Text       string `json:"text"`
+	OutputPath string `json:"output_path,omitempty"`
+	Wrote      bool   `json:"wrote"`
+}
+
 type askResponse struct {
 	Answer    string   `json:"answer"`
 	Citations []string `json:"citations"`
@@ -216,6 +231,17 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 			return "", reason
 		}
 		return mcpAsk(ctx, cfg, e, client, in)
+	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "synth",
+		Description: "Run a synthesis job (weekly/daily/meetings/decisions/stale) and return the generated draft text in the author's voice. Honors synth_provider and local_only; returns an error if synthesis is unavailable. By default returns text without writing a file; set persist:true to also write the draft note to disk.",
+	}, toolHandler(func(ctx context.Context, in synthMCPInput) (string, error) {
+		client, available, reason := synthAvailableClient(cfg)
+		if !available {
+			return "", reason
+		}
+		return mcpSynth(ctx, cfg, client, in)
 	}))
 
 	// Resources: journal://today, journal://recent, journal://projects/{slug}/index.
@@ -576,6 +602,67 @@ func mcpAsk(ctx context.Context, cfg *config.Config, e embed.Embedder, client sy
 		return "", fmt.Errorf("synthesis: %w", err)
 	}
 	b, err := json.MarshalIndent(askResponse{Answer: answer, Citations: citations}, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// synthAvailableClient wraps synthClient for the MCP availability gate pattern,
+// matching the (client, available, reason) shape used by answerClient.
+func synthAvailableClient(cfg *config.Config) (synth.Client, bool, error) {
+	c, err := synthClient(cfg)
+	if err != nil {
+		return nil, false, err
+	}
+	return c, true, nil
+}
+
+func mcpSynth(ctx context.Context, cfg *config.Config, client synth.Client, in synthMCPInput) (string, error) {
+	kind := synth.Kind(in.Kind)
+	if kind == "" {
+		kind = synth.KindWeekly
+	}
+	switch kind {
+	case synth.KindWeekly, synth.KindDaily, synth.KindMeetings, synth.KindDecisions, synth.KindStale:
+	default:
+		return "", fmt.Errorf("unknown synth kind %q (want weekly|daily|meetings|decisions|stale)", in.Kind)
+	}
+
+	var date time.Time
+	if in.Date != "" {
+		var err error
+		date, err = time.ParseInLocation("2006-01-02", in.Date, time.Local)
+		if err != nil {
+			return "", fmt.Errorf("invalid date %q (want YYYY-MM-DD)", in.Date)
+		}
+	}
+
+	st, err := store.Open(cfg.StoreAbsPath(), cfg.EmbedDim)
+	if err != nil {
+		return "", fmt.Errorf("opening store: %w", err)
+	}
+	defer st.Close()
+
+	r := synth.NewRunner(st, client, cfg.Root(), cfg.ActiveSynthModel(), cfg.SynthMaxTokens, readVoiceProfile(cfg))
+	res, err := r.Run(ctx, synth.Options{
+		Kind:        kind,
+		Project:     in.Project,
+		Days:        in.Days,
+		Date:        date,
+		Write:       true,
+		SkipPersist: !in.Persist,
+	})
+	if err != nil {
+		return "", fmt.Errorf("synth %s: %w", kind, err)
+	}
+
+	b, err := json.MarshalIndent(synthMCPResponse{
+		Kind:       string(res.Kind),
+		Text:       res.Text,
+		OutputPath: res.OutputPath,
+		Wrote:      res.Wrote,
+	}, "", "  ")
 	if err != nil {
 		return "", err
 	}
