@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go 1.26+" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/brew-ericmann%2Ftap-orange" alt="Homebrew tap" />
+  <a href="https://journal.eamann.com"><img src="https://img.shields.io/badge/docs-journal.eamann.com-blue" alt="Documentation" /></a>
 </p>
 
 ---
@@ -173,6 +174,8 @@ Full flags, the note format, and search internals are in [**Usage**](docs/USAGE.
 ---
 
 ## Documentation
+
+📖 **[Full user documentation → journal.eamann.com](https://journal.eamann.com)**
 
 | Guide | Contents |
 | --- | --- |
