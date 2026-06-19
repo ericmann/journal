@@ -14,13 +14,14 @@ import (
 
 // Options controls a synthesis run.
 type Options struct {
-	Kind    Kind
-	Project string    // decisions: scope to this project slug (also the write target)
-	Days    int       // stale: idle threshold (default 14)
-	Date    time.Time // daily: the day to summarize (defaults to Now's date)
-	Now     time.Time // reference time (defaults to time.Now)
-	DryRun  bool      // print prompt + path; no network, no write
-	Write   bool      // call the API and write output
+	Kind        Kind
+	Project     string    // decisions: scope to this project slug (also the write target)
+	Days        int       // stale: idle threshold (default 14)
+	Date        time.Time // daily: the day to summarize (defaults to Now's date)
+	Now         time.Time // reference time (defaults to time.Now)
+	DryRun      bool      // print prompt + path; no network, no write
+	Write       bool      // call the API and write output
+	SkipPersist bool      // call the API but skip writing the output file (MCP synth tool)
 }
 
 // Result is the outcome of a synthesis run.
@@ -99,10 +100,12 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Result, error) {
 	res.InputTokens = resp.InputTokens
 	res.OutputTokens = resp.OutputTokens
 
-	if err := r.write(opts, res); err != nil {
-		return res, err
+	if !opts.SkipPersist {
+		if err := r.write(opts, res); err != nil {
+			return res, err
+		}
+		res.Wrote = true
 	}
-	res.Wrote = true
 	return res, nil
 }
 
