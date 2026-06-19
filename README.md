@@ -39,7 +39,7 @@ binary.
 - 🤖 **AI synthesis** — daily/weekly rollups and decision digests in your own voice. Pick your `synth_provider`: cloud Claude (default), any **OpenAI-compatible** endpoint (OpenRouter's free Gemma, Groq, …), or a **fully local** Ollama model (zero egress). See [SYNTHESIS.md](docs/SYNTHESIS.md) · [LOCAL-SETUP.md](docs/LOCAL-SETUP.md).
 - 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); or ingest any recording via `journal transcribe` (WhisperX → summarized, indexed transcript — see [TRANSCRIBE.md](docs/TRANSCRIBE.md)). Search, list, and digest them all. *(v2.0; Quill is macOS/Windows.)*
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
-- 🔌 **Integrations** — an MCP server exposes search/recent/decisions/meetings to Claude Desktop and Claude Code.
+- 🔌 **Integrations** — an MCP server (`journal mcp`) exposes 13 tools (`search`, `capture`, `todos`, `synth`, and more), read-only resources (`journal://today`, `journal://recent`, …), and pre-built prompts to Claude Desktop and Claude Code over MCP.
 
 ---
 
@@ -48,6 +48,7 @@ binary.
 - **git** — notes live in a git repo; capture/index auto-commit.
 - **[Ollama](https://ollama.com) + an embedding model** — for indexing and search
   (all local). Default: `ollama pull qwen3-embedding:4b`. Verify with `journal doctor`.
+  Optional reranker: `ollama pull qwen3:4b` + `reranker: qwen3:4b` in config — precision boost for search, off by default.
 - **A synthesis provider** *(only for `journal synth` + grounded search answers)* —
   **cloud Claude** (default; set `ANTHROPIC_API_KEY`), an **OpenAI-compatible**
   endpoint (`synth_provider: openai` + `OPENAI_API_KEY` — OpenRouter, Groq, …), or a
@@ -158,6 +159,7 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal today` · `show` · `edit` | Day at a glance; render any note; open a daily file in your editor |
 | `journal tui` | Interactive dashboard: today, todos, semantic search, recent, meetings, stats |
 | `journal stats` | Capture volume, streaks, marker counts, top tags |
+| `journal tags` | List `#tags` with usage counts; `tags rename <old> <new>` renames across all notes |
 | `journal quill-sync` | Pull Quill meeting transcripts into `transcripts/` ([Quill](docs/QUILL.md)) |
 | `journal transcribe <whisperx.json>` | Ingest a non-Quill recording: render + summarize + index ([Transcribe](docs/TRANSCRIBE.md)) |
 | `journal synth weekly\|daily\|meetings\|decisions\|stale` | AI synthesis — cloud Claude, OpenAI-compatible (OpenRouter/…), or local Ollama (`synth_provider`) |

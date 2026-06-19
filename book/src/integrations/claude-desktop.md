@@ -49,12 +49,36 @@ Once connected, Claude has access to these tools:
 | `todos` | List open `@todo` items |
 | `done` | Complete a todo |
 | `capture` | Add a new note |
+| `stats` | Journal metrics: note volume, streaks, open todos, decisions, top tags |
+| `today` | Your day at a glance: today's note path, open todos, and meetings |
+| `ask` | Ask a question answered from your notes, with path:line citations |
+| `synth` | Run a synthesis job (`weekly`/`daily`/`meetings`/`decisions`/`stale`) and return the draft |
 
 Try asking:
 - "What did I work on this week?"
 - "What decisions did I make about the Acme project?"
 - "Add a note that we decided to go with Redis Cluster @decision"
 - "What are my open todos? Mark the pricing one as done."
+
+## Resources
+
+In addition to tools, journal exposes read-only resources that Claude can pull directly:
+
+| Resource URI | Contents |
+|---|---|
+| `journal://today` | Today's daily note (raw Markdown) |
+| `journal://recent` | The 50 most recent note chunks, newest first |
+| `journal://projects/{slug}/index` | A project's `_index.md` — replace `{slug}` with the project name |
+
+## Prompts
+
+journal also provides pre-assembled prompts that Claude can run without hand-crafting the synthesis request. The server assembles context from your journal and returns it as a ready-to-run prompt — no cloud calls are made server-side:
+
+| Prompt | Arguments | What it does |
+|---|---|---|
+| `weekly-reflection` | — | Gathers this week's notes and assembles a weekly reflection prompt |
+| `decisions-review` | `project` (optional) | Gathers `@decision` notes and assembles a review prompt |
+| `project-status` | `project` (required), `since` (optional, e.g. `2w`) | Gathers recent project notes and assembles a status prompt |
 
 ## Privacy
 
