@@ -526,6 +526,30 @@ func buildWhere(f Filter) (string, []any) {
 	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
+// TagCount is a distinct tag and the number of chunks that carry it.
+type TagCount struct {
+	Tag   string
+	Count int
+}
+
+// Tags returns all distinct tags with their usage counts, sorted alphabetically.
+func (s *Store) Tags(ctx context.Context) ([]TagCount, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT tag, COUNT(*) FROM tags GROUP BY tag ORDER BY tag`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TagCount
+	for rows.Next() {
+		var tc TagCount
+		if err := rows.Scan(&tc.Tag, &tc.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, tc)
+	}
+	return out, rows.Err()
+}
+
 // ProjectInfo summarizes activity in one project thread.
 type ProjectInfo struct {
 	Slug          string

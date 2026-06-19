@@ -36,6 +36,11 @@ func DoneCommitMessage(t time.Time) string {
 	return fmt.Sprintf("📓 checked off a todo · %s", t.Format("Mon 2006-01-02 15:04"))
 }
 
+// TagsRenameCommitMessage is the auto-commit message for `journal tags rename`.
+func TagsRenameCommitMessage(old, newTag string, n int, t time.Time) string {
+	return fmt.Sprintf("📓 renamed tag #%s → #%s across %d file(s) · %s", old, newTag, n, t.Format("Mon 2006-01-02 15:04"))
+}
+
 // SyncCommitMessage is the auto-commit message for pending changes swept up by
 // `journal sync` before it pushes (e.g. notes edited by hand while the watcher
 // was not running).
