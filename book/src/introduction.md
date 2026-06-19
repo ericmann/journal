@@ -22,3 +22,7 @@ The [Installation guide](installation.md) gets you up and running in about ten m
 ---
 
 > **A note on privacy:** journal indexes your notes locally using [Ollama](https://ollama.com), an open-source tool that runs AI models on your own computer. Your notes never leave your machine for search or indexing. If you use the AI synthesis features, you can choose between cloud providers or keep everything local too. You're always in control.
+
+---
+
+*Looking for contributor or developer documentation? The technical reference lives in the [docs/ folder on GitHub](https://github.com/ericmann/journal/tree/main/docs).*

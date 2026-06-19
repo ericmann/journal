@@ -30,7 +30,3 @@
 - [Claude Code](integrations/claude-code.md)
 - [Claude Desktop](integrations/claude-desktop.md)
 - [Local MCP Clients](integrations/local-clients.md)
-
----
-
-[Developer & contributor docs →](https://github.com/ericmann/journal/tree/main/docs)
