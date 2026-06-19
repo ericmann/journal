@@ -218,7 +218,134 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 		return mcpAsk(ctx, cfg, e, client, in)
 	}))
 
+	// Resources: journal://today, journal://recent, journal://projects/{slug}/index.
+	// These expose raw Markdown so clients can pull journal context without tool
+	// calls. URIs use the "journal://" scheme and are stable across server runs.
+	addResources(s, cfg)
+
 	return s.Run(ctx, &mcp.StdioTransport{})
+}
+
+// addResources registers the three MCP resource types on s.
+// URIs are stable: journal://today, journal://recent, journal://projects/{slug}/index.
+func addResources(s *mcp.Server, cfg *config.Config) {
+	s.AddResource(&mcp.Resource{
+		URI:         "journal://today",
+		Name:        "today",
+		Title:       "Today's note",
+		Description: "Today's daily note file (raw Markdown). Corresponds to daily/YYYY/MM/YYYY-MM-DD.md.",
+		MIMEType:    "text/markdown",
+	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		return readTodayResource(cfg)
+	})
+
+	s.AddResource(&mcp.Resource{
+		URI:         "journal://recent",
+		Name:        "recent",
+		Title:       "Recent notes",
+		Description: "Markdown listing of the 50 most recent note chunks, newest first.",
+		MIMEType:    "text/markdown",
+	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		return readRecentResource(ctx, cfg)
+	})
+
+	s.AddResourceTemplate(&mcp.ResourceTemplate{
+		URITemplate: "journal://projects/{slug}/index",
+		Name:        "project-index",
+		Title:       "Project index",
+		Description: "A project's _index.md file (raw Markdown). Replace {slug} with the project name.",
+		MIMEType:    "text/markdown",
+	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		return readProjectIndexResource(cfg, req.Params.URI)
+	})
+}
+
+// readTodayResource returns today's daily note as raw Markdown. If the file
+// does not exist yet, a placeholder stub is returned (not an error).
+func readTodayResource(cfg *config.Config) (*mcp.ReadResourceResult, error) {
+	abs, _, err := resolveNotePath(cfg, "today")
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(abs)
+	if os.IsNotExist(err) {
+		data = []byte("# " + now().Format("2006-01-02") + "\n\n_No notes yet today._\n")
+	} else if err != nil {
+		return nil, fmt.Errorf("reading today's note: %w", err)
+	}
+	return &mcp.ReadResourceResult{
+		Contents: []*mcp.ResourceContents{{
+			URI:      "journal://today",
+			MIMEType: "text/markdown",
+			Text:     string(data),
+		}},
+	}, nil
+}
+
+// readRecentResource returns a Markdown document listing the 50 most recent
+// note chunks from the index store.
+func readRecentResource(ctx context.Context, cfg *config.Config) (*mcp.ReadResourceResult, error) {
+	results, err := listFromStore(ctx, cfg, store.Filter{}, 50)
+	if err != nil {
+		return nil, fmt.Errorf("reading recent notes: %w", err)
+	}
+	var sb strings.Builder
+	sb.WriteString("# Recent Notes\n\n")
+	if len(results) == 0 {
+		sb.WriteString("_No notes indexed yet._\n")
+	}
+	for _, r := range results {
+		fmt.Fprintf(&sb, "- `%s` — %s\n", r.Citation(), r.Snippet)
+	}
+	return &mcp.ReadResourceResult{
+		Contents: []*mcp.ResourceContents{{
+			URI:      "journal://recent",
+			MIMEType: "text/markdown",
+			Text:     sb.String(),
+		}},
+	}, nil
+}
+
+// readProjectIndexResource reads a project's _index.md by parsing the slug
+// from the resource URI (journal://projects/{slug}/index).
+func readProjectIndexResource(cfg *config.Config, uri string) (*mcp.ReadResourceResult, error) {
+	slug := extractProjectSlug(uri)
+	if slug == "" {
+		return nil, mcp.ResourceNotFoundError(uri)
+	}
+	abs, _, err := resolveNotePath(cfg, "projects/"+slug+"/_index.md")
+	if err != nil {
+		return nil, mcp.ResourceNotFoundError(uri)
+	}
+	data, err := os.ReadFile(abs)
+	if os.IsNotExist(err) {
+		return nil, mcp.ResourceNotFoundError(uri)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading project index: %w", err)
+	}
+	return &mcp.ReadResourceResult{
+		Contents: []*mcp.ResourceContents{{
+			URI:      uri,
+			MIMEType: "text/markdown",
+			Text:     string(data),
+		}},
+	}, nil
+}
+
+// extractProjectSlug parses the slug from "journal://projects/{slug}/index".
+// Returns "" for any malformed or path-traversal URI.
+func extractProjectSlug(uri string) string {
+	const prefix = "journal://projects/"
+	const suffix = "/index"
+	if !strings.HasPrefix(uri, prefix) || !strings.HasSuffix(uri, suffix) {
+		return ""
+	}
+	slug := uri[len(prefix) : len(uri)-len(suffix)]
+	if slug == "" || strings.ContainsAny(slug, "./\\") {
+		return ""
+	}
+	return slug
 }
 
 // toolHandler adapts a (ctx, In) -> (jsonText, error) function into the SDK's
