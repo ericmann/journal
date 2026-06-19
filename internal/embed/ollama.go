@@ -101,7 +101,56 @@ type generateResponse struct {
 	Response string `json:"response"`
 }
 
-var scoreRe = regexp.MustCompile(`-?\d+(\.\d+)?`)
+var (
+	// scoreFractionRe matches explicit "N/10" relevance fractions (e.g. "8/10", "7.5/10").
+	scoreFractionRe = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*/\s*10\b`)
+	// scoreLabelRe matches labelled scores ("Score: 7", "Relevance: 8.5").
+	scoreLabelRe = regexp.MustCompile(`(?i)(?:score|relevance|rating)[:\s]+(\d+(?:\.\d+)?)`)
+	// scoreRe matches standalone non-negative numbers used as a last-resort fallback.
+	scoreRe = regexp.MustCompile(`\b(\d+(?:\.\d+)?)\b`)
+)
+
+// parseScore extracts a [0,1] relevance score from a model response.
+// It tries (in order): an explicit "N/10" fraction, a labelled form ("Score: N"),
+// then the last standalone number in [0,10]. Returns 0 when no plausible score
+// is found so the caller falls back to vector-distance order.
+func parseScore(s string) float32 {
+	s = strings.TrimSpace(s)
+	if m := scoreFractionRe.FindStringSubmatch(s); m != nil {
+		if v, err := strconv.ParseFloat(m[1], 32); err == nil {
+			return clampUnit(float32(v) / 10.0)
+		}
+	}
+	if m := scoreLabelRe.FindStringSubmatch(s); m != nil {
+		if v, err := strconv.ParseFloat(m[1], 32); err == nil {
+			return clampUnit(float32(v) / 10.0)
+		}
+	}
+	// Fallback: last number in [0,10] — models often trail the response with the score.
+	// Skip digits immediately preceded by '-' to avoid parsing "-1" as 1.
+	idxs := scoreRe.FindAllStringSubmatchIndex(s, -1)
+	for i := len(idxs) - 1; i >= 0; i-- {
+		start := idxs[i][2] // start of capture group 1
+		if start > 0 && s[start-1] == '-' {
+			continue
+		}
+		m := s[idxs[i][2]:idxs[i][3]]
+		if v, err := strconv.ParseFloat(m, 32); err == nil && v >= 0 && v <= 10 {
+			return clampUnit(float32(v) / 10.0)
+		}
+	}
+	return 0
+}
+
+func clampUnit(v float32) float32 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
 
 // Rerank scores each doc against query using the reranker model. Scores are in
 // [0,1]; on a per-doc failure the score defaults to 0 rather than failing the
@@ -137,14 +186,21 @@ func (o *Ollama) Rerank(ctx context.Context, query string, docs []string) ([]flo
 
 func (o *Ollama) scoreOne(ctx context.Context, query, doc string) float32 {
 	prompt := fmt.Sprintf(
-		"Rate how relevant the following document is to the query on a scale of 0 to 10. "+
-			"Reply with only the number.\n\nQuery: %s\n\nDocument: %s\n\nRelevance (0-10):",
+		"You are a relevance judge.\n"+
+			"Score how well the DOCUMENT addresses the QUERY on a scale of 0 to 10.\n\n"+
+			"Rubric:\n"+
+			"  0  – completely unrelated\n"+
+			"  5  – on-topic but does not directly answer the query\n"+
+			"  10 – directly and completely addresses the query\n\n"+
+			"QUERY: %s\n\n"+
+			"DOCUMENT:\n%s\n\n"+
+			"Respond with a single integer (0–10) and nothing else.",
 		query, doc)
 	body, err := json.Marshal(generateRequest{
 		Model:   o.rerankModel,
 		Prompt:  prompt,
 		Stream:  false,
-		Options: map[string]any{"temperature": 0, "num_predict": 8},
+		Options: map[string]any{"temperature": 0, "num_predict": 16},
 	})
 	if err != nil {
 		return 0
@@ -153,22 +209,7 @@ func (o *Ollama) scoreOne(ctx context.Context, query, doc string) float32 {
 	if err := o.postJSON(ctx, "/api/generate", body, &resp); err != nil {
 		return 0
 	}
-	m := scoreRe.FindString(resp.Response)
-	if m == "" {
-		return 0
-	}
-	val, err := strconv.ParseFloat(m, 32)
-	if err != nil {
-		return 0
-	}
-	score := float32(val) / 10.0
-	if score < 0 {
-		score = 0
-	}
-	if score > 1 {
-		score = 1
-	}
-	return score
+	return parseScore(resp.Response)
 }
 
 type tagsResponse struct {

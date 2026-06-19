@@ -109,9 +109,9 @@ func TestOllamaRerankParsesScores(t *testing.T) {
 		var req generateRequest
 		_ = json.Unmarshal(body, &req)
 		score := "0"
-		if strings.Contains(req.Prompt, "Document: highly relevant") {
+		if strings.Contains(req.Prompt, "DOCUMENT:\nhighly relevant") {
 			score = "9"
-		} else if strings.Contains(req.Prompt, "Document: somewhat") {
+		} else if strings.Contains(req.Prompt, "DOCUMENT:\nsomewhat") {
 			score = "5"
 		}
 		_ = json.NewEncoder(w).Encode(generateResponse{Response: score})
