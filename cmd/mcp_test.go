@@ -10,6 +10,7 @@ import (
 
 	"github.com/ericmann/journal/internal/embed"
 	"github.com/ericmann/journal/internal/synth"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestMCPSearchReturnsResultsJSON(t *testing.T) {
@@ -270,5 +271,203 @@ func TestMCPAskNoResultsReturnsEmptyCitations(t *testing.T) {
 	// Synth must not be called when there are no chunks to ground the answer.
 	if fakeClient.CallCount != 0 {
 		t.Errorf("synth client called %d times, want 0 (no chunks)", fakeClient.CallCount)
+	}
+}
+
+// --- Resource handler unit tests ---
+
+func TestReadTodayResourceWithNote(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	content := "# " + today + "\n\n## 09:00\nhello world\n"
+	cfg := testRepo(t, map[string]string{rel: content})
+
+	res, err := readTodayResource(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Contents) != 1 {
+		t.Fatalf("want 1 content block, got %d", len(res.Contents))
+	}
+	if res.Contents[0].URI != "journal://today" {
+		t.Errorf("URI = %q, want journal://today", res.Contents[0].URI)
+	}
+	if res.Contents[0].MIMEType != "text/markdown" {
+		t.Errorf("MIMEType = %q, want text/markdown", res.Contents[0].MIMEType)
+	}
+	if res.Contents[0].Text != content {
+		t.Errorf("content mismatch: got %q, want %q", res.Contents[0].Text, content)
+	}
+}
+
+func TestReadTodayResourceNoNotePlaceholder(t *testing.T) {
+	cfg := testRepo(t, nil) // no daily file
+
+	res, err := readTodayResource(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Contents) != 1 || res.Contents[0].Text == "" {
+		t.Fatal("expected non-empty placeholder content")
+	}
+	today := time.Now().Format("2006-01-02")
+	if !strings.Contains(res.Contents[0].Text, today) {
+		t.Errorf("placeholder should contain today's date %q, got: %q", today, res.Contents[0].Text)
+	}
+}
+
+func TestReadRecentResourceEmpty(t *testing.T) {
+	cfg := testRepo(t, nil)
+
+	res, err := readRecentResource(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Contents) != 1 {
+		t.Fatalf("want 1 content block, got %d", len(res.Contents))
+	}
+	if res.Contents[0].URI != "journal://recent" {
+		t.Errorf("URI = %q, want journal://recent", res.Contents[0].URI)
+	}
+	if !strings.Contains(res.Contents[0].Text, "# Recent Notes") {
+		t.Errorf("expected header, got: %q", res.Contents[0].Text)
+	}
+}
+
+func TestReadRecentResourceWithNotes(t *testing.T) {
+	cfg, _ := indexedRepo(t, map[string]string{
+		"daily/2026/06/2026-06-01.md": "# 2026-06-01\n\n## 09:00\nsome work done\n",
+	})
+
+	res, err := readRecentResource(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Contents) != 1 {
+		t.Fatalf("want 1 content block, got %d", len(res.Contents))
+	}
+	if !strings.Contains(res.Contents[0].Text, "some work done") {
+		t.Errorf("recent listing missing note body: %q", res.Contents[0].Text)
+	}
+}
+
+func TestReadProjectIndexResourceFound(t *testing.T) {
+	content := "# canton project\n\nsome notes here\n"
+	cfg := testRepo(t, map[string]string{
+		"projects/canton/_index.md": content,
+	})
+
+	res, err := readProjectIndexResource(cfg, "journal://projects/canton/index")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Contents) != 1 {
+		t.Fatalf("want 1 content block, got %d", len(res.Contents))
+	}
+	if res.Contents[0].URI != "journal://projects/canton/index" {
+		t.Errorf("URI = %q, want journal://projects/canton/index", res.Contents[0].URI)
+	}
+	if res.Contents[0].Text != content {
+		t.Errorf("content mismatch: got %q, want %q", res.Contents[0].Text, content)
+	}
+}
+
+func TestReadProjectIndexResourceMissing(t *testing.T) {
+	cfg := testRepo(t, nil)
+
+	_, err := readProjectIndexResource(cfg, "journal://projects/nope/index")
+	if err == nil {
+		t.Error("expected ResourceNotFound error for missing project index")
+	}
+}
+
+func TestExtractProjectSlug(t *testing.T) {
+	tests := []struct {
+		uri  string
+		want string
+	}{
+		{"journal://projects/canton/index", "canton"},
+		{"journal://projects/my-project/index", "my-project"},
+		{"journal://projects//index", ""},
+		{"journal://projects/../index", ""},
+		{"journal://today", ""},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		got := extractProjectSlug(tc.uri)
+		if got != tc.want {
+			t.Errorf("extractProjectSlug(%q) = %q, want %q", tc.uri, got, tc.want)
+		}
+	}
+}
+
+// TestMCPResourcesRoundTrip exercises resources/list and resources/read over
+// the MCP in-memory transport — same protocol layer as stdio but without I/O.
+func TestMCPResourcesRoundTrip(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	rel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	noteContent := "# " + today + "\n\n## 09:00\nround trip test\n"
+	idxContent := "# canton\n\nproject index\n"
+	cfg := testRepo(t, map[string]string{
+		rel:                         noteContent,
+		"projects/canton/_index.md": idxContent,
+	})
+
+	s := mcp.NewServer(&mcp.Implementation{Name: "journal-test", Version: "0"}, nil)
+	addResources(s, cfg)
+
+	c := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0"}, nil)
+
+	t1, t2 := mcp.NewInMemoryTransports()
+	ctx := context.Background()
+	if _, err := s.Connect(ctx, t1, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := c.Connect(ctx, t2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+
+	// resources/list must include today and recent.
+	wantURIs := map[string]bool{"journal://today": true, "journal://recent": true}
+	for r, err := range cs.Resources(ctx, nil) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		delete(wantURIs, r.URI)
+	}
+	for uri := range wantURIs {
+		t.Errorf("resources/list missing %q", uri)
+	}
+
+	// resources/templates/list must include the project index template.
+	wantTemplates := map[string]bool{"journal://projects/{slug}/index": true}
+	for r, err := range cs.ResourceTemplates(ctx, nil) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		delete(wantTemplates, r.URITemplate)
+	}
+	for tpl := range wantTemplates {
+		t.Errorf("resources/templates/list missing %q", tpl)
+	}
+
+	// resources/read: today's note.
+	todayRes, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: "journal://today"})
+	if err != nil {
+		t.Fatalf("ReadResource(today): %v", err)
+	}
+	if len(todayRes.Contents) == 0 || !strings.Contains(todayRes.Contents[0].Text, today) {
+		t.Errorf("today resource content = %q, want today date %q", todayRes.Contents[0].Text, today)
+	}
+
+	// resources/read: project index via template.
+	idxRes, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: "journal://projects/canton/index"})
+	if err != nil {
+		t.Fatalf("ReadResource(canton index): %v", err)
+	}
+	if len(idxRes.Contents) == 0 || !strings.Contains(idxRes.Contents[0].Text, "project index") {
+		t.Errorf("canton index content = %q, want 'project index'", idxRes.Contents[0].Text)
 	}
 }
