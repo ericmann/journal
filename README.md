@@ -1,11 +1,8 @@
-<!-- Drop a logo at docs/journal-logo.png and swap the <h1> below for:
-<p align="center"><img src="docs/journal-logo.png" alt="journal" width="180" /></p> -->
-
 <h1 align="center">📓 journal</h1>
 
 <p align="center">
   <strong>A local-first developer journal with semantic search and AI synthesis.</strong><br>
-  Plain-markdown notes in git. Frictionless capture, local RAG retrieval, synthesis via cloud Claude <em>or</em> a fully local model.
+  Plain-markdown notes in git. Frictionless capture, local RAG retrieval, on-demand synthesis — local Ollama, OpenAI-compatible, or cloud Claude.
 </p>
 
 <p align="center">
@@ -24,9 +21,10 @@
 `journal` turns a folder of plain-markdown notes into a searchable, AI-queryable
 corpus — no server, daemon, or cloud store. Capture is frictionless and
 append-only; retrieval is a fully local RAG stack (Ollama embeddings + optional
-reranking, vectors in `sqlite-vec`); synthesis is on-demand — **cloud Claude
-(Sonnet by default), any OpenAI-compatible endpoint (OpenRouter, Groq, …), or a
-fully local Ollama model**, your choice.
+reranking, vectors in `sqlite-vec`); synthesis is on-demand — **a fully local
+Ollama model** (zero egress, no API key), **any OpenAI-compatible endpoint**
+(OpenRouter, Groq, …), or **cloud Claude** (the code default, requires
+`ANTHROPIC_API_KEY`) — your choice.
 
 **Markdown in git is the single source of truth** — the vector index is a
 disposable, rebuildable cache and is never committed. It all ships as one static
@@ -36,8 +34,8 @@ binary.
 - ✅ **Todos that close the loop** — `@todo` in any note becomes a tracked item: `journal todos` lists them, `journal done` checks them off (also via MCP, so Claude can too).
 - 🔎 **Local semantic search** — Ollama + `sqlite-vec`, optional LLM reranking; with synthesis configured (cloud or local), a grounded AI answer on top. Notes never leave your machine for retrieval.
 - 📺 **A daily home** — `journal today` (day at a glance), `journal tui` (interactive dashboard: notes, todos, search, meetings, stats), `journal stats` (streaks & volume).
-- 🤖 **AI synthesis** — daily/weekly rollups and decision digests in your own voice. Pick your `synth_provider`: cloud Claude (default), any **OpenAI-compatible** endpoint (OpenRouter's free Gemma, Groq, …), or a **fully local** Ollama model (zero egress). See [SYNTHESIS.md](docs/SYNTHESIS.md) · [LOCAL-SETUP.md](docs/LOCAL-SETUP.md).
-- 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); or ingest any recording via `journal transcribe` (WhisperX → summarized, indexed transcript — see [TRANSCRIBE.md](docs/TRANSCRIBE.md)). Search, list, and digest them all. *(v2.0; Quill is macOS/Windows.)*
+- 🤖 **AI synthesis** — daily/weekly rollups and decision digests in your own voice. Pick your `synth_provider`: a **fully local** Ollama model (zero egress, no API key), any **OpenAI-compatible** endpoint (OpenRouter, Groq, …), or cloud Claude (the code default). See [AI Synthesis](https://journal.eamann.com/synthesis.html) · [Going Fully Local](https://journal.eamann.com/local-only.html).
+- 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); or ingest any recording via `journal transcribe` (WhisperX → summarized, indexed transcript — see [Meetings & Transcripts](https://journal.eamann.com/meetings.html)). Search, list, and digest them all. *(v2.0; Quill is macOS/Windows.)*
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
 - 🔌 **Integrations** — an MCP server (`journal mcp`) exposes 13 tools (`search`, `capture`, `todos`, `synth`, and more), read-only resources (`journal://today`, `journal://recent`, …), and pre-built prompts to Claude Desktop and Claude Code over MCP.
 
@@ -115,7 +113,7 @@ tag; build them locally with `make snapshot`.
 </details>
 
 Shell completions: package installs wire them up automatically; otherwise
-`journal completion bash|zsh|fish` — see [Usage](docs/USAGE.md).
+`journal completion bash|zsh|fish` — see [Capturing Notes](https://journal.eamann.com/capturing-notes.html).
 
 ---
 
@@ -160,8 +158,8 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal tui` | Interactive dashboard: today, todos, semantic search, recent, meetings, stats |
 | `journal stats` | Capture volume, streaks, marker counts, top tags |
 | `journal tags` | List `#tags` with usage counts; `tags rename <old> <new>` renames across all notes |
-| `journal quill-sync` | Pull Quill meeting transcripts into `transcripts/` ([Quill](docs/QUILL.md)) |
-| `journal transcribe <whisperx.json>` | Ingest a non-Quill recording: render + summarize + index ([Transcribe](docs/TRANSCRIBE.md)) |
+| `journal quill-sync` | Pull Quill meeting transcripts into `transcripts/` ([Meetings & Transcripts](https://journal.eamann.com/meetings.html)) |
+| `journal transcribe <whisperx.json>` | Ingest a non-Quill recording: render + summarize + index ([Meetings & Transcripts](https://journal.eamann.com/meetings.html)) |
 | `journal synth weekly\|daily\|meetings\|decisions\|stale` | AI synthesis — cloud Claude, OpenAI-compatible (OpenRouter/…), or local Ollama (`synth_provider`) |
 | `journal sync` | Back up to / pull from a git remote (opt-in) |
 | `journal doctor` | Health-check Ollama, models, the index |
@@ -171,7 +169,7 @@ Every command takes a global **`--journal-dir`** (or `JOURNAL_DIR` env) to opera
 on a journal from any directory — handy for an alias like
 `alias jc='journal capture --journal-dir ~/Projects/devnotes'`.
 
-Full flags, the note format, and search internals are in [**Usage**](docs/USAGE.md).
+Full flags, the note format, and search internals are in the [**user documentation**](https://journal.eamann.com).
 
 ---
 
@@ -179,18 +177,43 @@ Full flags, the note format, and search internals are in [**Usage**](docs/USAGE.
 
 📖 **[Full user documentation → journal.eamann.com](https://journal.eamann.com)**
 
+**Getting Started**
+
 | Guide | Contents |
 | --- | --- |
-| [Usage](docs/USAGE.md) | Capture conventions, command surface, retrieval, the watcher, auto-commit |
-| [Meeting transcripts (Quill)](docs/QUILL.md) | Pulling Quill meetings into the index — the v2.0 feature (macOS/Windows) |
-| [Transcribing recordings](docs/TRANSCRIBE.md) | Non-Quill audio/video → WhisperX → summarized, indexed transcript (`journal transcribe`) |
-| [Configuration](docs/CONFIGURATION.md) | Every `config.yaml` key, defaults, and secrets |
-| [Synthesis](docs/SYNTHESIS.md) | `journal synth` and writing in your voice |
-| [Remote backup](docs/SYNC.md) | `journal sync`: enabling, conflict modes, cron/launchd/systemd |
-| [Workspaces](docs/WORKSPACES.md) | Multiple isolated journals (e.g. personal vs. work) |
-| [Integrations](docs/INTEGRATIONS.md) | Claude Desktop, Claude Code, Ollama wiring |
-| [Fully local setup](docs/LOCAL-SETUP.md) | Zero-egress stack: Ollama models, `local_only`, a local MCP chat client |
-| [Design decisions](docs/DECISIONS.md) | Why the tool is built the way it is |
+| [What is journal?](https://journal.eamann.com/what-is-journal.html) | Local-first design, synthesis options, the one-binary model |
+| [Installation](https://journal.eamann.com/installation.html) | Homebrew, install script, Linux packages, build from source |
+| [Your First Day](https://journal.eamann.com/first-day.html) | Init, capture, index, search — the 5-minute intro |
+
+**Using Journal**
+
+| Guide | Contents |
+| --- | --- |
+| [Capturing Notes](https://journal.eamann.com/capturing-notes.html) | Capture conventions, the watcher, auto-commit, note format |
+| [Tracking Todos](https://journal.eamann.com/todos.html) | `@todo` / `@done`, listing, checking off |
+| [Searching Your Journal](https://journal.eamann.com/searching.html) | Semantic search, filters, grounded AI answers |
+| [AI Synthesis](https://journal.eamann.com/synthesis.html) | `journal synth`, choosing a provider, writing in your voice |
+| [Meetings & Transcripts](https://journal.eamann.com/meetings.html) | Quill sync, `journal transcribe`, searching meetings |
+
+**Configuration**
+
+| Guide | Contents |
+| --- | --- |
+| [Configuration Reference](https://journal.eamann.com/configuration.html) | Every `config.yaml` key, defaults, and secrets |
+| [Going Fully Local](https://journal.eamann.com/local-only.html) | Zero-egress stack: `local_only`, Ollama synthesis, local MCP clients |
+| [Backup & Sync](https://journal.eamann.com/sync.html) | `journal sync`: enabling, conflict modes, cron/launchd/systemd |
+
+**Integrations**
+
+| Guide | Contents |
+| --- | --- |
+| [Claude Code](https://journal.eamann.com/integrations/claude-code.html) | MCP server setup for Claude Code |
+| [Claude Desktop](https://journal.eamann.com/integrations/claude-desktop.html) | MCP server setup for Claude Desktop |
+| [Local MCP Clients](https://journal.eamann.com/integrations/local-clients.html) | Jan, LM Studio, and other local chat clients |
+
+**Contributor / internal reference** (repo-relative, not end-user docs):
+[`docs/DECISIONS.md`](docs/DECISIONS.md) — ADRs and design rationale ·
+[`docs/LEARNINGS.md`](docs/LEARNINGS.md) — agent failure modes and lessons learned
 
 ---
 
@@ -203,10 +226,11 @@ make lint     # gofmt check + go vet (+ golangci-lint if installed)
 make snapshot # build the full release artifact set locally (no publish)
 ```
 
-CI runs build, `gofmt`, `go vet`, race-enabled tests, and `golangci-lint` on every
-push and PR. Tests never touch the network — the Ollama and Anthropic clients sit
-behind interfaces with deterministic fakes, and integration tests use a temp-file
-`sqlite-vec` database.
+CI runs build, `gofmt`, `go vet`, tests (serial, `-p 1` — see [`docs/DECISIONS.md`](docs/DECISIONS.md)
+for why), race-enabled tests on `internal/embed` only (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)),
+and `golangci-lint` on every push and PR. Tests never touch the network — the Ollama and
+Anthropic clients sit behind interfaces with deterministic fakes, and integration tests use
+a temp-file `sqlite-vec` database.
 
 ---
 
