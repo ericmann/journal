@@ -182,6 +182,15 @@ journal edit               # open today's daily file in your editor (created if 
 journal edit 2026-06-08    # touch up a past day; auto-commits when you close
 ```
 
+`journal today` aggregates **all note chunks captured today** across every
+location — the catch-all daily file (`daily/YYYY/MM/YYYY-MM-DD.md`),
+per-project notes (`projects/<slug>/notes/YYYY-MM-DD.md`), and any other
+note indexed for the day. Project note sections are labelled with their
+source path so you can tell them apart. Meeting transcripts continue to
+appear under the **Today's meetings** section rather than Notes. The
+`journal://today` MCP resource still corresponds to the literal daily file;
+the aggregated view is the `today` MCP *tool*.
+
 ## Stats
 
 `journal stats` reports capture volume (chunks by source, projects, meetings),

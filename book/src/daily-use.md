@@ -12,7 +12,7 @@ Start the day by checking what's on your plate:
 journal today
 ```
 
-This shows today's notes (empty at the start of the day), your open todos, and any meetings that were indexed overnight. It's a quick 10-second pulse check.
+This shows today's notes (empty at the start of the day), your open todos, and any meetings that were indexed overnight. It's a quick 10-second pulse check. The notes section aggregates **everything captured today** — the daily note, any per-project notes (`journal capture --project foo …`), and more — so you see the full picture regardless of where each note landed.
 
 If you run the index watcher, it's already running in the background from yesterday. If not, kick it off now:
 
