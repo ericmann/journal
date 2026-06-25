@@ -151,6 +151,70 @@ func TestGatherTodayDecisionsJSONShape(t *testing.T) {
 	}
 }
 
+// TestGatherTodayAggregatesAllSources verifies that gatherToday pulls note
+// chunks from both the daily file and a project note, and that transcript
+// chunks remain in Meetings only (not duplicated in Notes).
+func TestGatherTodayAggregatesAllSources(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	dailyRel := "daily/" + time.Now().Format("2006/01") + "/" + today + ".md"
+	projRel := "projects/myproject/notes/" + today + ".md"
+	transcriptRel := "transcripts/today-meeting.md"
+
+	cfg, _ := indexedRepo(t, map[string]string{
+		dailyRel:      "# " + today + "\n\n## 09:00\ndaily note entry\n",
+		projRel:       "# " + today + "\n\n## 10:00\nproject note entry\n",
+		transcriptRel: "# Today Meeting\n\n## Notes\nmeeting discussion here\n",
+	})
+
+	rep, notesMD, err := gatherToday(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !rep.Notes {
+		t.Error("rep.Notes should be true when daily and project notes are indexed")
+	}
+	if !strings.Contains(notesMD, "daily note entry") {
+		t.Errorf("notesMD missing daily note content:\n%s", notesMD)
+	}
+	if !strings.Contains(notesMD, "project note entry") {
+		t.Errorf("notesMD missing project note content:\n%s", notesMD)
+	}
+	if strings.Contains(notesMD, "meeting discussion here") {
+		t.Errorf("notesMD must not include transcript content:\n%s", notesMD)
+	}
+	// Transcript must appear under Meetings, not Notes.
+	if len(rep.Meetings) == 0 {
+		t.Error("transcript should appear in rep.Meetings")
+	}
+	// Project source should be labelled in the rendered output.
+	if !strings.Contains(notesMD, projRel) {
+		t.Errorf("notesMD should attribute project note source %q:\n%s", projRel, notesMD)
+	}
+}
+
+// TestGatherTodayProjectOnlyNotEmpty verifies that a day with only a project
+// note (no daily file on disk) is not reported as empty.
+func TestGatherTodayProjectOnlyNotEmpty(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	projRel := "projects/myproject/notes/" + today + ".md"
+
+	cfg, _ := indexedRepo(t, map[string]string{
+		projRel: "# " + today + "\n\n## 09:00\nproject-only entry\n",
+	})
+
+	rep, notesMD, err := gatherToday(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Notes {
+		t.Error("day with only a project note should not be reported empty")
+	}
+	if !strings.Contains(notesMD, "project-only entry") {
+		t.Errorf("notesMD missing project note content:\n%s", notesMD)
+	}
+}
+
 func TestEditCreatesDailyAndInvokesEditor(t *testing.T) {
 	cfg := testRepo(t, nil)
 

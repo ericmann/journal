@@ -55,7 +55,7 @@ var todayJSON bool
 type todayReport struct {
 	Date      string    `json:"date"`
 	Path      string    `json:"path"`
-	Notes     bool      `json:"notes"` // whether the daily file exists
+	Notes     bool      `json:"notes"` // whether any note chunks exist for the day
 	Todos     []Result  `json:"todos"`
 	Decisions []Result  `json:"decisions"`
 	Meetings  []Meeting `json:"meetings"`
@@ -85,19 +85,25 @@ var todayCmd = &cobra.Command{
 	},
 }
 
-// gatherToday collects the dashboard data: today's daily file (raw markdown),
-// open todos (top 10), and today's meetings.
+// gatherToday collects the dashboard data: today's notes from all sources
+// (daily file + project notes), open todos (top 10), and today's meetings.
 func gatherToday(ctx context.Context, cfg *config.Config) (todayReport, string, error) {
 	t := now()
 	abs := note.DailyPath(cfg.Root(), t)
 	rel, _ := filepath.Rel(cfg.Root(), abs)
 	rep := todayReport{Date: t.Format("2006-01-02"), Path: filepath.ToSlash(rel)}
 
-	var notesMD string
-	if data, err := os.ReadFile(abs); err == nil {
-		rep.Notes = true
-		notesMD = string(data)
+	// midnight is the shared day-boundary for notes and meetings.
+	midnight := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+
+	// Query the store for all note chunks from today across every path
+	// (daily, project notes). Transcripts are excluded by the Source filter;
+	// they continue to appear under Meetings via recentMeetings.
+	notesMD, err := gatherNoteMD(ctx, cfg, rep.Date, midnight)
+	if err != nil {
+		return rep, "", err
 	}
+	rep.Notes = notesMD != ""
 
 	todos, err := listTodos(ctx, cfg, []string{note.MarkerTodo}, "", "")
 	if err != nil {
@@ -117,13 +123,76 @@ func gatherToday(ctx context.Context, cfg *config.Config) (todayReport, string, 
 	}
 	rep.Decisions = decisions
 
-	midnight := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 	meetings, err := recentMeetings(ctx, cfg, midnight, 20)
 	if err != nil {
 		return rep, "", err
 	}
 	rep.Meetings = meetings
 	return rep, notesMD, nil
+}
+
+// gatherNoteMD queries the store for note chunks captured on the given day
+// (midnight as the lower bound) and returns aggregated Markdown for the
+// today dashboard. Returns ("", nil) when the store has no note chunks for
+// the day.
+func gatherNoteMD(ctx context.Context, cfg *config.Config, date string, midnight time.Time) (string, error) {
+	s, err := store.Open(cfg.StoreAbsPath(), cfg.EmbedDim)
+	if err != nil {
+		return "", err
+	}
+	defer s.Close()
+
+	chunks, err := s.Recent(ctx, store.Filter{Source: store.SourceNote, Since: midnight}, 0)
+	if err != nil {
+		return "", err
+	}
+	if len(chunks) == 0 {
+		return "", nil
+	}
+	return buildNotesMD(date, chunks), nil
+}
+
+// buildNotesMD assembles today's note chunks into one Markdown document.
+// The date H1 is always first. Chunks from the daily file appear without
+// extra attribution; chunks from project notes are introduced with their
+// source path so readers can tell them apart.
+func buildNotesMD(date string, chunks []store.Chunk) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s\n\n", date)
+
+	// Group by path, preserving order (s.Recent returns newest-first; we keep
+	// that order within each group).
+	var paths []string
+	byPath := map[string][]store.Chunk{}
+	for _, c := range chunks {
+		if _, seen := byPath[c.Path]; !seen {
+			paths = append(paths, c.Path)
+		}
+		byPath[c.Path] = append(byPath[c.Path], c)
+	}
+
+	// Render daily-file paths first, then project and other paths.
+	first := true
+	for _, pass := range []bool{true, false} {
+		for _, p := range paths {
+			isDaily := strings.HasPrefix(p, "daily/")
+			if isDaily != pass {
+				continue
+			}
+			if !first {
+				b.WriteString("\n---\n\n")
+				if !isDaily {
+					fmt.Fprintf(&b, "_`%s`_\n\n", p)
+				}
+			}
+			first = false
+			for _, c := range byPath[p] {
+				fmt.Fprintf(&b, "## %s\n%s\n\n", c.Heading, strings.TrimRight(c.Body, "\n"))
+			}
+		}
+	}
+
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // composeToday assembles the dashboard as one markdown doc so glamour styles it
