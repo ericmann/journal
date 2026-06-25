@@ -30,10 +30,22 @@ carry their AI notes.
 WhisperX decodes audio with it. `brew install ffmpeg` (macOS) / your package
 manager elsewhere.
 
+> **Harmless `torchcodec`/`libtorchcodec` warning on ffmpeg 8.** pyannote 4.x
+> imports `torchcodec`, which only links against ffmpeg **4–7**; with Homebrew's
+> current **ffmpeg 8** (libavutil 60) you'll see a multi-line
+> `torchcodec is not installed correctly … built-in audio decoding will fail`
+> warning at startup. **It's noise, not a blocker** — WhisperX decodes audio via
+> its own ffmpeg subprocess, so transcription *and* diarization both run fine.
+> Ignore it. (If you really want it gone: `brew install ffmpeg@7` and run with
+> `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/opt/ffmpeg@7/lib` — but you don't need
+> to.)
+
 ### 2. A Python venv with WhisperX
 
-Use a **fresh virtualenv on Python 3.11** — 3.12+ has broken some of WhisperX's
-dependencies, and a clean env avoids conflicts with system packages:
+Use a **fresh virtualenv on Python 3.11** (3.10–3.13 also work; **3.14 has no
+compatible WhisperX yet** — pip falls back to an ancient release that pins a
+long-gone `ctranslate2` and the install dead-ends). A clean env also avoids
+conflicts with system packages:
 
 ```sh
 python3.11 -m venv ~/.venvs/whisperx && source ~/.venvs/whisperx/bin/activate
@@ -56,15 +68,23 @@ export HF_TOKEN=hf_...        # add to your shell profile, or use `huggingface-c
 
 `scripts/transcribe.py` reads `HF_TOKEN` from the environment and never prints it.
 
-### 4. Accept the gated diarization models (one-time)
+### 4. Accept the gated diarization model (one-time)
 
-This is the step that silently fails if skipped — pyannote's models are
-**gated**. While logged into Hugging Face, click "Agree" on **both**:
+This is the step that silently fails if skipped — pyannote's model is **gated**.
+While logged into Hugging Face, click "Agree" on:
 
-- <https://huggingface.co/pyannote/segmentation-3.0>
-- <https://huggingface.co/pyannote/speaker-diarization-3.1>
+- <https://huggingface.co/pyannote/speaker-diarization-community-1>
 
-Without accepting these, diarization 401s/403s even with a valid token.
+That single repo is all current WhisperX (3.8.x / pyannote.audio 4.x) needs: the
+`speaker-diarization-community-1` pipeline is self-contained — it bundles its own
+segmentation and embedding models, so there's nothing else to accept. Without
+accepting it, diarization 401s/403s even with a valid token.
+
+> **If you're on an older WhisperX (3.x / pyannote 3.x)** the diarizer was
+> `pyannote/speaker-diarization-3.1`, which *also* required accepting
+> `pyannote/segmentation-3.0`. A fresh `pip install -r scripts/requirements.txt`
+> today gives you 3.8.x, so you only need the one repo above. The voice-activity
+> step is **never** gated — WhisperX ships those weights inside the package.
 
 ---
 
@@ -112,8 +132,17 @@ summary with your `synth_provider`, and indexes it — immediately searchable.
 
 ## Troubleshooting
 
-- **`401`/`403` or "could not download pyannote model"** — you skipped step 4
-  (accept both gated models) or `HF_TOKEN` is unset/invalid.
+- **`401`/`403`, "gated repo", or "could not download pyannote model"** — you
+  skipped step 4 (accept `pyannote/speaker-diarization-community-1`) or `HF_TOKEN`
+  is unset/invalid. This surfaces **after** transcription, when diarization
+  starts — a successful transcript followed by a gated-repo error is this, not a
+  transcription failure.
+- **`torchcodec`/`libtorchcodec … built-in audio decoding will fail`** — harmless
+  with ffmpeg 8; ignore it (see [§1 ffmpeg](#1-ffmpeg)). It is *not* why a run
+  fails — look for the gated-repo error above instead.
+- **`No matching distribution … ctranslate2` / "could not find a version"** — your
+  Python is too new (3.14+). WhisperX caps at `<3.14`, so pip falls back to a
+  prehistoric release with dead pins. Use a 3.11 (or 3.10–3.13) venv.
 - **pip dependency conflicts** — start from a clean Python 3.11 venv; don't
   install into a system or shared env. Once a working set resolves, `pip freeze >
   scripts/requirements.lock.txt` so it's reproducible.

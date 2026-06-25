@@ -1,10 +1,11 @@
 # Dependencies for scripts/transcribe.py (the audio/video -> WhisperX JSON step).
 # journal itself needs NONE of this — only this optional transcription helper does.
 #
-# Use a FRESH virtualenv on Python 3.11 (3.12+ has broken some of WhisperX's deps
-# historically). The transitive stack (torch, faster-whisper/ctranslate2, pyannote)
-# is heavy and version-sensitive — see docs/TRANSCRIBE.md troubleshooting if pip
-# resolves a conflicting set.
+# Use a FRESH virtualenv on Python 3.11 (3.10–3.13 work). Do NOT use 3.14+ — current
+# WhisperX caps at <3.14, so pip silently falls back to an ancient release that pins a
+# long-gone ctranslate2 and the install dead-ends. The transitive stack (torch,
+# faster-whisper/ctranslate2, pyannote) is heavy and version-sensitive — see
+# docs/TRANSCRIBE.md troubleshooting if pip resolves a conflicting set.
 #
 #   python3.11 -m venv .venv && source .venv/bin/activate
 #   pip install -r scripts/requirements.txt
