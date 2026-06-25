@@ -51,9 +51,8 @@ def main() -> None:
         die(
             "diarization needs a Hugging Face token, but HF_TOKEN is not set.\n"
             "  1. create a read token: https://huggingface.co/settings/tokens\n"
-            "  2. accept the gated models (one-time, while logged in):\n"
-            "       https://huggingface.co/pyannote/segmentation-3.0\n"
-            "       https://huggingface.co/pyannote/speaker-diarization-3.1\n"
+            "  2. accept the gated model (one-time, while logged in):\n"
+            "       https://huggingface.co/pyannote/speaker-diarization-community-1\n"
             "  3. export HF_TOKEN=hf_...   (then re-run; or pass --no-diarize to skip speakers)"
         )
 
