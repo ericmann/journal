@@ -3,11 +3,13 @@ package embed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestParseScore covers score extraction from model responses: plain integers,
@@ -164,17 +166,18 @@ func TestIsTransientEmbedFailure(t *testing.T) {
 	}
 }
 
-// TestEmbed_TransientRetry verifies that a 400 with an EOF-style body is
-// retried and that Embed ultimately succeeds when a later attempt returns 200.
+// TestEmbed_TransientRetry verifies that 400 EOF-crash bodies are retried and
+// that Embed ultimately succeeds once the server recovers. Uses a shrunk
+// transientBudget so the test completes in well under a second.
 func TestEmbed_TransientRetry(t *testing.T) {
+	const failTimes = 2 // fail twice, succeed on the third call
 	callCount := 0
 	okBody, _ := json.Marshal(embedResponse{
 		Embeddings: [][]float32{{0.1, 0.2, 0.3}},
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		if callCount == 1 {
-			// First call: simulate transient embed-server crash.
+		if callCount <= failTimes {
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"error":"do embedding request: Post \"http://127.0.0.1:12345/v1/embeddings\": EOF"}`))
 			return
@@ -185,14 +188,14 @@ func TestEmbed_TransientRetry(t *testing.T) {
 	defer srv.Close()
 
 	o := NewOllama(srv.URL, "test-model", "").WithHTTPClient(srv.Client())
-	o.maxRetries = 3
+	o.transientBudget = 2 * time.Second // shrunk: enough for failTimes retries, fast to run
 
 	vecs, err := o.Embed(context.Background(), []string{"hello"}, "")
 	if err != nil {
 		t.Fatalf("Embed returned error after transient failure: %v", err)
 	}
-	if callCount < 2 {
-		t.Errorf("expected at least 2 calls (1 failure + 1 success), got %d", callCount)
+	if callCount < failTimes+1 {
+		t.Errorf("expected at least %d calls (%d failures + 1 success), got %d", failTimes+1, failTimes, callCount)
 	}
 	if len(vecs) != 1 {
 		t.Fatalf("expected 1 embedding, got %d", len(vecs))
@@ -225,8 +228,8 @@ func TestEmbed_NonTransientNotRetried(t *testing.T) {
 	}
 }
 
-// TestEmbed_ExhaustedRetries verifies that when all retries are consumed the
-// error still surfaces clearly.
+// TestEmbed_ExhaustedRetries verifies that when the transient budget is exhausted
+// the error surfaces clearly and at least one retry was attempted.
 func TestEmbed_ExhaustedRetries(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -237,16 +240,75 @@ func TestEmbed_ExhaustedRetries(t *testing.T) {
 	defer srv.Close()
 
 	o := NewOllama(srv.URL, "test-model", "").WithHTTPClient(srv.Client())
-	o.maxRetries = 2
+	o.transientBudget = 300 * time.Millisecond // shrunk budget: fast, still exercises retry loop
 
 	_, err := o.Embed(context.Background(), []string{"hello"}, "")
 	if err == nil {
-		t.Fatal("expected error after exhausted retries, got nil")
+		t.Fatal("expected error after exhausted budget, got nil")
 	}
 	if !strings.Contains(err.Error(), "retries") {
 		t.Errorf("expected 'retries' in error message, got: %v", err)
 	}
-	if callCount != 3 { // initial attempt + 2 retries
-		t.Errorf("expected 3 calls (1 + maxRetries), got %d", callCount)
+	if callCount < 2 {
+		t.Errorf("expected at least 2 calls (initial + at least 1 retry), got %d", callCount)
+	}
+}
+
+// TestEmbed_ContextCancelMidBackoff verifies that context cancellation during
+// a backoff sleep is honoured promptly and returns context.Canceled.
+func TestEmbed_ContextCancelMidBackoff(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"do embedding request: EOF"}`))
+	}))
+	defer srv.Close()
+
+	o := NewOllama(srv.URL, "test-model", "").WithHTTPClient(srv.Client())
+	o.transientBudget = 30 * time.Second // long budget; context is the limiting factor
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	_, err := o.Embed(ctx, []string{"hello"}, "")
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+	if elapsed >= 500*time.Millisecond {
+		t.Errorf("context cancel took too long: %v (want < 500ms)", elapsed)
+	}
+}
+
+// TestEmbed_RetryWindowDuration asserts that transient embed failures are
+// retried across a meaningful portion of transientBudget — not instantly. This
+// catches regressions that remove backoff or shrink the budget silently.
+func TestEmbed_RetryWindowDuration(t *testing.T) {
+	const budget = 300 * time.Millisecond
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"do embedding request: EOF"}`))
+	}))
+	defer srv.Close()
+
+	o := NewOllama(srv.URL, "test-model", "").WithHTTPClient(srv.Client())
+	o.transientBudget = budget
+
+	start := time.Now()
+	_, err := o.Embed(context.Background(), []string{"hello"}, "")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	// At least 75% of the budget should have elapsed (backoff + timing slack).
+	minElapsed := budget * 3 / 4
+	if elapsed < minElapsed {
+		t.Errorf("retry loop exited too early: elapsed %v, want >= %v (budget=%v) — backoff may be missing", elapsed, minElapsed, budget)
 	}
 }

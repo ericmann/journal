@@ -5,6 +5,19 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **Embed retry now rides through transient Ollama runner restarts.** The retry
+  window for transient embed-runner crashes (400 with `EOF` / `do embedding
+  request` body — a known llama.cpp/Metal SIGTRAP flake on Apple Silicon) has
+  been extended from ~1.4 s to a 45 s wall-clock budget, sized to outlast a
+  model reload. Backoff is exponential (n²×100 ms), capped per-sleep at 5 s,
+  and jittered ±25%. Transport-level dial failures (`ErrUnreachable`) still fail
+  fast via `maxRetries`; non-retryable 4xx (model not found, bad dimensions)
+  still fail immediately.
+
 ## [2.7.0] — 2026-06-19
 
 This release rounds out the **MCP surface** (the agent-facing side of journal),

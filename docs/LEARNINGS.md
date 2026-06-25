@@ -12,6 +12,22 @@ automatically and can't silently regress; prefer that over prose where possible.
 
 ---
 
+## Transient SIGTRAP runner crashes are a known Ollama/Metal flake — size retries to a model reload
+
+**Symptom:** `journal index` (or `transcribe`) aborts with "after 3 retries: ollama /api/embed:
+status 400: EOF" on Apple Silicon, even though re-running immediately succeeds.
+
+**Root cause:** The embedding runner (`llama-server`) is killed by `signal: trace/BPT trap`
+(SIGTRAP) — a known transient llama.cpp/Metal crash, not OOM and not a journal bug. Ollama
+auto-restarts the runner, but the restart + model reload takes seconds to tens of seconds. The
+original 3-attempt / ~1.4 s retry window exhausts before the reload completes.
+
+**Guardrail:** `internal/embed` retries transient embed-runner crashes (400 with `EOF` /
+`do embedding request` body) across a 45 s wall-clock budget (`transientBudget` field), with
+capped exponential backoff (n²×100 ms, cap 5 s, ±25% jitter). Transport dial failures
+(`ErrUnreachable`) and non-retryable 4xx still fail fast. Tests use a shrunk budget so
+`TestEmbed_RetryWindowDuration` and `TestEmbed_ExhaustedRetries` remain quick.
+
 ## Feature PRs ship code + tests but skip the doc surface — name every doc target in "done"
 
 **Symptom:** The optional **reranker** landed (`#21` added support; `#36` improved quality and
