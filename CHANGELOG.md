@@ -7,6 +7,18 @@ versioning. Build-time design rationale lives in
 
 ## [Unreleased]
 
+### Added
+
+- **`journal dismiss` — bulk-dismiss open todos in one commit.** A new `dismiss`
+  subcommand selects all open `@todo`s matching a `--project` filter, an
+  `--before`/`--older-than` age window, or both, and rewrites each to `@done
+  YYYY-MM-DD` (same rewrite as `journal done`). Requires explicit confirmation
+  (`--yes` or an interactive `y` prompt). All file edits and re-indexing land in a
+  **single** auto-commit whose message records the filter used (e.g. `dismissed 5
+  todo(s) (project=acme, before=4w)`). The optional `--resolution` flag appends a
+  `Resolution:` line to each dismissed block. Single `journal done` behavior is
+  unchanged.
+
 ### Fixed
 
 - **`journal today` now aggregates all of a day's notes, not just the daily file.**

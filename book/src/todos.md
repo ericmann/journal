@@ -60,6 +60,26 @@ journal todos --project acme-launch      # todos in a specific project
 journal todos --since 1w                 # open items from the last week
 ```
 
+## Bulk dismissal
+
+When todos pile up and become irrelevant all at once — a project wraps up, a planning doc is superseded — `journal dismiss` clears them in a single command and a single git commit:
+
+```sh
+# Dismiss all open todos in a project:
+journal dismiss --project acme
+
+# Dismiss todos older than 4 weeks:
+journal dismiss --before 4w
+
+# Combine filters, skip the prompt:
+journal dismiss --project janus --before 2w --yes
+
+# Attach a resolution note to each dismissed todo:
+journal dismiss --project acme --resolution "superseded by new plan" --yes
+```
+
+`dismiss` shows you the matched set before changing anything and asks for confirmation (answer `y`, or pass `--yes` to skip the prompt). Each `@todo` is rewritten to `@done YYYY-MM-DD` — exactly what `journal done` does — and all the rewrites land in **one** git commit. At least one filter is required.
+
 ## Todos via Claude
 
 If you use journal with Claude Desktop or Claude Code, Claude can check off todos for you. The `todos` and `done` tools are exposed through the MCP server, so you can ask:

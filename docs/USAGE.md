@@ -71,6 +71,7 @@ journal decisions [--project slug] [--since 4w] [--json]
 journal threads [--stale] [--days 14] [--json]
 journal todos   [--done|--all] [--project slug] [--since 2w] [--json]
 journal done    <path:line | text fragment>       # complete an open @todo
+journal dismiss [--project slug] [--before 4w] [--yes] [--resolution text]  # bulk dismiss
 journal today   [--json]                          # day at a glance (notes + todos + meetings)
 journal show    [date|path]                       # render a day's notes or any note file
 journal edit    [date]                            # open a daily file in your editor
@@ -149,6 +150,37 @@ Completing a todo rewrites that one `@todo` token to `@done YYYY-MM-DD` in the
 note file (the content is otherwise untouched — it's the markdown equivalent of
 checking a checkbox), re-indexes, and auto-commits. The same `todos`/`done`
 operations are exposed as MCP tools, so a connected Claude can check items off.
+
+### Bulk dismissal
+
+When a batch of todos becomes irrelevant at once (a project wraps up, a planning
+doc is superseded, older items pile up), `journal dismiss` clears them all in a
+single command and a single git commit:
+
+```sh
+# Dismiss all open todos in a project (prompts for confirmation):
+journal dismiss --project acme
+
+# Dismiss todos older than 4 weeks (interactive confirm):
+journal dismiss --before 4w
+
+# Combine filters; skip prompt with --yes:
+journal dismiss --project janus --before 2w --yes
+
+# Attach a resolution note to every dismissed todo:
+journal dismiss --project acme --resolution "superseded by new plan" --yes
+
+# --older-than is an alias for --before:
+journal dismiss --older-than 4w --yes
+```
+
+`dismiss` shows the matched set before mutating anything and requires explicit
+confirmation (type `y` at the prompt, or pass `--yes`). Each `@todo` is rewritten
+to `@done YYYY-MM-DD` exactly as `journal done` does. Re-indexing is non-fatal —
+the notes are always safe on disk. All rewrites land in **one** git commit whose
+message records the filter used (e.g. `dismissed 5 todo(s) (project=acme)`).
+
+At least one filter (`--project` or `--before`/`--older-than`) is required.
 
 ## Tags
 

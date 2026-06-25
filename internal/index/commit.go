@@ -36,6 +36,24 @@ func DoneCommitMessage(t time.Time) string {
 	return fmt.Sprintf("📓 checked off a todo · %s", t.Format("Mon 2006-01-02 15:04"))
 }
 
+// DismissCommitMessage is the auto-commit message for `journal dismiss`, which
+// bulk-dismisses todos matching project/before filters.
+func DismissCommitMessage(n int, project, before string, t time.Time) string {
+	var filter string
+	switch {
+	case project != "" && before != "":
+		filter = fmt.Sprintf("project=%s, before=%s", project, before)
+	case project != "":
+		filter = fmt.Sprintf("project=%s", project)
+	case before != "":
+		filter = fmt.Sprintf("before=%s", before)
+	}
+	if filter != "" {
+		return fmt.Sprintf("📓 dismissed %d todo(s) (%s) · %s", n, filter, t.Format("Mon 2006-01-02 15:04"))
+	}
+	return fmt.Sprintf("📓 dismissed %d todo(s) · %s", n, t.Format("Mon 2006-01-02 15:04"))
+}
+
 // TagsRenameCommitMessage is the auto-commit message for `journal tags rename`.
 func TagsRenameCommitMessage(old, newTag string, n int, t time.Time) string {
 	return fmt.Sprintf("📓 renamed tag #%s → #%s across %d file(s) · %s", old, newTag, n, t.Format("Mon 2006-01-02 15:04"))
