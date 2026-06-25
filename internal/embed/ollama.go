@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -30,8 +31,13 @@ type Ollama struct {
 	rerankModel string
 	hc          *http.Client
 
-	// maxRetries bounds transient-failure retries (network / 5xx).
+	// maxRetries bounds retries for transport-level and 5xx failures.
 	maxRetries int
+	// transientBudget is the wall-clock window for retrying transient
+	// embed-runner crashes (400 with EOF / "do embedding request" body). Sized
+	// to outlast a model reload — a SIGTRAP'd runner can take 10–30 s to
+	// restart on Apple Silicon. Tests shrink this to keep the suite fast.
+	transientBudget time.Duration
 	// rerankWorkers bounds concurrent rerank generate calls.
 	rerankWorkers int
 }
@@ -39,12 +45,13 @@ type Ollama struct {
 // NewOllama returns a client targeting baseURL (e.g. http://localhost:11434).
 func NewOllama(baseURL, embedModel, rerankModel string) *Ollama {
 	return &Ollama{
-		baseURL:       baseURL,
-		embedModel:    embedModel,
-		rerankModel:   rerankModel,
-		hc:            &http.Client{Timeout: 60 * time.Second},
-		maxRetries:    3,
-		rerankWorkers: 4,
+		baseURL:         baseURL,
+		embedModel:      embedModel,
+		rerankModel:     rerankModel,
+		hc:              &http.Client{Timeout: 60 * time.Second},
+		maxRetries:      3,
+		transientBudget: 45 * time.Second,
+		rerankWorkers:   4,
 	}
 }
 
@@ -263,50 +270,90 @@ func HasModel(tags []string, want string) bool {
 	return false
 }
 
-// postJSON POSTs body to path and decodes the JSON response into out, with
-// bounded retry + backoff on transient errors.
+// postJSON POSTs body to path and decodes the JSON response into out.
+//
+// Retry strategy:
+//   - Transport-level and 5xx failures retry up to maxRetries times.
+//   - Transient embed-runner crashes (400 with EOF / "do embedding request" body)
+//     retry across the full transientBudget window so a model reload has time to
+//     complete. The per-sleep backoff is capped and jittered; context cancellation
+//     aborts the wait promptly.
+//   - Non-retryable 4xx (model not found, bad dimensions) fail immediately.
 func (o *Ollama) postJSON(ctx context.Context, path string, body []byte, out any) error {
+	transientDeadline := time.Now().Add(o.transientBudget)
 	var lastErr error
-	for attempt := 0; attempt <= o.maxRetries; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(backoff(attempt)):
-			}
-		}
+	retries := 0
+
+	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.baseURL+path, bytes.NewReader(body))
 		if err != nil {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
+
 		resp, err := o.hc.Do(req)
 		if err != nil {
-			// Transport-level failure (connection refused, no such host, timeout):
-			// treat as unreachable so callers can surface an install/start hint.
+			// Transport-level failure (connection refused, no such host, timeout).
 			lastErr = fmt.Errorf("%w at %s: %v", ErrUnreachable, o.baseURL, err)
-			continue // transient: retry
+			if retries >= o.maxRetries {
+				break
+			}
+			retries++
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(cappedBackoff(retries)):
+			}
+			continue
 		}
+
 		data, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
+
 		if resp.StatusCode >= 500 {
 			lastErr = fmt.Errorf("ollama %s: status %d: %s", path, resp.StatusCode, truncate(string(data), 200))
-			continue // server-side transient: retry
+			if retries >= o.maxRetries {
+				break
+			}
+			retries++
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(cappedBackoff(retries)):
+			}
+			continue
 		}
+
 		if resp.StatusCode != http.StatusOK {
 			bodyStr := string(data)
 			if isTransientEmbedFailure(resp.StatusCode, bodyStr) {
 				lastErr = fmt.Errorf("ollama %s: status %d: %s", path, resp.StatusCode, truncate(bodyStr, 200))
-				continue // transient embed-server crash: retry
+				remaining := time.Until(transientDeadline)
+				if remaining <= 0 {
+					break
+				}
+				retries++
+				sleep := cappedBackoff(retries)
+				if sleep > remaining {
+					sleep = remaining
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(sleep):
+				}
+				continue
 			}
 			return fmt.Errorf("ollama %s: status %d: %s", path, resp.StatusCode, truncate(bodyStr, 200))
 		}
+
 		if readErr != nil {
 			return readErr
 		}
 		return json.Unmarshal(data, out)
 	}
-	return fmt.Errorf("after %d retries: %w", o.maxRetries, lastErr)
+
+	return fmt.Errorf("after %d retries: %w", retries, lastErr)
 }
 
 // isTransientEmbedFailure reports whether a non-200 response is a transient
@@ -323,8 +370,19 @@ func isTransientEmbedFailure(status int, body string) bool {
 		strings.Contains(body, "do embedding request")
 }
 
-func backoff(attempt int) time.Duration {
-	return time.Duration(attempt*attempt) * 100 * time.Millisecond
+// cappedBackoff returns the sleep duration before retry n (1-indexed).
+// It is n²×100ms, capped at 5s, with ±25% jitter so repeated chunks do not
+// resync onto the same cadence. math/rand global funcs are goroutine-safe in Go 1.20+.
+func cappedBackoff(n int) time.Duration {
+	const maxBackoff = 5 * time.Second
+	d := time.Duration(n*n) * 100 * time.Millisecond
+	if d > maxBackoff || d < 0 { // d < 0 catches int overflow on large n
+		d = maxBackoff
+	}
+	// ±25% jitter: rand in [0, d/2], subtract d/4 → [-d/4, +d/4]
+	quarter := int64(d) / 4
+	jitter := time.Duration(rand.Int63n(quarter+1)*2) - time.Duration(quarter)
+	return d + jitter
 }
 
 func truncate(s string, n int) string {
