@@ -21,6 +21,16 @@ versioning. Build-time design rationale lives in
 
 ### Fixed
 
+- **`journal today` now aggregates all of a day's notes, not just the daily file.**
+  The Notes section previously read only `daily/YYYY/MM/YYYY-MM-DD.md`, so a day
+  with notes captured via `--project` (or any project note) was reported empty.
+  It now queries the index for all note chunks with `source=note` and
+  `created_at >= midnight`, grouping project note sections with a source label.
+  Meeting transcripts are excluded from Notes and continue to appear under
+  Today's meetings. The MCP `today` tool inherits the fix (it routes through
+  `gatherToday`). The `journal://today` MCP resource is unchanged — it remains
+  the literal daily file; the aggregated view is the `today` *tool*.
+
 - **Embed retry now rides through transient Ollama runner restarts.** The retry
   window for transient embed-runner crashes (400 with `EOF` / `do embedding
   request` body — a known llama.cpp/Metal SIGTRAP flake on Apple Silicon) has
