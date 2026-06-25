@@ -97,44 +97,12 @@ func completeTodo(ctx context.Context, cfg *config.Config, e embed.Embedder, ref
 		return Result{}, fmt.Errorf("reading %s: %w", target.Path, err)
 	}
 	lines := strings.Split(string(data), "\n")
-	start, end := target.LineStart-1, target.LineEnd // 1-based inclusive -> slice range
-	if start < 0 {
-		start = 0
-	}
-	if end > len(lines) {
-		end = len(lines)
-	}
-	replaced := false
 	stamp := now().Format("2006-01-02")
-	for i := start; i < end; i++ {
-		if loc := todoTokenRe.FindStringSubmatchIndex(lines[i]); loc != nil {
-			// loc[2]:loc[3] is the boundary prefix (group 1); the token follows it.
-			tokenStart := loc[3]
-			lines[i] = lines[i][:tokenStart] + "@done " + stamp + lines[i][tokenStart+len("@todo"):]
-			replaced = true
-			break
-		}
-	}
+	var replaced bool
+	lines, replaced = applyDone(lines, target, stamp, resolution)
 	if !replaced {
 		return Result{}, fmt.Errorf("%s no longer contains @todo at lines %d-%d — the index is stale; run `journal index` and retry",
 			target.Path, target.LineStart, target.LineEnd)
-	}
-
-	// Optionally append a resolution note as the last line of the block.
-	if resolution = strings.TrimSpace(resolution); resolution != "" {
-		lastNonEmpty := start
-		for i := end - 1; i >= start; i-- {
-			if strings.TrimSpace(lines[i]) != "" {
-				lastNonEmpty = i
-				break
-			}
-		}
-		resLine := "Resolution: " + resolution
-		newLines := make([]string, 0, len(lines)+1)
-		newLines = append(newLines, lines[:lastNonEmpty+1]...)
-		newLines = append(newLines, resLine)
-		newLines = append(newLines, lines[lastNonEmpty+1:]...)
-		lines = newLines
 	}
 
 	newContent := strings.Join(lines, "\n")
@@ -158,6 +126,49 @@ func completeTodo(ctx context.Context, cfg *config.Config, e embed.Embedder, ref
 		}
 	}
 	return chunkToResult(target, 0), nil
+}
+
+// applyDone rewrites the first @todo token inside chunk's line range to
+// "@done stamp" and optionally appends a Resolution line. It returns the
+// updated lines and whether a replacement was made. When rewriting multiple
+// chunks in one file, process them bottom-up (highest LineStart first) so
+// resolution insertions don't shift the indices of chunks above.
+func applyDone(lines []string, chunk store.Chunk, stamp, resolution string) ([]string, bool) {
+	start, end := chunk.LineStart-1, chunk.LineEnd
+	if start < 0 {
+		start = 0
+	}
+	if end > len(lines) {
+		end = len(lines)
+	}
+	replaced := false
+	for i := start; i < end; i++ {
+		if loc := todoTokenRe.FindStringSubmatchIndex(lines[i]); loc != nil {
+			tokenStart := loc[3]
+			lines[i] = lines[i][:tokenStart] + "@done " + stamp + lines[i][tokenStart+len("@todo"):]
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		return lines, false
+	}
+	if resolution = strings.TrimSpace(resolution); resolution != "" {
+		lastNonEmpty := start
+		for i := end - 1; i >= start; i-- {
+			if strings.TrimSpace(lines[i]) != "" {
+				lastNonEmpty = i
+				break
+			}
+		}
+		resLine := "Resolution: " + resolution
+		newLines := make([]string, 0, len(lines)+1)
+		newLines = append(newLines, lines[:lastNonEmpty+1]...)
+		newLines = append(newLines, resLine)
+		newLines = append(newLines, lines[lastNonEmpty+1:]...)
+		return newLines, true
+	}
+	return lines, true
 }
 
 // matchTodo resolves ref against the open todos: a citation (path:line) matches
