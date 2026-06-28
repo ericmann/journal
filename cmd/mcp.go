@@ -51,7 +51,7 @@ type searchInput struct {
 	Tag     []string `json:"tag,omitempty" jsonschema:"only chunks having all of these tags"`
 	Project string   `json:"project,omitempty" jsonschema:"restrict to this project slug"`
 	Since   string   `json:"since,omitempty" jsonschema:"only notes within this window, e.g. 2w, 14d, 36h"`
-	Source  string   `json:"source,omitempty" jsonschema:"restrict to a source: notes | transcript | all (default all)"`
+	Sources []string `json:"sources,omitempty" jsonschema:"restrict to these sources: notes | transcript | meetings (OR logic, default all)"`
 }
 
 type meetingsInput struct {
@@ -416,11 +416,11 @@ func mcpSearch(ctx context.Context, cfg *config.Config, e embed.Embedder, in sea
 	if strings.TrimSpace(in.Query) == "" {
 		return "", fmt.Errorf("query must not be empty")
 	}
-	src, err := parseSourceFilter(in.Source)
+	srcs, err := parseSourceFilter(in.Sources)
 	if err != nil {
 		return "", err
 	}
-	f, err := sinceFilter(store.Filter{Tags: in.Tag, Project: in.Project, Source: src}, in.Since)
+	f, err := sinceFilter(store.Filter{Tags: in.Tag, Project: in.Project, Sources: srcs}, in.Since)
 	if err != nil {
 		return "", err
 	}

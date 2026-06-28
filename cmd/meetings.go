@@ -60,7 +60,7 @@ func recentMeetings(ctx context.Context, cfg *config.Config, since time.Time, li
 	defer s.Close()
 	// Transcript chunks share a per-file timestamp (mtime); Recent yields them
 	// newest-first, so first-seen per path is the file's representative.
-	chunks, err := s.Recent(ctx, store.Filter{Source: store.SourceTranscript, Since: since}, 0)
+	chunks, err := s.Recent(ctx, store.Filter{Sources: []string{store.SourceTranscript}, Since: since}, 0)
 	if err != nil {
 		return nil, err
 	}

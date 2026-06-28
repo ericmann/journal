@@ -112,7 +112,7 @@ func TestIndexTranscriptEmbedsAndReindexIsNoOp(t *testing.T) {
 		t.Fatal("expected transcript chunks to be embedded")
 	}
 	// The stored chunks are tagged source=transcript.
-	tr, err := s.Recent(ctx, store.Filter{Source: store.SourceTranscript}, 0)
+	tr, err := s.Recent(ctx, store.Filter{Sources: []string{store.SourceTranscript}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

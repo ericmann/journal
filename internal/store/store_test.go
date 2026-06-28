@@ -63,14 +63,14 @@ func TestSourceFilterAndDefault(t *testing.T) {
 		t.Errorf("empty source should default to %q, got %q", SourceNote, got.Source)
 	}
 
-	tr, err := s.Recent(ctx, Filter{Source: SourceTranscript}, 0)
+	tr, err := s.Recent(ctx, Filter{Sources: []string{SourceTranscript}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(tr) != 1 || tr[0].ID != "t1" {
 		t.Errorf("source=transcript Recent = %d rows, want just t1", len(tr))
 	}
-	cands, err := s.KNN(ctx, vec(8, 1), 10, Filter{Source: SourceNote})
+	cands, err := s.KNN(ctx, vec(8, 1), 10, Filter{Sources: []string{SourceNote}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +78,15 @@ func TestSourceFilterAndDefault(t *testing.T) {
 		if c.Source != SourceNote {
 			t.Errorf("KNN source filter leaked %q", c.Source)
 		}
+	}
+
+	// Multi-source OR: both note and transcript should be returned.
+	both, err := s.Recent(ctx, Filter{Sources: []string{SourceNote, SourceTranscript}}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(both) != 2 {
+		t.Errorf("multi-source OR Recent = %d rows, want 2", len(both))
 	}
 }
 

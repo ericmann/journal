@@ -20,6 +20,7 @@ type Result struct {
 	Score     float64  `json:"score"`
 	Tags      []string `json:"tags"`
 	Markers   []string `json:"markers"`
+	Source    string   `json:"source"` // "note", "transcript", etc.
 }
 
 // resultsEnvelope is the top-level JSON object: {"results": [...]}.
@@ -40,6 +41,10 @@ func (r Result) Citation() string {
 
 // chunkToResult converts a store chunk + score into a Result.
 func chunkToResult(c store.Chunk, score float64) Result {
+	src := c.Source
+	if src == "" {
+		src = store.SourceNote
+	}
 	return Result{
 		Path:      c.Path,
 		LineStart: c.LineStart,
@@ -49,6 +54,7 @@ func chunkToResult(c store.Chunk, score float64) Result {
 		Score:     score,
 		Tags:      nonNil(c.Tags),
 		Markers:   nonNil(c.Markers),
+		Source:    src,
 	}
 }
 
@@ -98,6 +104,9 @@ func renderResults(out io.Writer, results []Result, jsonMode bool) error {
 		fmt.Fprintf(out, "%s%s", r.Citation(), head)
 		if r.Score > 0 {
 			fmt.Fprintf(out, "  (%.3f)", r.Score)
+		}
+		if r.Source != "" {
+			fmt.Fprintf(out, "  [%s]", r.Source)
 		}
 		fmt.Fprintln(out)
 		if r.Snippet != "" {

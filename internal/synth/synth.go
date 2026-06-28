@@ -153,7 +153,7 @@ func (r *Runner) daily(ctx context.Context, opts Options) (prompt, outPath strin
 
 func (r *Runner) meetings(ctx context.Context, opts Options) (prompt, outPath string, err error) {
 	start := opts.Now.AddDate(0, 0, -opts.Days)
-	chunks, err := r.store.Recent(ctx, store.Filter{Source: store.SourceTranscript, Since: start}, 0)
+	chunks, err := r.store.Recent(ctx, store.Filter{Sources: []string{store.SourceTranscript}, Since: start}, 0)
 	if err != nil {
 		return "", "", err
 	}

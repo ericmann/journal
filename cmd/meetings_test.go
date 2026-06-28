@@ -78,16 +78,32 @@ func TestMeetingsListsTranscripts(t *testing.T) {
 }
 
 func TestSearchSourceFilterParsing(t *testing.T) {
-	cases := map[string]string{
-		"": "", "all": "", "notes": store.SourceNote, "transcript": store.SourceTranscript,
-	}
-	for in, want := range cases {
-		got, err := parseSourceFilter(in)
-		if err != nil || got != want {
-			t.Errorf("parseSourceFilter(%q) = %q, %v; want %q", in, got, err, want)
+	for _, tc := range []struct {
+		in   []string
+		want []string
+	}{
+		{nil, nil},
+		{[]string{"all"}, nil},
+		{[]string{"notes"}, []string{store.SourceNote}},
+		{[]string{"transcript"}, []string{store.SourceTranscript}},
+		{[]string{"meetings"}, []string{store.SourceTranscript}},
+	} {
+		got, err := parseSourceFilter(tc.in)
+		if err != nil {
+			t.Errorf("parseSourceFilter(%v): unexpected error: %v", tc.in, err)
+			continue
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("parseSourceFilter(%v) = %v, want %v", tc.in, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("parseSourceFilter(%v)[%d] = %q, want %q", tc.in, i, got[i], tc.want[i])
+			}
 		}
 	}
-	if _, err := parseSourceFilter("bogus"); err == nil {
+	if _, err := parseSourceFilter([]string{"bogus"}); err == nil {
 		t.Error("expected error for invalid source")
 	}
 }

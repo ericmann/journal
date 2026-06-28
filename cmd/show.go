@@ -142,7 +142,7 @@ func gatherNoteMD(ctx context.Context, cfg *config.Config, date string, midnight
 	}
 	defer s.Close()
 
-	chunks, err := s.Recent(ctx, store.Filter{Source: store.SourceNote, Since: midnight}, 0)
+	chunks, err := s.Recent(ctx, store.Filter{Sources: []string{store.SourceNote}, Since: midnight}, 0)
 	if err != nil {
 		return "", err
 	}
