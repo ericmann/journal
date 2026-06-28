@@ -137,14 +137,14 @@ func TestProcessTranscriptChangesIndexesAsTranscript(t *testing.T) {
 		t.Fatal("expected transcript chunks embedded")
 	}
 	// Stored as source=transcript, not as notes.
-	tr, err := s.Recent(ctx, store.Filter{Source: store.SourceTranscript}, 0)
+	tr, err := s.Recent(ctx, store.Filter{Sources: []string{store.SourceTranscript}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(tr) == 0 || tr[0].Tags[0] != "meeting" {
 		t.Errorf("transcript chunks missing or untagged: %+v", tr)
 	}
-	notes, _ := s.Recent(ctx, store.Filter{Source: store.SourceNote}, 0)
+	notes, _ := s.Recent(ctx, store.Filter{Sources: []string{store.SourceNote}}, 0)
 	if len(notes) != 0 {
 		t.Errorf("transcript should not be stored as notes, got %d", len(notes))
 	}

@@ -137,7 +137,7 @@ func TestSearchJSONSchema(t *testing.T) {
 		t.Fatal("no results in JSON")
 	}
 	r := env.Results[0]
-	for _, key := range []string{"path", "line_start", "line_end", "heading", "snippet", "score", "tags", "markers"} {
+	for _, key := range []string{"path", "line_start", "line_end", "heading", "snippet", "score", "tags", "markers", "source"} {
 		if _, ok := r[key]; !ok {
 			t.Errorf("JSON result missing key %q", key)
 		}
@@ -244,6 +244,84 @@ type failingReranker struct{ *embed.Fake }
 
 func (f *failingReranker) Rerank(context.Context, string, []string) ([]float32, error) {
 	return nil, context.Canceled
+}
+
+func TestSearchSourceFilterNote(t *testing.T) {
+	cfg, fake := indexedRepo(t, map[string]string{
+		"daily/2026/06/d.md": "# 2026-06-01\n\n## 09:00 #cabot\ncabot note content\n",
+	})
+	// Source filter "note" should return the daily note result.
+	results, err := runSearch(context.Background(), cfg, fake, "cabot note", 5, store.Filter{Sources: []string{store.SourceNote}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected results with source=note filter")
+	}
+	for _, r := range results {
+		if r.Source != store.SourceNote {
+			t.Errorf("source filter leaked: got source=%q, want %q", r.Source, store.SourceNote)
+		}
+	}
+}
+
+func TestSearchSourceLabelInResults(t *testing.T) {
+	cfg, fake := indexedRepo(t, map[string]string{
+		"daily/2026/06/d.md": "# 2026-06-01\n\n## 09:00\nsource label test\n",
+	})
+	results, err := runSearch(context.Background(), cfg, fake, "source label test", 5, store.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("no results")
+	}
+	if results[0].Source == "" {
+		t.Error("result.Source is empty, want a non-empty source label")
+	}
+	// Text render must include the source label.
+	var buf bytes.Buffer
+	if err := renderResults(&buf, results, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "["+results[0].Source+"]") {
+		t.Errorf("text render missing source label [%s]: %q", results[0].Source, buf.String())
+	}
+}
+
+func TestParseSourceFilter(t *testing.T) {
+	for _, tc := range []struct {
+		in   []string
+		want []string
+		err  bool
+	}{
+		{nil, nil, false},
+		{[]string{"all"}, nil, false},
+		{[]string{"notes"}, []string{store.SourceNote}, false},
+		{[]string{"note"}, []string{store.SourceNote}, false},
+		{[]string{"transcript"}, []string{store.SourceTranscript}, false},
+		{[]string{"meetings"}, []string{store.SourceTranscript}, false},
+		{[]string{"notes", "transcript"}, []string{store.SourceNote, store.SourceTranscript}, false},
+		{[]string{"notes", "meetings"}, []string{store.SourceNote, store.SourceTranscript}, false},
+		{[]string{"invalid"}, nil, true},
+	} {
+		got, err := parseSourceFilter(tc.in)
+		if tc.err && err == nil {
+			t.Errorf("parseSourceFilter(%v): want error, got nil", tc.in)
+		}
+		if !tc.err && err != nil {
+			t.Errorf("parseSourceFilter(%v): unexpected error: %v", tc.in, err)
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("parseSourceFilter(%v) = %v, want %v", tc.in, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("parseSourceFilter(%v)[%d] = %q, want %q", tc.in, i, got[i], tc.want[i])
+			}
+		}
+	}
 }
 
 func TestBuildThreadsStaleLogic(t *testing.T) {

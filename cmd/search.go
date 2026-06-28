@@ -25,7 +25,7 @@ var (
 	searchJSON     bool
 	searchAnswer   bool
 	searchNoAnswer bool
-	searchSource   string
+	searchSources  []string
 )
 
 var searchCmd = &cobra.Command{
@@ -48,11 +48,11 @@ var searchCmd = &cobra.Command{
 			if err != nil {
 				return nil, err
 			}
-			src, err := parseSourceFilter(searchSource)
+			srcs, err := parseSourceFilter(searchSources)
 			if err != nil {
 				return nil, err
 			}
-			f := store.Filter{Tags: searchTags, Project: searchProject, Source: src}
+			f := store.Filter{Tags: searchTags, Project: searchProject, Sources: srcs}
 			if since > 0 {
 				f.Since = now().Add(-since)
 			}
@@ -85,18 +85,34 @@ var searchCmd = &cobra.Command{
 	},
 }
 
-// parseSourceFilter maps a source selector ("notes"|"transcript"|"all"/"") to a
-// store source value ("" = any).
-func parseSourceFilter(s string) (string, error) {
+// parseSourceFilter maps source selectors ("notes"|"meetings"|"transcript"|"all")
+// to store source values. Repeatable: multiple values are OR-ed. nil/empty = any.
+func parseSourceFilter(ss []string) ([]string, error) {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range ss {
+		v, err := parseSingleSource(s)
+		if err != nil {
+			return nil, err
+		}
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+func parseSingleSource(s string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "all", "any":
 		return "", nil
 	case "notes", "note":
 		return store.SourceNote, nil
-	case "transcript", "transcripts":
+	case "transcript", "transcripts", "meetings", "meeting":
 		return store.SourceTranscript, nil
 	default:
-		return "", fmt.Errorf("invalid source %q (want notes|transcript|all)", s)
+		return "", fmt.Errorf("invalid source %q (want notes|transcript|meetings|all)", s)
 	}
 }
 
@@ -256,6 +272,6 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchJSON, "json", false, "emit JSON ({results:[...]}) instead of text")
 	searchCmd.Flags().BoolVar(&searchAnswer, "answer", false, "force an AI answer above the results (needs ANTHROPIC_API_KEY)")
 	searchCmd.Flags().BoolVar(&searchNoAnswer, "no-answer", false, "never generate an AI answer, even if a key is set")
-	searchCmd.Flags().StringVar(&searchSource, "source", "all", "restrict to a source: notes | transcript | all")
+	searchCmd.Flags().StringArrayVar(&searchSources, "source", nil, "restrict to a source: notes | transcript | meetings | all (repeatable, OR semantics)")
 	rootCmd.AddCommand(searchCmd)
 }

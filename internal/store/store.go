@@ -61,7 +61,7 @@ type Filter struct {
 	Markers []string  // chunk must have ALL of these markers
 	Project string    // chunk must belong to this project
 	Since   time.Time // chunk CreatedAt must be >= Since
-	Source  string    // chunk source ("note"/"transcript"); "" means any
+	Sources []string  // chunk source must be one of these ("note"/"transcript"); nil means any
 }
 
 // Store wraps the sqlite-vec database. The embedding dimension is fixed for the
@@ -504,9 +504,18 @@ func buildWhere(f Filter) (string, []any) {
 		conds = append(conds, "c.project = ?")
 		args = append(args, f.Project)
 	}
-	if f.Source != "" {
+	if len(f.Sources) == 1 {
 		conds = append(conds, "c.source = ?")
-		args = append(args, f.Source)
+		args = append(args, f.Sources[0])
+	} else if len(f.Sources) > 1 {
+		ph := make([]string, len(f.Sources))
+		for i := range ph {
+			ph[i] = "?"
+		}
+		conds = append(conds, "c.source IN ("+strings.Join(ph, ", ")+")")
+		for _, src := range f.Sources {
+			args = append(args, src)
+		}
 	}
 	if !f.Since.IsZero() {
 		conds = append(conds, "c.created_at != '' AND c.created_at >= ?")
@@ -597,7 +606,7 @@ func matches(c Chunk, f Filter) bool {
 	if f.Project != "" && c.Project != f.Project {
 		return false
 	}
-	if f.Source != "" && c.Source != f.Source {
+	if len(f.Sources) > 0 && !contains(f.Sources, c.Source) {
 		return false
 	}
 	if !f.Since.IsZero() && (c.CreatedAt.IsZero() || c.CreatedAt.Before(f.Since)) {
