@@ -74,14 +74,15 @@ log:
   landing:
     dir: logs                          # repo-relative landing zone for voice notes
     backlink_daily: false              # append one-line breadcrumb to today's daily note
-  # Audio/transcriber keys are stubs for a future phase (no-op now):
+  # Audio/transcriber keys (audio capture is Phase 3; transcriber is active):
   audio:
     device: default
     sample_rate: 16000
     channels: 1
   transcriber:
-    engine: whisperx
-    model: base
+    backend: whisper.cpp        # transcription engine ("whisper.cpp" is the default)
+    model: base.en              # model name without .bin (e.g. base.en, small.en)
+    model_dir: ~/.cache/journal/models  # where model files are stored; ~ is expanded
 
 schema_version: "2.0"                  # config schema; `journal init` upgrades older repos
 
@@ -132,10 +133,13 @@ transcriber:
 | `quill.enabled` | `true` | Gates `journal quill-sync`. |
 | `quill.db_path` | OS default | Quill SQLite DB (read-only). `~` expands. macOS/Windows only — see [QUILL.md](QUILL.md). |
 | `quill.accept_qm_imports` | `true` | Render manually-dropped `.qm` files in the landing zone. |
-| `log.shaping.enabled` | `true` | Run the LLM shaping step for `journal log --text` (clean, title, summarize, extract markers). When `false` (or when no provider is available), the raw text lands unchanged. |
+| `log.shaping.enabled` | `true` | Run the LLM shaping step for `journal log` (clean, title, summarize, extract markers). When `false` (or when no provider is available), the raw text lands unchanged. |
 | `log.shaping.keep_raw_transcript` | `true` | Include a collapsed `<details>` block with the original raw text in the landed note. |
 | `log.landing.dir` | `logs` | Repo-relative directory for landed voice notes (`YYYY-MM-DD-HHMM-<slug>.md`). |
 | `log.landing.backlink_daily` | `false` | Append a one-line breadcrumb to today's daily note after landing. |
+| `log.transcriber.backend` | `whisper.cpp` | Transcription engine used by `journal log <audio.wav>`. Only `whisper.cpp` is built in. |
+| `log.transcriber.model` | `base.en` | Model name (without `.bin`) for the log transcriber. Small English models (`base.en`, `small.en`) give fast desk-dictation results. |
+| `log.transcriber.model_dir` | `~/.cache/journal/models` | Directory where model files are stored. Defaults to the same path as `transcriber.model_dir` so both paths share one model store. `~` is expanded. |
 | `schema_version` | `2.0` | Config schema version; `journal init` upgrades older repos in place. |
 | `transcriber.model_id` | `Systran/faster-whisper-base.en` | HuggingFace model id for the whisper model used by `journal transcribe`. Ungated (no HF token needed for the `base.en`/`small.en` class). |
 | `transcriber.revision` | `main` | Branch, tag, or commit SHA to pin for the model download. |

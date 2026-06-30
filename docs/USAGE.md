@@ -82,7 +82,8 @@ journal tui                                       # interactive dashboard
 journal sync    [--dry-run]                      # back up notes to/from the git remote
 journal synth   weekly|daily|meetings|decisions|stale [--dry-run] [--write] [--project slug] [--days N] [--date YYYY-MM-DD]
 journal quill-sync [--full] [--db path]          # pull Quill meeting transcripts into transcripts/
-journal log     --text "..."                      # capture a voice note (typed text; audio in a later phase)
+journal log     --text "..."                      # capture a voice note (typed text)
+journal log     <audio.wav>                       # transcribe a WAV → voice note (requires whisper.cpp + model)
 journal meetings [--json]                         # recent meeting transcripts, newest first
 journal doctor  [--json]                          # health checks
 journal mcp     [--repo path]                     # MCP server (stdio) for Claude clients
@@ -93,20 +94,39 @@ source. Filter search with `--source notes|transcript|meetings|voice|all`, list 
 `journal meetings`, and digest them with `journal synth meetings`. The MCP server
 mirrors this: a `source` param on `search` and a `meetings` tool.
 
-### Voice notes (`journal log --text`)
+### Voice notes (`journal log`)
 
-`journal log --text "..."` captures a quick voice-style note without audio. It runs
-the full shape→assemble→land→index pipeline:
+`journal log` captures quick voice-style notes. Two entry points:
 
-1. **Shape** — the configured synthesis provider cleans disfluencies, generates a title
+**Typed text (`--text`):**
+```sh
+journal log --text "reviewed the deploy logs, no anomalies"
+```
+
+**Audio file (WAV transcription):**
+```sh
+journal log note.wav
+```
+Requires the `whisper.cpp` binary in PATH and a model provisioned via
+`journal models pull`. Diarization is off; a small English model is used by
+default for fast (~2 s) desk-dictation results. Configure via
+`log.transcriber.{backend,model,model_dir}` in `.journal/config.yaml`.
+
+Both paths run the same pipeline:
+
+1. **Transcribe** (audio path only) — runs `whisper.cpp` locally; no network. A
+   missing model fails fast with "run `journal models pull`". An empty/silent
+   recording skips the rest of the pipeline. A transcription error is reported and
+   retryable — the WAV file is never deleted.
+2. **Shape** — the configured synthesis provider cleans disfluencies, generates a title
    and summary, extracts `@todo`/`@decision`/`@question` markers, and tags the note.
    Skipped when `log.shaping.enabled: false`, `local_only: true` with a cloud provider,
    or when no synthesis key is available; the raw text lands instead.
-2. **Assemble** — renders a Markdown document with YAML frontmatter
-   (`source: voice`, `duration_sec: 0`, `transcriber: "text"`, tags, marker counts)
+3. **Assemble** — renders a Markdown document with YAML frontmatter
+   (`source: voice`, `duration_sec`, `transcriber`, tags, marker counts)
    plus `## Summary`, `## Notes`, and an optional collapsed `## Raw transcript` block.
-3. **Land** — writes `logs/YYYY-MM-DD-HHMM-<slug>.md` (configurable via `log.landing.dir`).
-4. **Index** — embeds the note as `source=voice`; failure is non-fatal and retryable.
+4. **Land** — writes `logs/YYYY-MM-DD-HHMM-<slug>.md` (configurable via `log.landing.dir`).
+5. **Index** — embeds the note as `source=voice`; failure is non-fatal and retryable.
 
 Voice notes are returned by `journal search --source voice` (aliases `log`/`logs`).
 

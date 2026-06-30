@@ -1,4 +1,57 @@
-# Transcribing non-Quill recordings
+# Transcribing audio
+
+`journal` has two transcription paths with different profiles:
+
+| | `journal log <audio.wav>` | `journal transcribe <meeting.json>` |
+|---|---|---|
+| **Input** | WAV audio file | WhisperX JSON output |
+| **Profile** | Small English model, no diarization | Large model, diarized speakers |
+| **Backend** | `whisper.cpp` (local binary) | WhisperX (Python) |
+| **Output** | `source: voice` note in `logs/` | `source: whisperx` transcript in `transcripts/` |
+| **Use case** | Desk dictation, quick voice notes | Meetings, recordings with multiple speakers |
+
+See [`journal log`](#log-profile--journal-log-audiowav) below for the desk-dictation
+path. The rest of this doc covers the meeting/WhisperX path.
+
+---
+
+## Log profile — `journal log <audio.wav>`
+
+```sh
+journal log note.wav
+```
+
+Transcribes a WAV file locally using the `whisper.cpp` binary and lands the result
+as a `source: voice` note (same pipeline as `journal log --text`). Optimized for
+short, single-speaker desk dictation:
+
+- **No diarization** — fastest path, no speaker labels needed.
+- **Small English model** — default `base.en` for ~2 s turnaround.
+- **No network access** — all processing is local; a missing model fails fast with
+  `run \`journal models pull\``.
+- **Retryable** — a transcription error keeps the WAV file untouched and exits
+  non-zero; run the command again after fixing the issue.
+- **Empty/silent** — a blank transcript skips the pipeline (nothing is landed).
+
+The `transcriber` frontmatter records the backend/model actually used (e.g.
+`"whisper.cpp/base.en"`); `duration_sec` is derived from the WAV header.
+
+Configure via `log.transcriber` in `.journal/config.yaml`:
+
+```yaml
+log:
+  transcriber:
+    backend: whisper.cpp        # "whisper.cpp" is the only built-in backend
+    model: base.en              # model name without .bin extension
+    model_dir: ~/.cache/journal/models  # where `journal models pull` writes models
+```
+
+The `model_dir` default matches `transcriber.model_dir` so the two paths share the
+same model store — provision once with `journal models pull`, use in both places.
+
+---
+
+## Meeting profile — `journal transcribe <meeting.json>`
 
 [Quill](QUILL.md) meetings flow in automatically via `journal quill-sync`. For
 anything else — a P2 video, a Zoom/Meet recording, a voice memo — this is the
