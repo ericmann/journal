@@ -551,8 +551,11 @@ func TestPromptDecisionsReviewScopedToProject(t *testing.T) {
 }
 
 func TestPromptProjectStatusAssemblesContext(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	noteRel := "projects/canton/notes/" + today + ".md"
+	noteContent := "# " + today + "\n\n## 09:00 #canton\nset up the workspace\n"
 	cfg, _ := indexedRepo(t, map[string]string{
-		"projects/canton/notes/2026-06-01.md": "# 2026-06-01\n\n## 09:00 #canton\nset up the workspace\n",
+		noteRel: noteContent,
 	})
 	res, err := promptProjectStatus(context.Background(), cfg, "canton", "4w")
 	if err != nil {
