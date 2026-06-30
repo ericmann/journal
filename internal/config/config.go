@@ -90,6 +90,22 @@ const (
 	TranscriptFormatTxt      = "txt"
 )
 
+// Transcriber configures the local voice-transcription model provisioned by
+// `journal models pull`. The model is downloaded once into ModelDir and
+// verified on subsequent pulls (checksum match → no-op).
+type Transcriber struct {
+	// ModelID is the HuggingFace model identifier (e.g. "Systran/faster-whisper-base.en").
+	ModelID string `yaml:"model_id"`
+	// Revision is the git ref to pin (e.g. "main" or a commit SHA).
+	Revision string `yaml:"revision"`
+	// Checksum is the expected SHA-256 hex digest of the downloaded model.bin.
+	// Empty means no checksum verification (useful for local development).
+	Checksum string `yaml:"checksum"`
+	// ModelDir is the directory where model files are stored. ~ is expanded.
+	// Defaults to ~/.cache/journal/models.
+	ModelDir string `yaml:"model_dir"`
+}
+
 // Transcripts configures the meeting-transcript landing zone (populated by
 // `journal quill-sync` and/or dropped-in files) and how it is indexed.
 type Transcripts struct {
@@ -228,6 +244,8 @@ type Config struct {
 	// resolve by hand — it never discards work; "prefer-upstream" takes the remote
 	// copy on conflict; "prefer-local" keeps the local copy on conflict.
 	SyncConflict string `yaml:"sync_conflict"`
+	// Transcriber configures the local voice-transcription model.
+	Transcriber Transcriber `yaml:"transcriber"`
 	// Transcripts configures the meeting-transcript landing zone + indexing.
 	Transcripts Transcripts `yaml:"transcripts"`
 	// Quill configures pulling transcripts from the local Quill app database.
@@ -287,6 +305,15 @@ func Default() Config {
 		// Sync is opt-in; manual conflict handling never discards work.
 		SyncEnabled:  false,
 		SyncConflict: SyncConflictManual,
+		// Transcriber: ungated whisper model defaults. Checksum is empty by
+		// default so callers can omit it without breaking validation. Users set
+		// it after running `journal models pull` and noting the printed checksum.
+		Transcriber: Transcriber{
+			ModelID:  "Systran/faster-whisper-base.en",
+			Revision: "main",
+			Checksum: "",
+			ModelDir: "~/.cache/journal/models",
+		},
 		// Quill/transcript integration (v2.0). On by default but a no-op until a
 		// transcript exists; quill-sync only works where Quill runs (macOS/Windows).
 		Transcripts: Transcripts{
@@ -345,6 +372,21 @@ func (c *Config) TranscriptsAbsPath() string {
 		return p
 	}
 	return filepath.Join(c.root, filepath.FromSlash(p))
+}
+
+// TranscriberModelDirAbs returns the absolute path to the transcriber model
+// directory, expanding a leading ~. Returns the default when ModelDir is empty.
+func (c *Config) TranscriberModelDirAbs() string {
+	d := strings.TrimSpace(c.Transcriber.ModelDir)
+	if d == "" {
+		d = "~/.cache/journal/models"
+	}
+	if d == "~" || strings.HasPrefix(d, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			d = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(d, "~"), "/"))
+		}
+	}
+	return d
 }
 
 // QuillDBPath returns the configured Quill database path with ~ expanded, or ""
