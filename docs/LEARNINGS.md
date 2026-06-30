@@ -12,6 +12,30 @@ automatically and can't silently regress; prefer that over prose where possible.
 
 ---
 
+## Hardcoded fixture dates paired with unpinned rolling `since` windows are time-bombs
+
+**Symptom:** `TestPromptProjectStatusAssemblesContext` in `cmd/mcp_test.go` used `"2026-06-01"`
+as a note fixture date, then queried with `promptProjectStatus(..., "4w")`. On 2026-06-30 the
+4-week cutoff was 2026-06-02 — one day past the fixture — so the store returned no chunks, the
+assembled prompt was empty, and the content assertion failed. CI broke on a PR (#71) that didn't
+touch that test; the root cause was a silent time-bomb set when the test was originally written.
+
+**Root cause:** The test inserted a note at an absolute past date while relying on the real clock
+for the since-window calculation. Once enough calendar time passed, the fixture fell silently
+outside the rolling window. The anti-pattern — hardcoded past date + unpinned `now` + `since=Nw`
+query — will break eventually regardless of how recently it was written.
+
+**Guardrail:** Two correct patterns already established in this codebase:
+- **Content-in-window tests** (need a note to be found): use `time.Now().Format("2006-01-02")` for
+  the fixture date, as in the fixed `TestPromptProjectStatusAssemblesContext` (commit `e7fd240`).
+- **Old-vs-recent boundary tests** (need specific relative ages): pin `now` via a `pinNow` helper
+  *and* use hardcoded dates relative to that pinned instant, as in `cmd/dismiss_test.go`.
+
+Never pair a hardcoded absolute fixture date with an unpinned rolling `since` query — it is a
+time-bomb with no obvious expiry. Added to CLAUDE.md testing conventions.
+
+---
+
 ## Transient SIGTRAP runner crashes are a known Ollama/Metal flake — size retries to a model reload
 
 **Symptom:** `journal index` (or `transcribe`) aborts with "after 3 retries: ollama /api/embed:

@@ -94,6 +94,10 @@ make tidy      # go mod tidy
 - **Every behavior change ships with tests.** A command/flag/output change updates or adds the
   matching `*_test.go`. When you change output or behavior, grep for tests asserting the old
   contract and update them — a green suite you silently broke is a failed task.
+- **Never pair a hardcoded fixture date with an unpinned rolling `since` window** — it's a silent
+  time-bomb. Either use `time.Now().Format("2006-01-02")` for the fixture date (content-in-window
+  tests) or pin `now` via a `pinNow` helper and use hardcoded dates relative to that pinned instant
+  (old-vs-recent boundary tests, as in `cmd/dismiss_test.go`). See docs/LEARNINGS.md.
 - **CI agents (the `agent-ready-trigger` runner) may not have a Go toolchain or Ollama.** If you
   can't run `make test`, write tests rigorously and trace them against your implementation;
   `ci.yml` on the PR executes them. Never knowingly open a red PR.
