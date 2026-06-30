@@ -66,6 +66,23 @@ quill:
   db_path: ~/Library/Application Support/Quill/quill.db  # macOS; Windows: ~/AppData/Roaming/Quill/quill.db
   accept_qm_imports: true              # render dropped-in .qm files
 
+# --- Voice note capture (journal log --text) ---
+log:
+  shaping:
+    enabled: true                      # LLM shaping: clean, title, summarize, extract markers
+    keep_raw_transcript: true          # include collapsed <details> block with raw text
+  landing:
+    dir: logs                          # repo-relative landing zone for voice notes
+    backlink_daily: false              # append one-line breadcrumb to today's daily note
+  # Audio/transcriber keys are stubs for a future phase (no-op now):
+  audio:
+    device: default
+    sample_rate: 16000
+    channels: 1
+  transcriber:
+    engine: whisperx
+    model: base
+
 schema_version: "2.0"                  # config schema; `journal init` upgrades older repos
 
 # --- Voice transcription model (see `journal models pull`) ---
@@ -115,6 +132,10 @@ transcriber:
 | `quill.enabled` | `true` | Gates `journal quill-sync`. |
 | `quill.db_path` | OS default | Quill SQLite DB (read-only). `~` expands. macOS/Windows only — see [QUILL.md](QUILL.md). |
 | `quill.accept_qm_imports` | `true` | Render manually-dropped `.qm` files in the landing zone. |
+| `log.shaping.enabled` | `true` | Run the LLM shaping step for `journal log --text` (clean, title, summarize, extract markers). When `false` (or when no provider is available), the raw text lands unchanged. |
+| `log.shaping.keep_raw_transcript` | `true` | Include a collapsed `<details>` block with the original raw text in the landed note. |
+| `log.landing.dir` | `logs` | Repo-relative directory for landed voice notes (`YYYY-MM-DD-HHMM-<slug>.md`). |
+| `log.landing.backlink_daily` | `false` | Append a one-line breadcrumb to today's daily note after landing. |
 | `schema_version` | `2.0` | Config schema version; `journal init` upgrades older repos in place. |
 | `transcriber.model_id` | `Systran/faster-whisper-base.en` | HuggingFace model id for the whisper model used by `journal transcribe`. Ungated (no HF token needed for the `base.en`/`small.en` class). |
 | `transcriber.revision` | `main` | Branch, tag, or commit SHA to pin for the model download. |

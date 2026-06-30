@@ -64,6 +64,17 @@ func (ix *Indexer) IndexTranscript(ctx context.Context, relPath, content string,
 	return ix.indexChunks(ctx, relPath, ChunkTranscript(relPath, content, mtime, tag))
 }
 
+// IndexVoice indexes a voice note: line-windowed chunks tagged source=voice,
+// dated by mtime. It reuses the transcript chunking strategy but overrides
+// Source so voice notes are scoped separately from meeting transcripts.
+func (ix *Indexer) IndexVoice(ctx context.Context, relPath, content string, mtime time.Time) (Stats, error) {
+	chunks := ChunkTranscript(relPath, content, mtime, "voice")
+	for i := range chunks {
+		chunks[i].Source = store.SourceVoice
+	}
+	return ix.indexChunks(ctx, relPath, chunks)
+}
+
 // indexChunks synchronizes a file's freshly-computed chunks into the store:
 // it refreshes line numbers for unchanged chunks (no embed), embeds+upserts
 // new/changed chunks, and deletes chunks whose ids disappeared. It is the shared

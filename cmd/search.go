@@ -111,8 +111,10 @@ func parseSingleSource(s string) (string, error) {
 		return store.SourceNote, nil
 	case "transcript", "transcripts", "meetings", "meeting":
 		return store.SourceTranscript, nil
+	case "voice", "log", "logs":
+		return store.SourceVoice, nil
 	default:
-		return "", fmt.Errorf("invalid source %q (want notes|transcript|meetings|all)", s)
+		return "", fmt.Errorf("invalid source %q (want notes|transcript|meetings|voice|log|all)", s)
 	}
 }
 

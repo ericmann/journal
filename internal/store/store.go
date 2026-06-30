@@ -26,10 +26,11 @@ import (
 // SchemaVersion is the current schema version written to PRAGMA user_version.
 const SchemaVersion = 2
 
-// SourceNote and SourceTranscript classify a chunk's origin.
+// SourceNote, SourceTranscript, and SourceVoice classify a chunk's origin.
 const (
 	SourceNote       = "note"
 	SourceTranscript = "transcript"
+	SourceVoice      = "voice"
 )
 
 // Chunk is one indexed unit of a note: a heading block with its location,
