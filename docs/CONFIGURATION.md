@@ -67,6 +67,13 @@ quill:
   accept_qm_imports: true              # render dropped-in .qm files
 
 schema_version: "2.0"                  # config schema; `journal init` upgrades older repos
+
+# --- Voice transcription model (see `journal models pull`) ---
+transcriber:
+  model_id: Systran/faster-whisper-base.en   # HuggingFace model id (ungated)
+  revision: main                              # branch/tag/commit to pin
+  checksum: ""                               # SHA-256 hex; populated after first pull
+  model_dir: ~/.cache/journal/models          # global model store; not repo-specific
 ```
 
 ## Key reference
@@ -109,6 +116,10 @@ schema_version: "2.0"                  # config schema; `journal init` upgrades 
 | `quill.db_path` | OS default | Quill SQLite DB (read-only). `~` expands. macOS/Windows only — see [QUILL.md](QUILL.md). |
 | `quill.accept_qm_imports` | `true` | Render manually-dropped `.qm` files in the landing zone. |
 | `schema_version` | `2.0` | Config schema version; `journal init` upgrades older repos in place. |
+| `transcriber.model_id` | `Systran/faster-whisper-base.en` | HuggingFace model id for the whisper model used by `journal transcribe`. Ungated (no HF token needed for the `base.en`/`small.en` class). |
+| `transcriber.revision` | `main` | Branch, tag, or commit SHA to pin for the model download. |
+| `transcriber.checksum` | `""` | Expected SHA-256 hex digest of the downloaded `model.bin`. Empty = no verification (useful before the first pull). Set it from the checksum printed by `journal models pull` to lock the version. |
+| `transcriber.model_dir` | `~/.cache/journal/models` | Directory where model files are stored. Not repo-specific — shared across all journal repos on the machine. `~` is expanded. |
 
 ## Secrets
 

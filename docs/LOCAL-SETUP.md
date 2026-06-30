@@ -71,6 +71,22 @@ tool calling for the chat client, comfortable on a 32-48 GB machine. Step up to
 `gemma4:26b` (64 GB machines) or down to `llama3.1:8b` (minimal footprint);
 whichever you pull, set it in config below and pick the same one in Jan.
 
+## 2a. Pull the transcription model (optional)
+
+If you plan to use voice transcription (`journal transcribe`), pull the whisper
+model once so it's available locally with no per-clip download:
+
+```sh
+journal models pull        # downloads Systran/faster-whisper-base.en → ~/.cache/journal/models/
+journal models verify      # re-check the checksum at any time
+journal models list        # see all installed models + revisions
+```
+
+The default model (`Systran/faster-whisper-base.en`) is ungated — no HuggingFace
+token needed. After pulling, commit the updated `MODELS.md` in your journal repo
+so collaborators know exactly which model version to expect. See
+[CONFIGURATION.md](CONFIGURATION.md) for the `transcriber.*` config keys.
+
 ## 3. Configure journal
 
 In your journal repo's `.journal/config.yaml`:
