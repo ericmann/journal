@@ -9,6 +9,21 @@ versioning. Build-time design rationale lives in
 
 ### Added
 
+- **`journal log <audio.wav>` — transcribe stage (Phase 2b).** Pass a WAV file as
+  a positional argument to transcribe it locally via `whisper.cpp` and run the full
+  transcribe→shape→assemble→land→index pipeline. No network access: a missing model
+  fails fast with "run `journal models pull`". Silent recordings skip the pipeline;
+  transcription errors are retryable (WAV is kept). The `transcriber` frontmatter
+  records the backend/model used; `duration_sec` is derived from the WAV header.
+- **`log.transcriber.{backend,model,model_dir}` config keys** replace the previous
+  stub `log.transcriber.{engine,model}` keys. `backend` selects the engine
+  (`whisper.cpp`, the only built-in); `model_dir` defaults to the same path as
+  `transcriber.model_dir` so a single `journal models pull` serves both paths.
+- **`LogTranscriberModelDirAbs()`** helper on `*config.Config` mirrors
+  `TranscriberModelDirAbs()` for the log transcriber path.
+- **`internal/log.Transcriber` interface** with a `FakeTranscriber` for tests and a
+  `WhisperCPP` default implementation. The boundary is injectable so commands never
+  exec a real binary in tests.
 - **`journal log --text "..."` — voice note capture (Phase 1).** The full
   shape→assemble→land→index pipeline is now available for typed text. The LLM
   shaping step (configurable via `log.shaping.enabled`) cleans disfluencies,
@@ -20,7 +35,7 @@ versioning. Build-time design rationale lives in
   the `source TEXT` column already accepts any value.
 - **`journal search --source voice`** (aliases `log`/`logs`) scopes search results
   to voice-note chunks.
-- **`log:` config namespace** with `shaping`, `landing`, and stub `audio`/`transcriber`
+- **`log:` config namespace** with `shaping`, `landing`, `audio`, and `transcriber`
   keys; `LogAbsPath()`/`LogRelPath()` helpers mirror `TranscriptsAbsPath()`.
 
 ## [2.7.1] — 2026-06-25

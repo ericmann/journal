@@ -143,10 +143,15 @@ type LogAudio struct {
 	Channels   int    `yaml:"channels"`
 }
 
-// LogTranscriber holds stub transcriber keys (no-op in Phase 1; used in Phase 2).
+// LogTranscriber configures the local transcription backend used by `journal log <audio.wav>`.
 type LogTranscriber struct {
-	Engine string `yaml:"engine"`
-	Model  string `yaml:"model"`
+	// Backend is the transcription engine: "whisper.cpp" (default).
+	Backend string `yaml:"backend"`
+	// Model is the model name used by the backend (e.g. "base.en").
+	Model string `yaml:"model"`
+	// ModelDir is the directory containing model files. ~ is expanded.
+	// Defaults to ~/.cache/journal/models if empty.
+	ModelDir string `yaml:"model_dir"`
 }
 
 // LogShaping configures the LLM shaping step for voice notes.
@@ -370,7 +375,7 @@ func Default() Config {
 		},
 		Log: LogConfig{
 			Audio:       LogAudio{Device: "default", SampleRate: 16000, Channels: 1},
-			Transcriber: LogTranscriber{Engine: "whisperx", Model: "base"},
+			Transcriber: LogTranscriber{Backend: "whisper.cpp", Model: "base.en", ModelDir: "~/.cache/journal/models"},
 			Shaping:     LogShaping{Enabled: true, KeepRawTranscript: true},
 			Landing:     LogLanding{Dir: "logs", BacklinkDaily: false},
 		},
@@ -441,6 +446,22 @@ func (c *Config) LogAbsPath() string {
 // directory, expanding a leading ~. Returns the default when ModelDir is empty.
 func (c *Config) TranscriberModelDirAbs() string {
 	d := strings.TrimSpace(c.Transcriber.ModelDir)
+	if d == "" {
+		d = "~/.cache/journal/models"
+	}
+	if d == "~" || strings.HasPrefix(d, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			d = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(d, "~"), "/"))
+		}
+	}
+	return d
+}
+
+// LogTranscriberModelDirAbs returns the absolute path to the log transcriber's
+// model directory, expanding a leading ~. Falls back to the same default as
+// TranscriberModelDirAbs when ModelDir is empty.
+func (c *Config) LogTranscriberModelDirAbs() string {
+	d := strings.TrimSpace(c.Log.Transcriber.ModelDir)
 	if d == "" {
 		d = "~/.cache/journal/models"
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
+	jlog "github.com/ericmann/journal/internal/log"
 	"github.com/ericmann/journal/internal/store"
 	"github.com/ericmann/journal/internal/synth"
 )
@@ -139,5 +140,177 @@ func TestLogTextSearchableByVoiceSource(t *testing.T) {
 	}
 	if len(results) == 0 {
 		t.Error("search --source voice returned no results")
+	}
+}
+
+// --- Audio transcription tests ---
+
+func TestLogAudioFakeTranscriberLandsNote(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = false
+
+	// Write a minimal placeholder audio file (content doesn't matter — fake transcriber).
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "fixed the caching bug today", DurationSec: 15}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "logged:") {
+		t.Errorf("expected 'logged:' in output, got: %q", out.String())
+	}
+
+	// File should exist in logs dir.
+	entries, err := os.ReadDir(cfg.LogAbsPath())
+	if err != nil || len(entries) == 0 {
+		t.Fatal("no files in logs dir after audio log")
+	}
+
+	// Landed file should have source: voice and transcriber name.
+	content, err := os.ReadFile(filepath.Join(cfg.LogAbsPath(), entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "source: voice") {
+		t.Error("landed file missing 'source: voice'")
+	}
+	if !strings.Contains(string(content), "fake/base.en") {
+		t.Errorf("landed file missing transcriber name, got:\n%s", string(content))
+	}
+	if !strings.Contains(string(content), "duration_sec: 15") {
+		t.Errorf("landed file missing duration_sec: 15, got:\n%s", string(content))
+	}
+}
+
+func TestLogAudioWithShapingLandsShapedNote(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = true
+	cfg.Log.Shaping.KeepRawTranscript = true
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "deployed the new caching layer", DurationSec: 8}
+	validReply := `{"title":"Caching Deploy","summary":"Deployed new caching.","body":"Deployed the new caching layer successfully.","tags":["deploy","cache"],"markers":[]}`
+	fc := &synth.Fake{Reply: validReply}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	err := runLogAudio(context.Background(), cfg, fake, ft, fc, audioPath, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(cfg.LogAbsPath())
+	if len(entries) == 0 {
+		t.Fatal("no files in logs dir")
+	}
+	content, _ := os.ReadFile(filepath.Join(cfg.LogAbsPath(), entries[0].Name()))
+	if !strings.Contains(string(content), "Caching Deploy") {
+		t.Errorf("shaped title not in landed file: %q", string(content))
+	}
+}
+
+func TestLogAudioTranscriptionErrorIsRetryable(t *testing.T) {
+	cfg := testRepo(t, nil)
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{ForcedErr: errors.New("model not found at \"/models/base.en.bin\": run `journal models pull`")}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, &out)
+	if err == nil {
+		t.Fatal("expected error for transcription failure")
+	}
+	// Audio file must still exist (not deleted).
+	if _, statErr := os.Stat(audioPath); statErr != nil {
+		t.Errorf("audio file was deleted on transcription error: %v", statErr)
+	}
+	// Error should be retryable (contains context about retrying).
+	if !strings.Contains(err.Error(), "retryable") {
+		t.Errorf("error should mention retryable, got: %v", err)
+	}
+	// No file should have landed.
+	entries, _ := os.ReadDir(cfg.LogAbsPath())
+	if len(entries) != 0 {
+		t.Error("a note was landed despite transcription error")
+	}
+}
+
+func TestLogAudioEmptyTranscriptSkipsPipeline(t *testing.T) {
+	cfg := testRepo(t, nil)
+	audioPath := filepath.Join(t.TempDir(), "silence.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Empty reply simulates a silent recording.
+	ft := &jlog.FakeTranscriber{Reply: "   "}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, &out)
+	if err != nil {
+		t.Errorf("empty transcript should not error, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "empty transcript") {
+		t.Errorf("expected empty-transcript notice, got: %q", out.String())
+	}
+	// No file should have landed.
+	entries, _ := os.ReadDir(cfg.LogAbsPath())
+	if len(entries) != 0 {
+		t.Error("a note was landed for an empty transcript")
+	}
+}
+
+func TestLogAudioMissingFileReturnsError(t *testing.T) {
+	cfg := testRepo(t, nil)
+	ft := &jlog.FakeTranscriber{Reply: "text"}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	err := runLogAudio(context.Background(), cfg, fake, ft, nil, "/nonexistent/audio.wav", &out)
+	if err == nil {
+		t.Fatal("expected error for missing audio file")
+	}
+}
+
+func TestLogAudioIndexedByVoiceSource(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = false
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "audio voice source search test"}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := runSearch(context.Background(), cfg, fake, "audio voice source search test", 5,
+		store.Filter{Sources: []string{store.SourceVoice}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Error("audio note not found via --source voice search")
 	}
 }
