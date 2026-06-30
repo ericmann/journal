@@ -36,6 +36,7 @@ binary.
 - 📺 **A daily home** — `journal today` (day at a glance), `journal tui` (interactive dashboard: notes, todos, search, meetings, stats), `journal stats` (streaks & volume).
 - 🤖 **AI synthesis** — daily/weekly rollups and decision digests in your own voice. Pick your `synth_provider`: a **fully local** Ollama model (zero egress, no API key), any **OpenAI-compatible** endpoint (OpenRouter, Groq, …), or cloud Claude (the code default). See [AI Synthesis](https://journal.eamann.com/synthesis.html) · [Going Fully Local](https://journal.eamann.com/local-only.html).
 - 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); or ingest any recording via `journal transcribe` (WhisperX → summarized, indexed transcript — see [Meetings & Transcripts](https://journal.eamann.com/meetings.html)). Search, list, and digest them all. *(v2.0; Quill is macOS/Windows.)*
+- 🗣️ **Voice notes** — `journal log --text "..."` runs shape→assemble→land→index: the LLM cleans the text, extracts markers (`@todo`/`@decision`/`@question`), and writes a structured note to `logs/`; `--source voice` scopes search to voice chunks.
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
 - 🔌 **Integrations** — an MCP server (`journal mcp`) exposes 13 tools (`search`, `capture`, `todos`, `synth`, and more), read-only resources (`journal://today`, `journal://recent`, …), and pre-built prompts to Claude Desktop and Claude Code over MCP.
 
@@ -151,7 +152,8 @@ it). Run `journal doctor` anytime to check Ollama, models, and the index.
 | `journal init [path]` | Scaffold (or upgrade) a journal repo |
 | `journal capture [text]` | Append a timestamped note (inline / editor / stdin) |
 | `journal index [--watch]` | Embed changed notes; `--watch` runs continuously |
-| `journal search <query>` | Semantic search with citations (+ a grounded AI answer when synthesis is configured); `--source notes\|transcript\|all` |
+| `journal log --text "..."` | Capture a voice note: shape (LLM) → assemble → land to `logs/` → index as `source=voice` |
+| `journal search <query>` | Semantic search with citations (+ a grounded AI answer when synthesis is configured); `--source notes\|transcript\|voice\|all` |
 | `journal recent` · `decisions` · `threads` · `meetings` | Metadata views (newest-first, `@decision`, project activity, transcripts) |
 | `journal todos` · `journal done <ref>` | List open `@todo` items; check one off (rewrites it to `@done <date>`) |
 | `journal today` · `show` · `edit` | Day at a glance; render any note; open a daily file in your editor |

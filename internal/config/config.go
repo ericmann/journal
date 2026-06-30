@@ -136,6 +136,43 @@ type Quill struct {
 	AcceptQMImports bool `yaml:"accept_qm_imports"`
 }
 
+// LogAudio holds stub audio-capture keys (no-op in Phase 1; used in Phase 2).
+type LogAudio struct {
+	Device     string `yaml:"device"`
+	SampleRate int    `yaml:"sample_rate"`
+	Channels   int    `yaml:"channels"`
+}
+
+// LogTranscriber holds stub transcriber keys (no-op in Phase 1; used in Phase 2).
+type LogTranscriber struct {
+	Engine string `yaml:"engine"`
+	Model  string `yaml:"model"`
+}
+
+// LogShaping configures the LLM shaping step for voice notes.
+type LogShaping struct {
+	// Enabled gates the LLM shaping call (clean, title, summarize, tag, extract markers).
+	Enabled bool `yaml:"enabled"`
+	// KeepRawTranscript includes a collapsed <details> block with the raw text.
+	KeepRawTranscript bool `yaml:"keep_raw_transcript"`
+}
+
+// LogLanding configures where voice notes are written.
+type LogLanding struct {
+	// Dir is the repo-relative landing zone for voice notes.
+	Dir string `yaml:"dir"`
+	// BacklinkDaily, when true, appends a one-line breadcrumb to today's daily note.
+	BacklinkDaily bool `yaml:"backlink_daily"`
+}
+
+// LogConfig configures `journal log` voice-note capture.
+type LogConfig struct {
+	Audio       LogAudio       `yaml:"audio"`
+	Transcriber LogTranscriber `yaml:"transcriber"`
+	Shaping     LogShaping     `yaml:"shaping"`
+	Landing     LogLanding     `yaml:"landing"`
+}
+
 // defaultQuillDBPath returns the per-OS Quill database location (with ~), or ""
 // where Quill is unavailable (Linux). ~ resolves on Windows too (AppData lives
 // under the home dir).
@@ -250,6 +287,8 @@ type Config struct {
 	Transcripts Transcripts `yaml:"transcripts"`
 	// Quill configures pulling transcripts from the local Quill app database.
 	Quill Quill `yaml:"quill"`
+	// Log configures `journal log` voice-note capture.
+	Log LogConfig `yaml:"log"`
 	// SchemaVer records the config schema version (see SchemaVersion). Lets
 	// `journal init` detect and upgrade older repos.
 	SchemaVer string `yaml:"schema_version"`
@@ -329,6 +368,12 @@ func Default() Config {
 			DBPath:          defaultQuillDBPath(),
 			AcceptQMImports: true,
 		},
+		Log: LogConfig{
+			Audio:       LogAudio{Device: "default", SampleRate: 16000, Channels: 1},
+			Transcriber: LogTranscriber{Engine: "whisperx", Model: "base"},
+			Shaping:     LogShaping{Enabled: true, KeepRawTranscript: true},
+			Landing:     LogLanding{Dir: "logs", BacklinkDaily: false},
+		},
 		SchemaVer: SchemaVersion,
 	}
 }
@@ -368,6 +413,24 @@ func (c *Config) TranscriptsRelPath() string {
 // TranscriptsAbsPath returns the absolute path to the transcripts landing zone.
 func (c *Config) TranscriptsAbsPath() string {
 	p := c.TranscriptsRelPath()
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(c.root, filepath.FromSlash(p))
+}
+
+// LogRelPath is the repo-relative voice-note landing zone (slash form).
+func (c *Config) LogRelPath() string {
+	p := strings.TrimSpace(c.Log.Landing.Dir)
+	if p == "" {
+		p = "logs"
+	}
+	return filepath.ToSlash(p)
+}
+
+// LogAbsPath returns the absolute path to the voice-note landing zone.
+func (c *Config) LogAbsPath() string {
+	p := c.LogRelPath()
 	if filepath.IsAbs(p) {
 		return p
 	}
@@ -486,6 +549,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Transcripts.Enabled && strings.TrimSpace(c.Transcripts.Path) == "" {
 		return errors.New("transcripts.path must not be empty when transcripts are enabled")
+	}
+	if strings.TrimSpace(c.Log.Landing.Dir) == "" {
+		return errors.New("log.landing.dir must not be empty")
 	}
 	return nil
 }

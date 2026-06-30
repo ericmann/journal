@@ -5,6 +5,24 @@ All notable changes to `journal`. The format follows
 versioning. Build-time design rationale lives in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## [Unreleased]
+
+### Added
+
+- **`journal log --text "..."` — voice note capture (Phase 1).** The full
+  shape→assemble→land→index pipeline is now available for typed text. The LLM
+  shaping step (configurable via `log.shaping.enabled`) cleans disfluencies,
+  generates a title and summary, extracts `@todo`/`@decision`/`@question` markers,
+  and tags the note. Notes always land to `logs/YYYY-MM-DD-HHMM-<slug>.md` even
+  when shaping is unavailable (raw fallback). Index failure is non-fatal.
+- **`SourceVoice = "voice"` source constant** in `internal/store`; voice chunks
+  are indexed separately from notes and transcripts. No schema migration required —
+  the `source TEXT` column already accepts any value.
+- **`journal search --source voice`** (aliases `log`/`logs`) scopes search results
+  to voice-note chunks.
+- **`log:` config namespace** with `shaping`, `landing`, and stub `audio`/`transcriber`
+  keys; `LogAbsPath()`/`LogRelPath()` helpers mirror `TranscriptsAbsPath()`.
+
 ## [2.7.1] — 2026-06-25
 
 ### Added

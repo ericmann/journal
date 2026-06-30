@@ -26,7 +26,7 @@ loopback). The complete list of potential egress paths:
 
 | Path | Trigger | Where it goes | Closed by |
 | --- | --- | --- | --- |
-| Cloud synthesis | `journal synth --write` or the answer above `journal search`, with `synth_provider: anthropic` *or* `openai` | Assembled prompt (note excerpts) → Anthropic, or your OpenAI-compatible endpoint (OpenRouter/…) | `synth_provider: ollama` or `local_only: true` |
+| Cloud synthesis | `journal synth --write`, the answer above `journal search`, or voice-note shaping in `journal log --text`, with `synth_provider: anthropic` *or* `openai` | Assembled prompt (note excerpts / raw voice text) → Anthropic, or your OpenAI-compatible endpoint (OpenRouter/…) | `synth_provider: ollama` or `local_only: true` |
 | Remote embeddings | indexing/search with `embed_provider: openai` | Note text → your OpenAI-compatible `/embeddings` endpoint | `embed_provider: ollama` (default) or `local_only: true` |
 | Git backup | `journal sync` (opt-in, `sync_enabled: true`) | Your notes → *your* git remote | `sync_enabled: false` (default) — not affected by `local_only`, since it's your own remote, not a cloud-AI service |
 | MCP client | `journal mcp` serving an MCP client | The server itself is local stdio — but the **client** (e.g. Claude Desktop) typically forwards retrieved note content to a cloud model | `local_only: true`; or use a local-model MCP client ([CLIENTS.md](CLIENTS.md)) |
@@ -34,6 +34,35 @@ loopback). The complete list of potential egress paths:
 
 There is no telemetry, no crash reporting, no update check — the binary makes
 no network connection outside the table above.
+
+## Voice note write path (`journal log --text`)
+
+`journal log --text "..."` runs a four-stage pipeline — all local except the
+optional LLM shaping step:
+
+```
+raw text ──► Shape ──► Assemble ──► Land ──► Index
+              (LLM)     (pure)      (disk)   (Ollama + sqlite-vec)
+```
+
+1. **Shape** (optional) — raw text is sent to the configured `synth_provider`
+   for cleaning, title generation, summarization, tag extraction, and marker
+   surfacing. Skipped when `log.shaping.enabled: false`, when `local_only: true`
+   with a cloud provider, or when no synthesis key is available — the raw text
+   proceeds to Assemble unchanged.
+2. **Assemble** — pure in-process rendering: YAML frontmatter
+   (`source: voice`, `duration_sec`, `transcriber`, tags, marker counts) plus
+   `## Summary`, `## Notes`, and an optional collapsed `## Raw transcript` block.
+3. **Land** — `os.WriteFile` to `logs/YYYY-MM-DD-HHMM-<slug>.md` under
+   `log.landing.dir`. A note is **always written** — shaping failure is
+   non-fatal. Optional: one-line daily breadcrumb when `log.landing.backlink_daily: true`.
+4. **Index** — `Indexer.IndexVoice` chunks the landed note (reusing the
+   transcript line-windowing strategy) and upserts chunks with
+   `source = "voice"`. Failure is non-fatal — the note is on disk and
+   re-indexable with `journal index`.
+
+Voice chunks are scoped separately from notes and transcripts; use
+`journal search --source voice` (aliases `log`/`logs`) to scope results.
 
 ## `local_only: true`
 

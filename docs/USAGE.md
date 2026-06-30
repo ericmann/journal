@@ -82,15 +82,33 @@ journal tui                                       # interactive dashboard
 journal sync    [--dry-run]                      # back up notes to/from the git remote
 journal synth   weekly|daily|meetings|decisions|stale [--dry-run] [--write] [--project slug] [--days N] [--date YYYY-MM-DD]
 journal quill-sync [--full] [--db path]          # pull Quill meeting transcripts into transcripts/
+journal log     --text "..."                      # capture a voice note (typed text; audio in a later phase)
 journal meetings [--json]                         # recent meeting transcripts, newest first
 journal doctor  [--json]                          # health checks
 journal mcp     [--repo path]                     # MCP server (stdio) for Claude clients
 ```
 
 Meeting transcripts (via [Quill](QUILL.md)) are indexed as a separate `transcript`
-source. Filter search with `--source notes|transcript|all`, list them with
+source. Filter search with `--source notes|transcript|meetings|voice|all`, list them with
 `journal meetings`, and digest them with `journal synth meetings`. The MCP server
 mirrors this: a `source` param on `search` and a `meetings` tool.
+
+### Voice notes (`journal log --text`)
+
+`journal log --text "..."` captures a quick voice-style note without audio. It runs
+the full shape→assemble→land→index pipeline:
+
+1. **Shape** — the configured synthesis provider cleans disfluencies, generates a title
+   and summary, extracts `@todo`/`@decision`/`@question` markers, and tags the note.
+   Skipped when `log.shaping.enabled: false`, `local_only: true` with a cloud provider,
+   or when no synthesis key is available; the raw text lands instead.
+2. **Assemble** — renders a Markdown document with YAML frontmatter
+   (`source: voice`, `duration_sec: 0`, `transcriber: "text"`, tags, marker counts)
+   plus `## Summary`, `## Notes`, and an optional collapsed `## Raw transcript` block.
+3. **Land** — writes `logs/YYYY-MM-DD-HHMM-<slug>.md` (configurable via `log.landing.dir`).
+4. **Index** — embeds the note as `source=voice`; failure is non-fatal and retryable.
+
+Voice notes are returned by `journal search --source voice` (aliases `log`/`logs`).
 
 `journal mcp` runs an MCP server (stdio) exposing 13 tools — `search`, `recent`,
 `decisions`, `threads`, `show`, `capture`, `meetings`, `todos`, `done`, `stats`,
