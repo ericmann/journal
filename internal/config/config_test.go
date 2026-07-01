@@ -163,6 +163,12 @@ func TestDefaultConfigIsValid(t *testing.T) {
 	if c.EmbedDim <= 0 {
 		t.Errorf("embed dim = %d, want > 0", c.EmbedDim)
 	}
+	if c.Log.Audio.SilenceDuration != 30 {
+		t.Errorf("log.audio.silence_duration = %d, want 30", c.Log.Audio.SilenceDuration)
+	}
+	if c.Log.Audio.SilenceNoiseDB != -35 {
+		t.Errorf("log.audio.silence_noise_db = %d, want -35", c.Log.Audio.SilenceNoiseDB)
+	}
 	for _, want := range []string{"reflections/**", ".journal/**", "docs/**", "README.md"} {
 		found := false
 		for _, e := range c.Excludes {
@@ -218,7 +224,9 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		"local_only with cloud provider": func(c *Config) {
 			c.LocalOnly = true // synth_provider stays anthropic (default)
 		},
-		"bad local_only_mcp": func(c *Config) { c.LocalOnlyMCP = "maybe" },
+		"bad local_only_mcp":        func(c *Config) { c.LocalOnlyMCP = "maybe" },
+		"zero silence_duration":     func(c *Config) { c.Log.Audio.SilenceDuration = 0 },
+		"negative silence_duration": func(c *Config) { c.Log.Audio.SilenceDuration = -5 },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -321,8 +329,37 @@ func TestLoadAppliesDefaultsForMissingKeys(t *testing.T) {
 	if c.ChunkStrategy != "heading" {
 		t.Errorf("chunk strategy = %q, want defaulted", c.ChunkStrategy)
 	}
+	if c.Log.Audio.SilenceDuration != 30 {
+		t.Errorf("log.audio.silence_duration = %d, want defaulted to 30", c.Log.Audio.SilenceDuration)
+	}
+	if c.Log.Audio.SilenceNoiseDB != -35 {
+		t.Errorf("log.audio.silence_noise_db = %d, want defaulted to -35", c.Log.Audio.SilenceNoiseDB)
+	}
 	if c.Root() != root {
 		t.Errorf("Root() = %q, want %q", c.Root(), root)
+	}
+}
+
+func TestLoadOverridesSilenceAutostopTuning(t *testing.T) {
+	root := t.TempDir()
+	jdir := filepath.Join(root, ".journal")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "log:\n  audio:\n    silence_duration: 12\n    silence_noise_db: -20\n"
+	if err := os.WriteFile(filepath.Join(jdir, "config.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Log.Audio.SilenceDuration != 12 {
+		t.Errorf("log.audio.silence_duration = %d, want 12", c.Log.Audio.SilenceDuration)
+	}
+	if c.Log.Audio.SilenceNoiseDB != -20 {
+		t.Errorf("log.audio.silence_noise_db = %d, want -20", c.Log.Audio.SilenceNoiseDB)
 	}
 }
 

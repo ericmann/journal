@@ -32,18 +32,57 @@ type Recorder interface {
 	Record(ctx context.Context, wavPath, device string, sampleRate, channels int, maxDuration time.Duration) (errCh <-chan error, stop StopFn, cancel CancelFn)
 }
 
-// silenceAutostopThreshold is how long a single continuous silence interval
-// must be before the silence-autostop safety net finalizes the recording.
-const silenceAutostopThreshold = 30 * time.Second
+// defaultSilenceDuration and defaultSilenceNoiseDB mirror
+// internal/config.Default's log.audio.{silence_duration,silence_noise_db}
+// and are used by callers that construct FfmpegRecorder directly (e.g.
+// tests) without threading config values through.
+const (
+	defaultSilenceDuration = 30 * time.Second
+	defaultSilenceNoiseDB  = -35
+)
 
 // FfmpegRecorder records via `ffmpeg -f avfoundation` — macOS only at
 // runtime. It is never exercised in tests; internal/audio tests use
 // FakeRecorder instead.
 type FfmpegRecorder struct {
 	// SilenceAutostop enables the silencedetect watchdog: after
-	// silenceAutostopThreshold of continuous silence, the recording is
-	// stopped automatically as a safety net (not the primary stop mechanism).
+	// SilenceDuration of continuous silence, the recording is stopped
+	// automatically as a safety net (not the primary stop mechanism).
 	SilenceAutostop bool
+	// SilenceDuration is how long a continuous silence interval must be
+	// before the watchdog fires. Zero or negative falls back to
+	// defaultSilenceDuration.
+	SilenceDuration time.Duration
+	// SilenceNoiseDB is the silencedetect noise floor in dB. Zero falls back
+	// to defaultSilenceNoiseDB (0dB is not a meaningful noise floor — it
+	// would treat only true digital silence as silent).
+	SilenceNoiseDB int
+}
+
+// silenceThreshold returns the configured silence duration, falling back to
+// defaultSilenceDuration when unset.
+func (r FfmpegRecorder) silenceThreshold() time.Duration {
+	if r.SilenceDuration <= 0 {
+		return defaultSilenceDuration
+	}
+	return r.SilenceDuration
+}
+
+// silenceNoiseDB returns the configured noise floor in dB, falling back to
+// defaultSilenceNoiseDB when unset (0dB is not a meaningful noise floor — it
+// would treat only true digital silence as silent).
+func (r FfmpegRecorder) silenceNoiseDB() int {
+	if r.SilenceNoiseDB == 0 {
+		return defaultSilenceNoiseDB
+	}
+	return r.SilenceNoiseDB
+}
+
+// silencedetectFilter builds the ffmpeg `-af silencedetect=...` filter
+// string for the recorder's configured noise floor and minimum silence
+// duration.
+func (r FfmpegRecorder) silencedetectFilter() string {
+	return fmt.Sprintf("silencedetect=noise=%ddB:d=%d", r.silenceNoiseDB(), int(r.silenceThreshold().Seconds()))
 }
 
 // Record implements Recorder.
@@ -69,7 +108,7 @@ func (r FfmpegRecorder) Record(ctx context.Context, wavPath, device string, samp
 		args = append(args, "-t", strconv.FormatFloat(maxDuration.Seconds(), 'f', -1, 64))
 	}
 	if r.SilenceAutostop {
-		args = append(args, "-af", fmt.Sprintf("silencedetect=noise=-35dB:d=%d", int(silenceAutostopThreshold.Seconds())))
+		args = append(args, "-af", r.silencedetectFilter())
 	}
 	args = append(args, "-y", wavPath)
 
@@ -92,7 +131,7 @@ func (r FfmpegRecorder) Record(ctx context.Context, wavPath, device string, samp
 	}
 
 	if r.SilenceAutostop {
-		go watchSilence(stderr, silenceAutostopThreshold, signalFn)
+		go watchSilence(stderr, r.silenceThreshold(), signalFn)
 	} else {
 		go func() { _, _ = io.Copy(io.Discard, stderr) }()
 	}

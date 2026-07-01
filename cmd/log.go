@@ -96,7 +96,11 @@ var logCmd = &cobra.Command{
 // newRecorder builds the live Recorder from cfg. Tests inject an
 // audio.FakeRecorder directly into runLogDaemon instead of calling this.
 func newRecorder(cfg *config.Config) audio.Recorder {
-	return audio.FfmpegRecorder{SilenceAutostop: cfg.Log.Audio.SilenceAutostop}
+	return audio.FfmpegRecorder{
+		SilenceAutostop: cfg.Log.Audio.SilenceAutostop,
+		SilenceDuration: time.Duration(cfg.Log.Audio.SilenceDuration) * time.Second,
+		SilenceNoiseDB:  cfg.Log.Audio.SilenceNoiseDB,
+	}
 }
 
 // newNotifier builds the live desktop Notifier. Tests override this var with
