@@ -9,6 +9,11 @@ versioning. Build-time design rationale lives in
 
 ### Added
 
+- **`log.audio.{silence_duration,silence_noise_db}` config keys.** The
+  `silence_autostop` watchdog's silence-interval length (default `30` seconds)
+  and `silencedetect` noise floor (default `-35` dB) are now configurable
+  instead of hardcoded, so a noisy room or a different mic can tune when the
+  safety-net stop fires. Existing behavior is unchanged unless overridden.
 - **Meeting pipeline migrated onto the shared land/index core (Phase 5c).**
   `journal quill-sync` and `journal transcribe` now write and index through the
   same `internal/log.Land`/`IndexTranscript` primitives the voice-note pipeline

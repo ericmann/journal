@@ -624,6 +624,27 @@ func TestLogStartRecordingAlreadyRecordingIsNoOp(t *testing.T) {
 	}
 }
 
+func TestNewRecorderThreadsSilenceConfig(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Audio.SilenceAutostop = true
+	cfg.Log.Audio.SilenceDuration = 12
+	cfg.Log.Audio.SilenceNoiseDB = -20
+
+	rec, ok := newRecorder(cfg).(audio.FfmpegRecorder)
+	if !ok {
+		t.Fatalf("newRecorder() = %T, want audio.FfmpegRecorder", newRecorder(cfg))
+	}
+	if !rec.SilenceAutostop {
+		t.Error("SilenceAutostop = false, want true")
+	}
+	if rec.SilenceDuration != 12*time.Second {
+		t.Errorf("SilenceDuration = %v, want 12s", rec.SilenceDuration)
+	}
+	if rec.SilenceNoiseDB != -20 {
+		t.Errorf("SilenceNoiseDB = %d, want -20", rec.SilenceNoiseDB)
+	}
+}
+
 func TestLogStartRecordingFfmpegMissingFailsFast(t *testing.T) {
 	cfg := testRepo(t, nil)
 	isolateLock(t)

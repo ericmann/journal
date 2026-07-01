@@ -166,6 +166,13 @@ type LogAudio struct {
 	// SilenceAutostop enables a safety-net stop after a sustained silence
 	// interval (it is not the primary stopping mechanism — the toggle is).
 	SilenceAutostop bool `yaml:"silence_autostop"`
+	// SilenceDuration is how long (in seconds) a continuous silence interval
+	// must last before SilenceAutostop finalizes the recording.
+	SilenceDuration int `yaml:"silence_duration"`
+	// SilenceNoiseDB is the ffmpeg silencedetect noise floor in dB: audio
+	// quieter than this is treated as silence. More negative is quieter
+	// (stricter); less negative trips on background noise sooner.
+	SilenceNoiseDB int `yaml:"silence_noise_db"`
 	// KeepWAV retains the recorded WAV after a successful pipeline run and
 	// records its path in the landed note's `audio:` frontmatter. Default:
 	// delete the scratch WAV once the note is safely landed.
@@ -408,7 +415,7 @@ func Default() Config {
 			AcceptQMImports: true,
 		},
 		Log: LogConfig{
-			Audio:       LogAudio{Device: "default", SampleRate: 16000, Channels: 1, MaxDuration: 900},
+			Audio:       LogAudio{Device: "default", SampleRate: 16000, Channels: 1, MaxDuration: 900, SilenceDuration: 30, SilenceNoiseDB: -35},
 			Transcriber: LogTranscriber{Backend: "whisper.cpp", Model: "base.en", ModelDir: "~/.cache/journal/models"},
 			Shaping:     LogShaping{Enabled: true, KeepRawTranscript: true},
 			Landing:     LogLanding{Dir: "logs", BacklinkDaily: false},
@@ -623,6 +630,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Log.Audio.MaxDuration < 0 {
 		return fmt.Errorf("log.audio.max_duration must be >= 0, got %d", c.Log.Audio.MaxDuration)
+	}
+	if c.Log.Audio.SilenceDuration <= 0 {
+		return fmt.Errorf("log.audio.silence_duration must be > 0, got %d", c.Log.Audio.SilenceDuration)
 	}
 	return nil
 }

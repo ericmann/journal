@@ -138,6 +138,8 @@ Safety limits (`.journal/config.yaml`, see [CONFIGURATION.md](CONFIGURATION.md))
   forgotten stop press.
 - `log.audio.silence_autostop` (default off) is a safety-net stop after a
   sustained silence interval; it is not the primary stopping mechanism.
+  `log.audio.silence_duration` (default 30s) and `log.audio.silence_noise_db`
+  (default -35dB) tune how long and how quiet that interval must be.
 - `log.audio.keep_wav` (default off) retains the WAV after a successful run
   and records its path in the landed note's `audio:` frontmatter field;
   otherwise the scratch WAV is deleted once the note is safely landed.

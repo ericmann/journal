@@ -91,6 +91,37 @@ func TestFakeRecorderContextCancellationUnblocksRecord(t *testing.T) {
 	}
 }
 
+func TestFfmpegRecorderSilencedetectFilter(t *testing.T) {
+	tests := []struct {
+		name string
+		rec  FfmpegRecorder
+		want string
+	}{
+		{
+			name: "configured values",
+			rec:  FfmpegRecorder{SilenceDuration: 12 * time.Second, SilenceNoiseDB: -20},
+			want: "silencedetect=noise=-20dB:d=12",
+		},
+		{
+			name: "zero values fall back to defaults",
+			rec:  FfmpegRecorder{},
+			want: "silencedetect=noise=-35dB:d=30",
+		},
+		{
+			name: "negative duration falls back to default",
+			rec:  FfmpegRecorder{SilenceDuration: -1 * time.Second, SilenceNoiseDB: -40},
+			want: "silencedetect=noise=-40dB:d=30",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.rec.silencedetectFilter(); got != tt.want {
+				t.Errorf("silencedetectFilter() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWatchSilenceStopsOnceThresholdReached(t *testing.T) {
 	// A realistic ffmpeg silencedetect transcript: a short silence interval
 	// below threshold, then one at/above it.
