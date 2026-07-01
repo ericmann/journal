@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
+	jlog "github.com/ericmann/journal/internal/log"
 	"github.com/ericmann/journal/internal/note"
 	"github.com/ericmann/journal/internal/store"
 	"github.com/ericmann/journal/internal/synth"
@@ -95,6 +97,23 @@ type captureInput struct {
 	Tags    []string `json:"tags,omitempty" jsonschema:"tags to attach"`
 	Project string   `json:"project,omitempty" jsonschema:"capture into this project instead of the daily file"`
 	Marker  string   `json:"marker,omitempty" jsonschema:"one of: decision, question, todo"`
+}
+
+type logTextInput struct {
+	Text string `json:"text" jsonschema:"the note text to shape, land, and index as a voice-style note"`
+}
+
+type logAudioInput struct {
+	AudioPath string `json:"audio_path" jsonschema:"server-local path to an audio file to transcribe, shape, land, and index"`
+}
+
+// logResponse reports the outcome of journal_log_text / journal_log_audio.
+// Path and Title are empty and Landed is false when the pipeline completed
+// without error but produced no note (e.g. an empty/silent audio transcript).
+type logResponse struct {
+	Path   string `json:"path,omitempty"`
+	Title  string `json:"title,omitempty"`
+	Landed bool   `json:"landed"`
 }
 
 type askInput struct {
@@ -186,6 +205,20 @@ func runMCP(ctx context.Context, cfg *config.Config, e embed.Embedder) error {
 		Description: "Append a timestamped note (append-only, no embedding). Returns the file path written.",
 	}, toolHandler(func(ctx context.Context, in captureInput) (string, error) {
 		return mcpCapture(cfg, in)
+	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "journal_log_text",
+		Description: "Shape, land, and index typed text as a voice-style note (shape→assemble→land→index — same pipeline as `journal log --text`). Returns the landed note's path and title. Never touches the microphone.",
+	}, toolHandler(func(ctx context.Context, in logTextInput) (string, error) {
+		return mcpLogText(ctx, cfg, e, nil, in)
+	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "journal_log_audio",
+		Description: "Transcribe a server-local audio file and shape, land, and index it as a note (transcribe→shape→assemble→land→index — same pipeline as `journal log <audio.wav>`). Returns the landed note's path and title. Never touches the microphone — no recording is exposed over MCP.",
+	}, toolHandler(func(ctx context.Context, in logAudioInput) (string, error) {
+		return mcpLogAudio(ctx, cfg, e, newTranscriber(cfg), nil, in)
 	}))
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -549,6 +582,48 @@ func mcpCapture(cfg *config.Config, in captureInput) (string, error) {
 		return "", err
 	}
 	b, _ := json.Marshal(map[string]string{"captured": relTo(cfg.Root(), path)})
+	return string(b), nil
+}
+
+// mcpLogText runs the shape→assemble→land→index pipeline (the same core
+// `journal log --text` uses) for MCP clients that want to drop typed text
+// into the journal without a CLI round-trip. client is injectable for tests
+// (pass nil to let runLogText build one from cfg when shaping is enabled).
+func mcpLogText(ctx context.Context, cfg *config.Config, e embed.Embedder, client synth.Client, in logTextInput) (string, error) {
+	if strings.TrimSpace(in.Text) == "" {
+		return "", fmt.Errorf("text must not be empty")
+	}
+	landed, err := runLogText(ctx, cfg, e, client, in.Text, io.Discard)
+	if err != nil {
+		return "", fmt.Errorf("log text: %w", err)
+	}
+	b, err := json.MarshalIndent(logResponse(landed), "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// mcpLogAudio runs the transcribe→shape→assemble→land→index pipeline (the
+// same core `journal log <audio.wav>` uses) for a server-local audio path.
+// The mic-recording stage (Stage 1) is intentionally not exposed over MCP —
+// an MCP server must not seize the user's microphone. tr and client are
+// injectable for tests (production passes a real newTranscriber(cfg) and a
+// nil client, matching the CLI's own wiring).
+func mcpLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr jlog.Transcriber, client synth.Client, in logAudioInput) (string, error) {
+	if strings.TrimSpace(in.AudioPath) == "" {
+		return "", fmt.Errorf("audio_path must not be empty")
+	}
+	// scratch=false, keepWAV=false: an MCP-supplied path is treated like a
+	// user-supplied CLI argument, never deleted or re-recorded into frontmatter.
+	landed, err := runLogAudio(ctx, cfg, e, tr, client, in.AudioPath, false, false, io.Discard)
+	if err != nil {
+		return "", fmt.Errorf("log audio: %w", err)
+	}
+	b, err := json.MarshalIndent(logResponse(landed), "", "  ")
+	if err != nil {
+		return "", err
+	}
 	return string(b), nil
 }
 

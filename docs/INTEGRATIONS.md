@@ -162,10 +162,19 @@ the same stable JSON as the CLI's `--json`):
 | `todos`     | `done?`, `project?`, `since?`              | `{results:[…]}` (@todo/@done)   |
 | `done`      | `ref` (citation or text fragment)          | `{completed:{…}}`               |
 | `capture`   | `text`, `tags[]?`, `project?`, `marker?`   | `{"captured":"<path>"}`         |
+| `journal_log_text` | `text`                              | `{path, title, landed}` (shape→assemble→land→index) |
+| `journal_log_audio` | `audio_path` (server-local file)   | `{path, title, landed}` (transcribe→shape→assemble→land→index) |
 | `ask`       | `query`, `k?`, `tag[]?`, `project?`, `since?` | `{answer, citations}` (grounded Q&A) |
 | `stats`     | —                                          | note volume, streaks, open todos, decisions, top tags |
 | `today`     | —                                          | today's note path, open todos, today's meetings |
 | `synth`     | `kind?`, `days?`, `project?`, `persist?`, `date?` | `{kind, text, output_path, wrote}` (AI synthesis digest) |
+
+`journal_log_text` and `journal_log_audio` run the same shape→assemble→land→index
+core as `journal log --text` / `journal log <audio.wav>` — the mic-recording stage
+is intentionally **not** exposed over MCP; an MCP server must never seize the
+machine's microphone. `landed` is `false` (with empty `path`/`title`) when the
+pipeline completed without error but produced no note, e.g. an empty/silent audio
+transcript.
 
 ### MCP resources
 

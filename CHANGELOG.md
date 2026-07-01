@@ -9,6 +9,14 @@ versioning. Build-time design rationale lives in
 
 ### Added
 
+- **MCP tools `journal_log_text` / `journal_log_audio` (Phase 5a).** The MCP server
+  (`journal mcp`) now exposes the `journal log --text` and `journal log <audio.wav>`
+  pipelines as tools: `journal_log_text(text)` runs shape→assemble→land→index,
+  `journal_log_audio(audio_path)` runs transcribe→shape→assemble→land→index for a
+  server-local audio file. Both return `{path, title, landed}` and honor
+  `local_only`/`local_only_mcp` exactly like the rest of the MCP surface. The
+  mic-recording stage stays CLI-only and is never exposed over MCP — an MCP server
+  must not seize the user's microphone.
 - **Start/finish desktop notifications for `journal log` (Phase 4, macOS only).**
   The recording toggle now pairs the existing terminal output with a real desktop
   notification: starting a recording pops "● recording", and the async pipeline

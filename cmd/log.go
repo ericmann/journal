@@ -80,14 +80,16 @@ var logCmd = &cobra.Command{
 		if len(args) == 1 {
 			// Audio file path provided — transcribe then land. logScratch/
 			// logKeepWAV are only ever true when the daemon re-invokes us.
-			return runLogAudio(cmd.Context(), cfg, newEmbedder(cfg), newTranscriber(cfg), nil, args[0], logScratch, logKeepWAV, out)
+			_, err := runLogAudio(cmd.Context(), cfg, newEmbedder(cfg), newTranscriber(cfg), nil, args[0], logScratch, logKeepWAV, out)
+			return err
 		}
 
 		if strings.TrimSpace(logText) == "" {
 			// No text, no audio file, no explicit flag: toggle recording.
 			return runLogToggle(cfg, out)
 		}
-		return runLogText(cmd.Context(), cfg, newEmbedder(cfg), nil, logText, out)
+		_, err = runLogText(cmd.Context(), cfg, newEmbedder(cfg), nil, logText, out)
+		return err
 	},
 }
 
@@ -374,16 +376,28 @@ func newTranscriber(cfg *config.Config) jlog.Transcriber {
 	return jlog.NewWhisperCPP(cfg.LogTranscriberModelDirAbs(), cfg.Log.Transcriber.Model)
 }
 
+// logLanded describes the outcome of a landed voice-note pipeline run,
+// returned alongside the error so callers (the MCP tool handlers, in
+// particular) can report the landed note's path/title without re-deriving
+// them from the human-readable output text. Landed is false when the
+// pipeline completed without error but produced no note (e.g. an empty
+// transcript).
+type logLanded struct {
+	Path   string
+	Title  string
+	Landed bool
+}
+
 // runLogAudio orchestrates the transcribe→shape→assemble→land→index pipeline
 // for an audio file argument. tr is injectable for tests (pass nil to build
 // from cfg). client is injectable for synthesis shaping (pass nil to build
 // from cfg). scratch marks audioPath as a recorder-produced temp file
 // (eligible for cleanup / `audio:` frontmatter via keepWAV) — a WAV passed
 // directly by the user on the command line is never deleted.
-func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr jlog.Transcriber, client synth.Client, audioPath string, scratch, keepWAV bool, out io.Writer) error {
+func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr jlog.Transcriber, client synth.Client, audioPath string, scratch, keepWAV bool, out io.Writer) (logLanded, error) {
 	// Validate the audio file exists.
 	if _, err := os.Stat(audioPath); err != nil {
-		return fmt.Errorf("audio file %q not found: %w", audioPath, err)
+		return logLanded{}, fmt.Errorf("audio file %q not found: %w", audioPath, err)
 	}
 
 	capturedAt := now()
@@ -391,7 +405,7 @@ func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr j
 	// Transcribe. On error: notify, keep the WAV, return so the user can retry.
 	text, durationSec, err := tr.Transcribe(ctx, audioPath)
 	if err != nil {
-		return fmt.Errorf("transcription failed (audio kept, retryable): %w", err)
+		return logLanded{}, fmt.Errorf("transcription failed (audio kept, retryable): %w", err)
 	}
 
 	// Empty/silent transcript — skip the pipeline and discard a scratch WAV
@@ -403,7 +417,7 @@ func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr j
 				fmt.Fprintf(out, "  (wav cleanup failed: %v)\n", rmErr)
 			}
 		}
-		return nil
+		return logLanded{}, nil
 	}
 
 	transcriberName := tr.Name()
@@ -456,10 +470,11 @@ func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr j
 	// Land the note.
 	absPath, err := jlog.Land(absDir, filename, []byte(doc))
 	if err != nil {
-		return err
+		return logLanded{}, err
 	}
 	fmt.Fprintf(out, "logged: %s\n", relPath)
 	audio.Notify(newNotifier(cfg), fmt.Sprintf("✓ logged: %s", noteTitleOrDefault(in.Title)), relPath, out)
+	landed := logLanded{Path: relPath, Title: noteTitleOrDefault(in.Title), Landed: true}
 
 	// The note is safely landed — a scratch recording can now be cleaned up
 	// unless the caller asked to keep it.
@@ -481,7 +496,7 @@ func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr j
 	s, err := store.Open(cfg.StoreAbsPath(), cfg.EmbedDim)
 	if err != nil {
 		fmt.Fprintf(out, "  (index skipped: %v — run `journal index` to index later)\n", err)
-		return nil
+		return landed, nil
 	}
 	defer s.Close()
 
@@ -493,15 +508,15 @@ func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr j
 	st, err := jlog.IndexVoice(ctx, ix, relPath, doc, mtime)
 	if err != nil {
 		fmt.Fprintf(out, "  (index failed: %v — run `journal index` to index later)\n", err)
-		return nil
+		return landed, nil
 	}
 	fmt.Fprintf(out, "  indexed: %d chunk(s) embedded\n", st.Embedded)
-	return nil
+	return landed, nil
 }
 
 // runLogText orchestrates the shape→assemble→land→index pipeline for --text input.
 // When client is nil and shaping is enabled, a synthesis client is built from cfg.
-func runLogText(ctx context.Context, cfg *config.Config, e embed.Embedder, client synth.Client, rawText string, out io.Writer) error {
+func runLogText(ctx context.Context, cfg *config.Config, e embed.Embedder, client synth.Client, rawText string, out io.Writer) (logLanded, error) {
 	capturedAt := now()
 
 	// Build synthesis client for shaping (unless disabled or already provided).
@@ -550,9 +565,10 @@ func runLogText(ctx context.Context, cfg *config.Config, e embed.Embedder, clien
 	// Land the note.
 	absPath, err := jlog.Land(absDir, filename, []byte(doc))
 	if err != nil {
-		return err
+		return logLanded{}, err
 	}
 	fmt.Fprintf(out, "logged: %s\n", relPath)
+	landed := logLanded{Path: relPath, Title: noteTitleOrDefault(in.Title), Landed: true}
 
 	// Optional daily backlink.
 	if cfg.Log.Landing.BacklinkDaily {
@@ -566,7 +582,7 @@ func runLogText(ctx context.Context, cfg *config.Config, e embed.Embedder, clien
 	s, err := store.Open(cfg.StoreAbsPath(), cfg.EmbedDim)
 	if err != nil {
 		fmt.Fprintf(out, "  (index skipped: %v — run `journal index` to index later)\n", err)
-		return nil
+		return landed, nil
 	}
 	defer s.Close()
 
@@ -578,10 +594,10 @@ func runLogText(ctx context.Context, cfg *config.Config, e embed.Embedder, clien
 	st, err := jlog.IndexVoice(ctx, ix, relPath, doc, mtime)
 	if err != nil {
 		fmt.Fprintf(out, "  (index failed: %v — run `journal index` to index later)\n", err)
-		return nil
+		return landed, nil
 	}
 	fmt.Fprintf(out, "  indexed: %d chunk(s) embedded\n", st.Embedded)
-	return nil
+	return landed, nil
 }
 
 func init() {

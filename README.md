@@ -38,7 +38,7 @@ binary.
 - 🎙️ **Meeting transcripts** — pull [Quill](https://www.quillmeetings.com) meetings into the same local index (`journal quill-sync`); or ingest any recording via `journal transcribe` (WhisperX → summarized, indexed transcript — see [Meetings & Transcripts](https://journal.eamann.com/meetings.html)). Search, list, and digest them all. *(v2.0; Quill is macOS/Windows.)*
 - 🗣️ **Voice notes** — `journal log --text "..."` runs shape→assemble→land→index: the LLM cleans the text, extracts markers (`@todo`/`@decision`/`@question`), and writes a structured note to `logs/`; `--source voice` scopes search to voice chunks.
 - 💾 **Backup & sync** — opt-in `journal sync` keeps a git remote in step, off-machine.
-- 🔌 **Integrations** — an MCP server (`journal mcp`) exposes 13 tools (`search`, `capture`, `todos`, `synth`, and more), read-only resources (`journal://today`, `journal://recent`, …), and pre-built prompts to Claude Desktop and Claude Code over MCP.
+- 🔌 **Integrations** — an MCP server (`journal mcp`) exposes 15 tools (`search`, `capture`, `todos`, `synth`, `journal_log_text`, `journal_log_audio`, and more), read-only resources (`journal://today`, `journal://recent`, …), and pre-built prompts to Claude Desktop and Claude Code over MCP.
 
 ---
 
