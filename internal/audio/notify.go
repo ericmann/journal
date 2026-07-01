@@ -80,6 +80,21 @@ func appleScriptQuote(s string) string {
 // notification.
 var DefaultNotifier Notifier = osascriptNotifier{}
 
+// AvailableNotifier returns the name of the first notifier backend resolvable
+// on PATH ("osascript" or "terminal-notifier"), or "" if neither is present.
+// It performs the same PATH lookups osascriptNotifier.Notify does, without
+// sending a notification, so `journal doctor` can report notifier status
+// using the same definition of "available" as the live path.
+func AvailableNotifier() string {
+	if _, err := exec.LookPath("osascript"); err == nil {
+		return "osascript"
+	}
+	if _, err := exec.LookPath("terminal-notifier"); err == nil {
+		return "terminal-notifier"
+	}
+	return ""
+}
+
 // Notify sends a notification via n and degrades silently on failure: it
 // writes a log-only line to out rather than returning an error, so a broken
 // or absent notifier (no osascript/terminal-notifier, e.g. off macOS) never

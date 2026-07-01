@@ -57,7 +57,7 @@ func TestWhisperCPPMissingModelFailsFast(t *testing.T) {
 }
 
 // writeFakeWhisperBin creates an executable file named whisper-cli inside a
-// fresh temp dir and points PATH at it, so findWhisperBin resolves without
+// fresh temp dir and points PATH at it, so FindWhisperBin resolves without
 // depending on a real whisper.cpp install.
 func writeFakeWhisperBin(t *testing.T) {
 	t.Helper()

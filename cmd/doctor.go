@@ -9,12 +9,25 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ericmann/journal/internal/audio"
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
+	jlog "github.com/ericmann/journal/internal/log"
 	"github.com/ericmann/journal/internal/quill"
 	"github.com/ericmann/journal/internal/store"
 	"github.com/spf13/cobra"
 )
+
+// checkWhisperBinAvailable resolves the whisper.cpp binary. Injectable so
+// tests never depend on (or require the absence of) a real whisper.cpp
+// install — the same lookup jlog.CheckAvailable uses to preflight `journal
+// log`.
+var checkWhisperBinAvailable = jlog.FindWhisperBin
+
+// checkNotifierAvailable resolves the desktop notifier backend. Injectable so
+// tests never depend on (or require the absence of) osascript/terminal-notifier
+// — the same lookup audio.DefaultNotifier uses when `journal log` notifies.
+var checkNotifierAvailable = audio.AvailableNotifier
 
 var doctorJSON bool
 
@@ -106,6 +119,8 @@ func runDoctor(ctx context.Context, cfg *config.Config, checker ollamaChecker) d
 		checks = append(checks, transcriptsCheck(cfg))
 		checks = append(checks, quillCheck(ctx, cfg))
 	}
+
+	checks = append(checks, audioChecks(cfg)...)
 
 	checks = append(checks, synthCheck(cfg))
 	checks = append(checks, egressCheck(cfg))
@@ -308,6 +323,47 @@ func quillCheck(ctx context.Context, cfg *config.Config) check {
 		pending = fmt.Sprintf("%d meeting(s) not yet synced — run `journal quill-sync`", count)
 	}
 	return check{Name: "quill", OK: true, Detail: fmt.Sprintf("%s: %d meeting(s); %s", dbPath, count, pending)}
+}
+
+// audioChecks report the `journal log` voice-capture toolchain: ffmpeg
+// (recording), the whisper.cpp binary + provisioned model (transcription),
+// and the desktop notifier. All four are informational and never fail the
+// verdict — `journal log` is opt-in, and the point of surfacing them here is
+// to let a user discover a broken setup ahead of a recording, not to block
+// `doctor` on a feature they may not use. Each check reuses the same lookup
+// the live `journal log` path uses, so "installed" means the same thing in
+// both places.
+func audioChecks(cfg *config.Config) []check {
+	var checks []check
+
+	if err := checkFfmpegAvailable(); err != nil {
+		checks = append(checks, check{Name: "ffmpeg", OK: true, Detail: "not found in PATH — recording unavailable (macOS only); install: `brew install ffmpeg`"})
+	} else {
+		checks = append(checks, check{Name: "ffmpeg", OK: true, Detail: "found in PATH"})
+	}
+
+	if bin, err := checkWhisperBinAvailable(); err != nil {
+		checks = append(checks, check{Name: "whisper_bin", OK: true, Detail: err.Error()})
+	} else {
+		checks = append(checks, check{Name: "whisper_bin", OK: true, Detail: bin})
+	}
+
+	modelPath := jlog.ModelPath(cfg.LogTranscriberModelDirAbs(), cfg.Log.Transcriber.Model)
+	if _, err := os.Stat(modelPath); errors.Is(err, os.ErrNotExist) {
+		checks = append(checks, check{Name: "transcriber_model", OK: true, Detail: fmt.Sprintf("%s missing — run `journal models pull`", modelPath)})
+	} else if err != nil {
+		checks = append(checks, check{Name: "transcriber_model", OK: true, Detail: err.Error()})
+	} else {
+		checks = append(checks, check{Name: "transcriber_model", OK: true, Detail: modelPath + " present"})
+	}
+
+	if name := checkNotifierAvailable(); name != "" {
+		checks = append(checks, check{Name: "notifier", OK: true, Detail: name + " available"})
+	} else {
+		checks = append(checks, check{Name: "notifier", OK: true, Detail: "osascript/terminal-notifier not found — desktop notifications disabled (degrades silently)"})
+	}
+
+	return checks
 }
 
 func renderDoctor(out io.Writer, rep doctorReport, jsonMode bool) {
