@@ -239,6 +239,7 @@ func TestMCPLogAudioEmptyTranscriptReturnsLandedFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 	ft := &jlog.FakeTranscriber{Reply: "   "}
+	stubNewNotifier(t)
 
 	out, err := mcpLogAudio(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), ft, nil, logAudioInput{AudioPath: audioPath})
 	if err != nil {

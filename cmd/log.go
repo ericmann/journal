@@ -403,8 +403,13 @@ func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr j
 	capturedAt := now()
 
 	// Transcribe. On error: notify, keep the WAV, return so the user can retry.
+	// The hotkey/mic-toggle flow runs this in a detached process whose stdout is
+	// /dev/null, so a desktop notification is the only way the user learns the
+	// note never landed (e.g. whisper.cpp or the model isn't installed).
 	text, durationSec, err := tr.Transcribe(ctx, audioPath)
 	if err != nil {
+		audio.Notify(newNotifier(cfg), "✕ journal log failed",
+			fmt.Sprintf("transcription failed — audio kept, retry: journal log %s", audioPath), out)
 		return logLanded{}, fmt.Errorf("transcription failed (audio kept, retryable): %w", err)
 	}
 
@@ -412,6 +417,7 @@ func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr j
 	// (nothing was learned from it, so there's nothing to keep).
 	if strings.TrimSpace(text) == "" {
 		fmt.Fprintln(out, "  (empty transcript — nothing to log)")
+		audio.Notify(newNotifier(cfg), "journal log", "empty recording — nothing to log", out)
 		if scratch {
 			if rmErr := os.Remove(audioPath); rmErr != nil && !os.IsNotExist(rmErr) {
 				fmt.Fprintf(out, "  (wav cleanup failed: %v)\n", rmErr)

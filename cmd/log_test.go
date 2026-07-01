@@ -293,6 +293,7 @@ func TestLogAudioTranscriptionErrorIsRetryable(t *testing.T) {
 
 	ft := &jlog.FakeTranscriber{ForcedErr: errors.New("model not found at \"/models/base.en.bin\": run `journal models pull`")}
 	fake := embed.NewFake(cfg.EmbedDim)
+	notifier := stubNewNotifier(t)
 
 	var out bytes.Buffer
 	_, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
@@ -312,6 +313,17 @@ func TestLogAudioTranscriptionErrorIsRetryable(t *testing.T) {
 	if len(entries) != 0 {
 		t.Error("a note was landed despite transcription error")
 	}
+	// The hotkey/mic-toggle flow is silent unless a desktop notification fires —
+	// the user must be told the note failed and the audio was kept for retry.
+	if len(notifier.Calls) != 1 {
+		t.Fatalf("expected 1 failure notification, got %d: %+v", len(notifier.Calls), notifier.Calls)
+	}
+	if !strings.HasPrefix(notifier.Calls[0].Title, "✕") {
+		t.Errorf("failure notification title = %q, want a ✕ failure marker", notifier.Calls[0].Title)
+	}
+	if !strings.Contains(notifier.Calls[0].Message, audioPath) {
+		t.Errorf("failure notification message = %q, want the retryable audio path %q", notifier.Calls[0].Message, audioPath)
+	}
 }
 
 func TestLogAudioEmptyTranscriptSkipsPipeline(t *testing.T) {
@@ -324,6 +336,7 @@ func TestLogAudioEmptyTranscriptSkipsPipeline(t *testing.T) {
 	// Empty reply simulates a silent recording.
 	ft := &jlog.FakeTranscriber{Reply: "   "}
 	fake := embed.NewFake(cfg.EmbedDim)
+	notifier := stubNewNotifier(t)
 
 	var out bytes.Buffer
 	_, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
@@ -337,6 +350,14 @@ func TestLogAudioEmptyTranscriptSkipsPipeline(t *testing.T) {
 	entries, _ := os.ReadDir(cfg.LogAbsPath())
 	if len(entries) != 0 {
 		t.Error("a note was landed for an empty transcript")
+	}
+	// A silent recording still needs closure in the hotkey flow — no success
+	// notification will come, so tell the user nothing was captured.
+	if len(notifier.Calls) != 1 {
+		t.Fatalf("expected 1 empty-recording notification, got %d: %+v", len(notifier.Calls), notifier.Calls)
+	}
+	if !strings.Contains(notifier.Calls[0].Message, "nothing to log") {
+		t.Errorf("empty-recording notification message = %q, want it to say nothing was logged", notifier.Calls[0].Message)
 	}
 }
 
@@ -968,6 +989,7 @@ func TestLogAudioScratchEmptyTranscriptDiscardsWAV(t *testing.T) {
 
 	ft := &jlog.FakeTranscriber{Reply: "   "}
 	fake := embed.NewFake(cfg.EmbedDim)
+	stubNewNotifier(t)
 
 	var out bytes.Buffer
 	// Even with keepWAV=true, an empty/silent transcript discards the scratch wav.
@@ -989,6 +1011,7 @@ func TestLogAudioScratchTranscriptionErrorKeepsWAV(t *testing.T) {
 
 	ft := &jlog.FakeTranscriber{ForcedErr: errors.New("transcription backend unavailable")}
 	fake := embed.NewFake(cfg.EmbedDim)
+	stubNewNotifier(t)
 
 	var out bytes.Buffer
 	_, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, false, &out)
