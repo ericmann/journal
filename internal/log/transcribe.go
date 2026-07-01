@@ -97,6 +97,23 @@ func (w *WhisperCPP) Transcribe(ctx context.Context, audioPath string) (string, 
 	return strings.TrimSpace(string(out)), dur, nil
 }
 
+// CheckAvailable verifies the whisper.cpp binary resolves on PATH and the
+// configured model file exists, without running transcription. It performs
+// the same checks Transcribe does lazily, so callers can preflight the
+// toolchain (e.g. before starting a recording) and fail fast with the same
+// actionable message rather than discovering the problem only after
+// transcription is attempted.
+func CheckAvailable(modelDir, model string) error {
+	modelPath := filepath.Join(modelDir, model+".bin")
+	if _, err := os.Stat(modelPath); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("model file not found at %q: run `journal models pull`", modelPath)
+	}
+	if _, err := findWhisperBin(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // findWhisperBin looks for the whisper.cpp binary in PATH, trying common names.
 func findWhisperBin() (string, error) {
 	for _, name := range []string{"whisper-cli", "whisper-cpp", "whisper"} {

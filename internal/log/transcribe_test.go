@@ -56,6 +56,82 @@ func TestWhisperCPPMissingModelFailsFast(t *testing.T) {
 	}
 }
 
+// writeFakeWhisperBin creates an executable file named whisper-cli inside a
+// fresh temp dir and points PATH at it, so findWhisperBin resolves without
+// depending on a real whisper.cpp install.
+func writeFakeWhisperBin(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "whisper-cli")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+func TestCheckAvailable(t *testing.T) {
+	writeModel := func(t *testing.T, modelDir, model string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(modelDir, model+".bin"), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name      string
+		setup     func(t *testing.T, modelDir, model string)
+		wantErr   bool
+		wantMatch string
+	}{
+		{
+			name: "present",
+			setup: func(t *testing.T, modelDir, model string) {
+				writeModel(t, modelDir, model)
+				writeFakeWhisperBin(t)
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing binary",
+			setup: func(t *testing.T, modelDir, model string) {
+				writeModel(t, modelDir, model)
+				t.Setenv("PATH", t.TempDir())
+			},
+			wantErr:   true,
+			wantMatch: "whisper.cpp binary not found",
+		},
+		{
+			name: "missing model",
+			setup: func(t *testing.T, modelDir, model string) {
+				writeFakeWhisperBin(t)
+			},
+			wantErr:   true,
+			wantMatch: "journal models pull",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			modelDir := t.TempDir()
+			tt.setup(t, modelDir, "base.en")
+
+			err := CheckAvailable(modelDir, "base.en")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantMatch) {
+					t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantMatch)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+		})
+	}
+}
+
 func TestWhisperCPPName(t *testing.T) {
 	w := NewWhisperCPP("/tmp", "base.en")
 	if got := w.Name(); got != "whisper.cpp/base.en" {

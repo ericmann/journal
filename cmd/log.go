@@ -114,6 +114,16 @@ var checkFfmpegAvailable = func() error {
 	return nil
 }
 
+// checkTranscriberAvailable reports whether the configured whisper.cpp
+// transcriber toolchain (binary + model file) is ready to run. Checking this
+// at record-start — not just inside Transcribe() after the recording has
+// finished — lets a missing binary/model fail fast before a recording is
+// spent. Injectable so tests never depend on (or require the absence of) a
+// real whisper.cpp install.
+var checkTranscriberAvailable = func(cfg *config.Config) error {
+	return jlog.CheckAvailable(cfg.LogTranscriberModelDirAbs(), cfg.Log.Transcriber.Model)
+}
+
 // spawnDetached re-invokes the current binary with args as a background
 // process that survives after the current process exits (a new session, and
 // stdio redirected to /dev/null).
@@ -198,6 +208,10 @@ func runLogStartRecording(cfg *config.Config, out io.Writer) error {
 		}
 	}
 	if err := checkFfmpegAvailable(); err != nil {
+		return err
+	}
+	if err := checkTranscriberAvailable(cfg); err != nil {
+		audio.Notify(newNotifier(cfg), "✕ journal log failed", err.Error(), out)
 		return err
 	}
 
