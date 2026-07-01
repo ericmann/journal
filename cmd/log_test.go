@@ -193,6 +193,66 @@ func TestLogAudioFakeTranscriberLandsNote(t *testing.T) {
 	}
 }
 
+func TestLogAudioNotifiesOnCompletion(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = true
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "fixed the caching bug today", DurationSec: 15}
+	validReply := `{"title":"Caching Fix","summary":"Fixed caching.","body":"Fixed the caching bug.","tags":[],"markers":[]}`
+	fc := &synth.Fake{Reply: validReply}
+	fake := embed.NewFake(cfg.EmbedDim)
+	notifier := stubNewNotifier(t)
+
+	var out bytes.Buffer
+	if err := runLogAudio(context.Background(), cfg, fake, ft, fc, audioPath, false, false, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(notifier.Calls) != 1 {
+		t.Fatalf("expected 1 finish notification, got %d: %+v", len(notifier.Calls), notifier.Calls)
+	}
+	if !strings.Contains(notifier.Calls[0].Title, "Caching Fix") {
+		t.Errorf("notification title = %q, want it to contain the note title", notifier.Calls[0].Title)
+	}
+	if !strings.HasPrefix(notifier.Calls[0].Title, "✓ logged:") {
+		t.Errorf("notification title = %q, want prefix %q", notifier.Calls[0].Title, "✓ logged:")
+	}
+	if !strings.Contains(notifier.Calls[0].Message, "logs/") {
+		t.Errorf("notification message = %q, want it to contain the note path", notifier.Calls[0].Message)
+	}
+}
+
+func TestLogAudioUnshapedNotifiesWithDefaultTitle(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = false
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "fixed the caching bug today", DurationSec: 15}
+	fake := embed.NewFake(cfg.EmbedDim)
+	notifier := stubNewNotifier(t)
+
+	var out bytes.Buffer
+	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(notifier.Calls) != 1 {
+		t.Fatalf("expected 1 finish notification, got %d", len(notifier.Calls))
+	}
+	if notifier.Calls[0].Title != "✓ logged: Voice Note" {
+		t.Errorf("notification title = %q, want %q", notifier.Calls[0].Title, "✓ logged: Voice Note")
+	}
+}
+
 func TestLogAudioWithShapingLandsShapedNote(t *testing.T) {
 	cfg := testRepo(t, nil)
 	cfg.Log.Shaping.Enabled = true
@@ -378,6 +438,18 @@ func stubSpawnPipeline(t *testing.T) *struct {
 	return got
 }
 
+// stubNewNotifier overrides newNotifier to return a fake Notifier instead of
+// the live osascript/terminal-notifier one, so tests never pop a real OS
+// notification and can assert on what was sent.
+func stubNewNotifier(t *testing.T) *audio.FakeNotifier {
+	t.Helper()
+	fake := &audio.FakeNotifier{}
+	orig := newNotifier
+	newNotifier = func(*config.Config) audio.Notifier { return fake }
+	t.Cleanup(func() { newNotifier = orig })
+	return fake
+}
+
 // stubSignalProcess overrides signalProcess to record calls instead of
 // sending a real OS signal.
 func stubSignalProcess(t *testing.T) *struct {
@@ -424,6 +496,25 @@ func TestLogToggleStartsWhenIdle(t *testing.T) {
 	}
 	if *gotWAV == "" || !strings.HasSuffix(*gotWAV, ".wav") {
 		t.Errorf("spawnDaemon called with unexpected wav path: %q", *gotWAV)
+	}
+}
+
+func TestLogStartRecordingNotifiesOnStart(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	stubFfmpegAvailable(t, nil)
+	stubSpawnDaemon(t, true)
+	notifier := stubNewNotifier(t)
+
+	var out bytes.Buffer
+	if err := runLogStartRecording(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(notifier.Calls) != 1 {
+		t.Fatalf("expected 1 start notification, got %d: %+v", len(notifier.Calls), notifier.Calls)
+	}
+	if notifier.Calls[0].Message != "● recording" {
+		t.Errorf("notification message = %q, want %q", notifier.Calls[0].Message, "● recording")
 	}
 }
 
@@ -482,6 +573,7 @@ func TestLogStartRecordingAlreadyRecordingIsNoOp(t *testing.T) {
 	orig := spawnDaemon
 	spawnDaemon = func(string) error { spawnCalled = true; return nil }
 	t.Cleanup(func() { spawnDaemon = orig })
+	notifier := stubNewNotifier(t)
 
 	var out bytes.Buffer
 	if err := runLogStartRecording(cfg, &out); err != nil {
@@ -492,6 +584,9 @@ func TestLogStartRecordingAlreadyRecordingIsNoOp(t *testing.T) {
 	}
 	if spawnCalled {
 		t.Error("spawnDaemon should not be called when already recording")
+	}
+	if len(notifier.Calls) != 0 {
+		t.Errorf("expected no start notification when already recording, got %d", len(notifier.Calls))
 	}
 }
 

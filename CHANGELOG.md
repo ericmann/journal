@@ -9,6 +9,19 @@ versioning. Build-time design rationale lives in
 
 ### Added
 
+- **Start/finish desktop notifications for `journal log` (Phase 4, macOS only).**
+  The recording toggle now pairs the existing terminal output with a real desktop
+  notification: starting a recording pops "● recording", and the async pipeline
+  landing the note pops "✓ logged: `<title>`" with the note's relative path. Sent
+  via `osascript` (`display notification`), falling back to `terminal-notifier` if
+  osascript is unavailable; a missing/failing notifier degrades silently (logged,
+  not surfaced) and never blocks or fails the recording or pipeline.
+- **`internal/audio.Notifier`**: an injectable desktop-notification boundary
+  (`DefaultNotifier` for production, `FakeNotifier` for tests) mirroring the
+  existing `Recorder` pattern, so tests never pop a real OS notification.
+- **Hammerspoon hotkey binding documented** (`docs/USAGE.md`) — an `init.lua`
+  snippet binding a single hotkey to bare `journal log`, plus an optional
+  menubar-dot add-on, so the recording toggle is fully usable from one key press.
 - **`journal log` recording toggle — mic capture (Phase 3, macOS only).** The bare
   `journal log` command now toggles mic recording: the first press starts a detached
   background recorder (`ffmpeg -f avfoundation`, 16 kHz/mono/16-bit PCM) and prints

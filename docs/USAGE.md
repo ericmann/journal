@@ -116,6 +116,16 @@ temporary 16 kHz/mono/16-bit WAV via `ffmpeg -f avfoundation`; a missing
 anything is written. The stop press returns immediately — transcription and
 landing happen asynchronously in the background.
 
+Each press also pops a desktop notification (in addition to the terminal
+output above), so the toggle is usable from a hotkey without watching a
+terminal: starting a recording sends "● recording", and the finalized note
+landing (asynchronously, after the stop press) sends "✓ logged: `<title>`"
+with the note's path. Notifications go through `osascript`, falling back to
+`terminal-notifier` if it's unavailable; if neither is present the failure is
+logged, not surfaced — a broken notifier never blocks or fails a recording.
+See [Hammerspoon hotkey binding](#hammerspoon-hotkey-binding) below to wire
+this to a single key press.
+
 Explicit controls, for scripting or a hotkey that always wants one direction:
 - `journal log --start` — start recording; a no-op ("already recording") if one is active.
 - `journal log --stop` — stop and process; prints "no active recording" if idle.
@@ -178,6 +188,51 @@ the finalized WAV exactly like the audio-file path, just asynchronously):
 5. **Index** — embeds the note as `source=voice`; failure is non-fatal and retryable.
 
 Voice notes are returned by `journal search --source voice` (aliases `log`/`logs`).
+
+#### Hammerspoon hotkey binding
+
+Because the bare `journal log` self-toggles, a single hotkey can start and stop
+every recording — the hotkey never needs to know which state it's in. Add to
+`~/.hammerspoon/init.lua` (requires [Hammerspoon](https://www.hammerspoon.org/)):
+
+```lua
+-- Bind a hotkey to journal's mic-recording toggle. Adjust the modifier keys
+-- and the binary path (`which journal`) to match your setup.
+hs.hotkey.bind({"cmd", "alt", "ctrl"}, "J", function()
+  hs.task.new("/usr/local/bin/journal", nil, {"log"}):start()
+end)
+```
+
+Every press just runs `journal log`; the lockfile toggle in `internal/audio`
+(see above) decides whether that press starts or stops the recording. Desktop
+notifications (`osascript`/`terminal-notifier`) confirm each press without
+needing a terminal window open.
+
+An optional menubar indicator (not shipped by `journal` — a self-contained
+Hammerspoon add-on) can mirror the recording state with a colored dot:
+
+```lua
+-- Optional: a small menubar dot that tracks recording state by polling
+-- `journal log --status`. Purely cosmetic — the notifications above are
+-- the primary feedback loop; skip this if you don't want a persistent
+-- menubar item.
+local journalDot = hs.menubar.new()
+local function refreshJournalDot()
+  local _, status = hs.execute("/usr/local/bin/journal log --status")
+  if status and status:match("^recording") then
+    journalDot:setTitle("●") -- recording
+  else
+    journalDot:setTitle("○") -- idle
+  end
+end
+hs.timer.doEvery(5, refreshJournalDot)
+refreshJournalDot()
+```
+
+This polling menubar dot is a convenience layer only — it is not a persistent
+daemon `journal` ships or manages; `journal log` remains a single static
+binary with no background service beyond the detached per-recording process
+started by the toggle itself.
 
 `journal mcp` runs an MCP server (stdio) exposing 13 tools — `search`, `recent`,
 `decisions`, `threads`, `show`, `capture`, `meetings`, `todos`, `done`, `stats`,

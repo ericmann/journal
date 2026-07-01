@@ -97,6 +97,12 @@ func newRecorder(cfg *config.Config) audio.Recorder {
 	return audio.FfmpegRecorder{SilenceAutostop: cfg.Log.Audio.SilenceAutostop}
 }
 
+// newNotifier builds the live desktop Notifier. Tests override this var with
+// a fake so no test ever pops a real OS notification.
+var newNotifier = func(cfg *config.Config) audio.Notifier {
+	return audio.DefaultNotifier
+}
+
 // checkFfmpegAvailable reports whether ffmpeg can be found. Injectable so
 // tests never depend on (or require the absence of) a real ffmpeg install.
 var checkFfmpegAvailable = func() error {
@@ -145,6 +151,16 @@ func randHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// noteTitleOrDefault mirrors the title fallback jlog.Assemble applies to the
+// landed document, so the finish notification names the note the same way
+// its own heading does.
+func noteTitleOrDefault(title string) string {
+	if title == "" {
+		return "Voice Note"
+	}
+	return title
 }
 
 // runLogToggle implements the bare `journal log` UX: start a recording if
@@ -202,6 +218,7 @@ func runLogStartRecording(cfg *config.Config, out io.Writer) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 
+	audio.Notify(newNotifier(cfg), "journal log", "● recording", out)
 	fmt.Fprintln(out, "● recording")
 	return nil
 }
@@ -442,6 +459,7 @@ func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr j
 		return err
 	}
 	fmt.Fprintf(out, "logged: %s\n", relPath)
+	audio.Notify(newNotifier(cfg), fmt.Sprintf("✓ logged: %s", noteTitleOrDefault(in.Title)), relPath, out)
 
 	// The note is safely landed — a scratch recording can now be cleaned up
 	// unless the caller asked to keep it.
