@@ -27,4 +27,7 @@ type AssembleInput struct {
 	Transcriber       string // "text" for the --text path
 	KeepRawTranscript bool
 	CapturedAt        time.Time
+	// AudioPath, when non-empty, is recorded as the `audio:` frontmatter
+	// field — set when a recorded WAV is retained (log.audio.keep_wav).
+	AudioPath string
 }

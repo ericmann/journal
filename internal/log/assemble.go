@@ -44,7 +44,11 @@ func Assemble(in AssembleInput) string {
 	if questions > 0 {
 		fmt.Fprintf(&b, "questions: %d\n", questions)
 	}
-	b.WriteString("audio: null\n")
+	if in.AudioPath != "" {
+		fmt.Fprintf(&b, "audio: %q\n", in.AudioPath)
+	} else {
+		b.WriteString("audio: null\n")
+	}
 	b.WriteString("---\n\n")
 
 	// Title.

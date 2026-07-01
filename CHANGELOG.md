@@ -9,6 +9,28 @@ versioning. Build-time design rationale lives in
 
 ### Added
 
+- **`journal log` recording toggle — mic capture (Phase 3, macOS only).** The bare
+  `journal log` command now toggles mic recording: the first press starts a detached
+  background recorder (`ffmpeg -f avfoundation`, 16 kHz/mono/16-bit PCM) and prints
+  "● recording"; the second press stops it and hands the finalized WAV off to the
+  existing transcribe→shape→assemble→land→index pipeline asynchronously, so both
+  presses return immediately. `--start`/`--stop`/`--cancel`/`--status` give explicit
+  control (`--cancel` discards the recording — no note is produced). The toggle state
+  lives in a lockfile (`$XDG_RUNTIME_DIR/journal-log.lock` or
+  `<tmp>/journal-log/journal-log.lock`) holding `{pid, wav_path, started_at}`; a dead
+  PID is detected and cleaned up automatically on the next press. `log.audio.max_duration`
+  (default 900s) self-finalizes a long recording; `log.audio.silence_autostop` (default
+  off) is an optional safety-net stop after sustained silence. The recorded WAV is
+  deleted after a successful run unless `log.audio.keep_wav: true`, in which case its
+  path is recorded in the landed note's `audio:` frontmatter field. A WAV passed
+  directly (`journal log <file>.wav`) is never auto-deleted, regardless of this
+  setting — only recorder-produced scratch files are.
+- **`internal/audio` package**: lockfile primitives (`ReadLock`/`WriteLock`/`RemoveLock`,
+  injectable `PIDAlive`) and an injectable `Recorder` interface (`FfmpegRecorder` for
+  production, `FakeRecorder` for tests) so the mic/ffmpeg dependency never runs in tests.
+- **`log.audio.{tmp_dir,max_duration,silence_autostop,keep_wav}` config keys** and the
+  `LogAudioTmpDirAbs()` config accessor, additive to the existing `log.audio.{device,
+  sample_rate,channels}` keys.
 - **`journal log <audio.wav>` — transcribe stage (Phase 2b).** Pass a WAV file as
   a positional argument to transcribe it locally via `whisper.cpp` and run the full
   transcribe→shape→assemble→land→index pipeline. No network access: a missing model

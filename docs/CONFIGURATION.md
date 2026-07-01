@@ -74,11 +74,15 @@ log:
   landing:
     dir: logs                          # repo-relative landing zone for voice notes
     backlink_daily: false              # append one-line breadcrumb to today's daily note
-  # Audio/transcriber keys (audio capture is Phase 3; transcriber is active):
+  # Audio/transcriber keys — recording toggle (Phase 3) + transcriber:
   audio:
     device: default
     sample_rate: 16000
     channels: 1
+    tmp_dir: ""                 # scratch recording dir; "" -> <os temp dir>/journal-log
+    max_duration: 900           # seconds; self-finalizes + processes at the cap (0 = no cap)
+    silence_autostop: false     # safety-net stop after sustained silence (not the primary stop)
+    keep_wav: false             # retain the wav after landing + record it in `audio:` frontmatter
   transcriber:
     backend: whisper.cpp        # transcription engine ("whisper.cpp" is the default)
     model: base.en              # model name without .bin (e.g. base.en, small.en)
@@ -137,6 +141,10 @@ transcriber:
 | `log.shaping.keep_raw_transcript` | `true` | Include a collapsed `<details>` block with the original raw text in the landed note. |
 | `log.landing.dir` | `logs` | Repo-relative directory for landed voice notes (`YYYY-MM-DD-HHMM-<slug>.md`). |
 | `log.landing.backlink_daily` | `false` | Append a one-line breadcrumb to today's daily note after landing. |
+| `log.audio.tmp_dir` | `""` (→ `<os temp dir>/journal-log`) | Directory for scratch recording WAVs made by the `journal log` toggle. `~` is expanded; created on demand. |
+| `log.audio.max_duration` | `900` | Caps a single recording in seconds; the recorder self-finalizes and hands off to the pipeline at the limit. `0` disables the cap. |
+| `log.audio.silence_autostop` | `false` | Optional safety-net stop after a sustained silence interval — not the primary stopping mechanism (that's the toggle/`--stop`). |
+| `log.audio.keep_wav` | `false` | Retain the recorded WAV after a successful pipeline run and record its path in the landed note's `audio:` frontmatter. Default: delete the scratch WAV once the note lands. A WAV passed directly (`journal log <file>.wav`) is never auto-deleted regardless of this setting. |
 | `log.transcriber.backend` | `whisper.cpp` | Transcription engine used by `journal log <audio.wav>`. Only `whisper.cpp` is built in. |
 | `log.transcriber.model` | `base.en` | Model name (without `.bin`) for the log transcriber. Small English models (`base.en`, `small.en`) give fast desk-dictation results. |
 | `log.transcriber.model_dir` | `~/.cache/journal/models` | Directory where model files are stored. Defaults to the same path as `transcriber.model_dir` so both paths share one model store. `~` is expanded. |

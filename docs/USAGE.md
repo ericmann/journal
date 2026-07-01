@@ -82,6 +82,8 @@ journal tui                                       # interactive dashboard
 journal sync    [--dry-run]                      # back up notes to/from the git remote
 journal synth   weekly|daily|meetings|decisions|stale [--dry-run] [--write] [--project slug] [--days N] [--date YYYY-MM-DD]
 journal quill-sync [--full] [--db path]          # pull Quill meeting transcripts into transcripts/
+journal log                                       # toggle mic recording: first press starts, second press stops + processes
+journal log     --start|--stop|--cancel|--status  # explicit recording controls (see below)
 journal log     --text "..."                      # capture a voice note (typed text)
 journal log     <audio.wav>                       # transcribe a WAV → voice note (requires whisper.cpp + model)
 journal meetings [--json]                         # recent meeting transcripts, newest first
@@ -96,7 +98,53 @@ mirrors this: a `source` param on `search` and a `meetings` tool.
 
 ### Voice notes (`journal log`)
 
-`journal log` captures quick voice-style notes. Two entry points:
+`journal log` captures quick voice-style notes. Three entry points:
+
+**Mic recording toggle (bare `journal log`, macOS only):**
+```sh
+journal log            # first press: starts recording, prints "● recording"
+journal log            # second press: stops, finalizes the WAV, processes it in the background
+```
+The toggle is a lockfile (`$XDG_RUNTIME_DIR/journal-log.lock`, or
+`<tmp>/journal-log/journal-log.lock`) holding the recorder's PID, WAV path, and
+start time — so a hotkey can bind to the bare command and "do the right
+thing" on every press. If the lockfile's PID is no longer running (e.g. the
+machine slept mid-recording), the next press cleans it up and starts fresh.
+Recording captures the default input device (`log.audio.device`) to a
+temporary 16 kHz/mono/16-bit WAV via `ffmpeg -f avfoundation`; a missing
+`ffmpeg` or unavailable device fails fast on the starting press, before
+anything is written. The stop press returns immediately — transcription and
+landing happen asynchronously in the background.
+
+Explicit controls, for scripting or a hotkey that always wants one direction:
+- `journal log --start` — start recording; a no-op ("already recording") if one is active.
+- `journal log --stop` — stop and process; prints "no active recording" if idle.
+- `journal log --cancel` — stop and **discard** the recording (no note is produced).
+- `journal log --status` — report idle/recording, elapsed time, and the WAV path.
+
+Safety limits (`.journal/config.yaml`, see [CONFIGURATION.md](CONFIGURATION.md)):
+- `log.audio.max_duration` (default 900s) self-finalizes and processes a
+  recording that hits the cap — you never lose a long recording to a
+  forgotten stop press.
+- `log.audio.silence_autostop` (default off) is a safety-net stop after a
+  sustained silence interval; it is not the primary stopping mechanism.
+- `log.audio.keep_wav` (default off) retains the WAV after a successful run
+  and records its path in the landed note's `audio:` frontmatter field;
+  otherwise the scratch WAV is deleted once the note is safely landed.
+
+Failure handling (a recording never silently vanishes):
+- A missing `ffmpeg` binary fails fast on the starting press, before anything
+  is written. Other recorder failures (mic permission denied by the OS, no
+  such device) are caught inside the background recorder — the starting press
+  still prints "● recording", but no WAV or note is produced once the failure
+  surfaces; `journal log --status` shortly after a press confirms whether a
+  recording is actually active.
+- Empty/silent recording → the pipeline is skipped and the WAV discarded.
+- Transcription error → the WAV is kept and the failure is retryable
+  (re-run `journal log <path-to-wav>` once the issue is fixed).
+- A second press while a prior recording's pipeline is still processing
+  starts a fresh recording once the lock is released (processing doesn't
+  block the next capture).
 
 **Typed text (`--text`):**
 ```sh
@@ -112,7 +160,8 @@ Requires the `whisper.cpp` binary in PATH and a model provisioned via
 default for fast (~2 s) desk-dictation results. Configure via
 `log.transcriber.{backend,model,model_dir}` in `.journal/config.yaml`.
 
-Both paths run the same pipeline:
+All three entry points run the same pipeline (the recording toggle transcribes
+the finalized WAV exactly like the audio-file path, just asynchronously):
 
 1. **Transcribe** (audio path only) — runs `whisper.cpp` locally; no network. A
    missing model fails fast with "run `journal models pull`". An empty/silent

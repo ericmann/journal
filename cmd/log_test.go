@@ -5,10 +5,14 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
+	"github.com/ericmann/journal/internal/audio"
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
 	jlog "github.com/ericmann/journal/internal/log"
@@ -159,7 +163,7 @@ func TestLogAudioFakeTranscriberLandsNote(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, &out)
+	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +209,7 @@ func TestLogAudioWithShapingLandsShapedNote(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, fc, audioPath, &out)
+	err := runLogAudio(context.Background(), cfg, fake, ft, fc, audioPath, false, false, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +235,7 @@ func TestLogAudioTranscriptionErrorIsRetryable(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, &out)
+	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
 	if err == nil {
 		t.Fatal("expected error for transcription failure")
 	}
@@ -262,7 +266,7 @@ func TestLogAudioEmptyTranscriptSkipsPipeline(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, &out)
+	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
 	if err != nil {
 		t.Errorf("empty transcript should not error, got: %v", err)
 	}
@@ -282,7 +286,7 @@ func TestLogAudioMissingFileReturnsError(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, nil, "/nonexistent/audio.wav", &out)
+	err := runLogAudio(context.Background(), cfg, fake, ft, nil, "/nonexistent/audio.wav", false, false, &out)
 	if err == nil {
 		t.Fatal("expected error for missing audio file")
 	}
@@ -301,7 +305,7 @@ func TestLogAudioIndexedByVoiceSource(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, &out); err != nil {
+	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -312,5 +316,591 @@ func TestLogAudioIndexedByVoiceSource(t *testing.T) {
 	}
 	if len(results) == 0 {
 		t.Error("audio note not found via --source voice search")
+	}
+}
+
+// --- Recording toggle / lockfile tests ---
+
+// isolateLock points the audio lockfile at a private temp dir so recording
+// tests never collide with each other or a real journal-log session.
+func isolateLock(t *testing.T) {
+	t.Helper()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+}
+
+// stubFfmpegAvailable overrides the ffmpeg-presence preflight check so start
+// tests never depend on (or require the absence of) a real ffmpeg install.
+func stubFfmpegAvailable(t *testing.T, err error) {
+	t.Helper()
+	orig := checkFfmpegAvailable
+	checkFfmpegAvailable = func() error { return err }
+	t.Cleanup(func() { checkFfmpegAvailable = orig })
+}
+
+// stubSpawnDaemon overrides spawnDaemon to record its call instead of
+// forking a real background process. It writes the lockfile itself,
+// simulating the daemon's first action, unless writeLock is false.
+func stubSpawnDaemon(t *testing.T, writeLock bool) *string {
+	t.Helper()
+	var gotWAVPath string
+	orig := spawnDaemon
+	spawnDaemon = func(wavPath string) error {
+		gotWAVPath = wavPath
+		if writeLock {
+			return audio.WriteLock(audio.LockState{PID: os.Getpid(), WAVPath: wavPath, StartedAt: time.Now()})
+		}
+		return nil
+	}
+	t.Cleanup(func() { spawnDaemon = orig })
+	return &gotWAVPath
+}
+
+// stubSpawnPipeline overrides spawnPipeline to record its call instead of
+// forking a real detached process.
+func stubSpawnPipeline(t *testing.T) *struct {
+	wavPath string
+	keepWAV bool
+	calls   int
+} {
+	t.Helper()
+	got := &struct {
+		wavPath string
+		keepWAV bool
+		calls   int
+	}{}
+	orig := spawnPipeline
+	spawnPipeline = func(wavPath string, keepWAV bool) error {
+		got.wavPath, got.keepWAV = wavPath, keepWAV
+		got.calls++
+		return nil
+	}
+	t.Cleanup(func() { spawnPipeline = orig })
+	return got
+}
+
+// stubSignalProcess overrides signalProcess to record calls instead of
+// sending a real OS signal.
+func stubSignalProcess(t *testing.T) *struct {
+	pid int
+	sig syscall.Signal
+} {
+	t.Helper()
+	got := &struct {
+		pid int
+		sig syscall.Signal
+	}{}
+	orig := signalProcess
+	signalProcess = func(pid int, sig syscall.Signal) error {
+		got.pid, got.sig = pid, sig
+		return nil
+	}
+	t.Cleanup(func() { signalProcess = orig })
+	return got
+}
+
+// deadPID spawns and waits on a trivial process, returning a pid guaranteed
+// to no longer be running.
+func deadPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Skipf("could not run a throwaway process: %v", err)
+	}
+	return cmd.Process.Pid
+}
+
+func TestLogToggleStartsWhenIdle(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	stubFfmpegAvailable(t, nil)
+	gotWAV := stubSpawnDaemon(t, true)
+
+	var out bytes.Buffer
+	if err := runLogToggle(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "● recording") {
+		t.Errorf("expected recording notice, got: %q", out.String())
+	}
+	if *gotWAV == "" || !strings.HasSuffix(*gotWAV, ".wav") {
+		t.Errorf("spawnDaemon called with unexpected wav path: %q", *gotWAV)
+	}
+}
+
+func TestLogToggleStopsWhenActive(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	if err := audio.WriteLock(audio.LockState{PID: os.Getpid(), WAVPath: "/tmp/x.wav", StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	got := stubSignalProcess(t)
+
+	var out bytes.Buffer
+	if err := runLogToggle(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got.pid != os.Getpid() || got.sig != syscall.SIGINT {
+		t.Errorf("signalProcess called with (%d, %v), want (%d, SIGINT)", got.pid, got.sig, os.Getpid())
+	}
+	if !strings.Contains(out.String(), "stopping recording") {
+		t.Errorf("expected stopping notice, got: %q", out.String())
+	}
+}
+
+func TestLogToggleRecoversStaleLock(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	pid := deadPID(t)
+	if err := audio.WriteLock(audio.LockState{PID: pid, WAVPath: "/tmp/x.wav", StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	stubFfmpegAvailable(t, nil)
+	gotWAV := stubSpawnDaemon(t, true)
+
+	var out bytes.Buffer
+	if err := runLogToggle(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "stale lock") {
+		t.Errorf("expected stale-lock notice, got: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "● recording") {
+		t.Errorf("expected fresh recording after stale-lock cleanup, got: %q", out.String())
+	}
+	if *gotWAV == "" {
+		t.Error("spawnDaemon was not called after stale-lock cleanup")
+	}
+}
+
+func TestLogStartRecordingAlreadyRecordingIsNoOp(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	if err := audio.WriteLock(audio.LockState{PID: os.Getpid(), WAVPath: "/tmp/x.wav", StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	spawnCalled := false
+	orig := spawnDaemon
+	spawnDaemon = func(string) error { spawnCalled = true; return nil }
+	t.Cleanup(func() { spawnDaemon = orig })
+
+	var out bytes.Buffer
+	if err := runLogStartRecording(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "already recording") {
+		t.Errorf("expected already-recording notice, got: %q", out.String())
+	}
+	if spawnCalled {
+		t.Error("spawnDaemon should not be called when already recording")
+	}
+}
+
+func TestLogStartRecordingFfmpegMissingFailsFast(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	wantErr := errors.New("ffmpeg not found in PATH")
+	stubFfmpegAvailable(t, wantErr)
+	spawnCalled := false
+	orig := spawnDaemon
+	spawnDaemon = func(string) error { spawnCalled = true; return nil }
+	t.Cleanup(func() { spawnDaemon = orig })
+
+	var out bytes.Buffer
+	err := runLogStartRecording(cfg, &out)
+	if err == nil {
+		t.Fatal("expected an error when ffmpeg is unavailable")
+	}
+	if spawnCalled {
+		t.Error("spawnDaemon should not be called when the ffmpeg preflight check fails")
+	}
+	if _, lockErr := audio.ReadLock(); !errors.Is(lockErr, os.ErrNotExist) {
+		t.Error("no lockfile should be written when the ffmpeg preflight check fails")
+	}
+}
+
+func TestLogStopRecordingNoActiveRecording(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+
+	var out bytes.Buffer
+	if err := runLogStopRecording(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "no active recording") {
+		t.Errorf("expected no-active-recording notice, got: %q", out.String())
+	}
+}
+
+func TestLogStopRecordingStaleLockIsCleaned(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	pid := deadPID(t)
+	if err := audio.WriteLock(audio.LockState{PID: pid, WAVPath: "/tmp/x.wav", StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := runLogStopRecording(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "stale lock") || !strings.Contains(out.String(), "no active recording") {
+		t.Errorf("expected stale-lock cleanup + no-active-recording notice, got: %q", out.String())
+	}
+	if _, err := audio.ReadLock(); !errors.Is(err, os.ErrNotExist) {
+		t.Error("stale lock should have been removed")
+	}
+}
+
+func TestLogCancelRecordingSendsSIGUSR1(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	if err := audio.WriteLock(audio.LockState{PID: os.Getpid(), WAVPath: "/tmp/x.wav", StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	got := stubSignalProcess(t)
+
+	var out bytes.Buffer
+	if err := runLogCancelRecording(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got.pid != os.Getpid() || got.sig != syscall.SIGUSR1 {
+		t.Errorf("signalProcess called with (%d, %v), want (%d, SIGUSR1)", got.pid, got.sig, os.Getpid())
+	}
+	if !strings.Contains(out.String(), "recording cancelled") {
+		t.Errorf("expected cancellation notice, got: %q", out.String())
+	}
+}
+
+func TestLogCancelRecordingNoActiveRecording(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+
+	var out bytes.Buffer
+	if err := runLogCancelRecording(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "no active recording") {
+		t.Errorf("expected no-active-recording notice, got: %q", out.String())
+	}
+}
+
+func TestLogStatusIdle(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+
+	var out bytes.Buffer
+	if err := runLogStatus(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.String()) != "idle" {
+		t.Errorf("expected idle, got: %q", out.String())
+	}
+}
+
+func TestLogStatusRecording(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	if err := audio.WriteLock(audio.LockState{PID: os.Getpid(), WAVPath: "/tmp/x.wav", StartedAt: time.Now().Add(-5 * time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := runLogStatus(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "recording") || !strings.Contains(out.String(), "/tmp/x.wav") {
+		t.Errorf("expected recording status with wav path, got: %q", out.String())
+	}
+}
+
+func TestLogStatusStaleLock(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	pid := deadPID(t)
+	if err := audio.WriteLock(audio.LockState{PID: pid, WAVPath: "/tmp/x.wav", StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := runLogStatus(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "stale lock") {
+		t.Errorf("expected stale-lock notice, got: %q", out.String())
+	}
+}
+
+// --- Daemon lifecycle tests ---
+
+func waitDaemon(t *testing.T, errCh <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runLogDaemon")
+		return nil
+	}
+}
+
+func TestLogDaemonSIGINTHandsOffToPipeline(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	pipeline := stubSpawnPipeline(t)
+
+	fr := &audio.FakeRecorder{}
+	sigCh := make(chan os.Signal, 1)
+	sigCh <- syscall.SIGINT
+
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- runLogDaemon(context.Background(), cfg, fr, "/tmp/rec.wav", sigCh, &out)
+	}()
+
+	if err := waitDaemon(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if !fr.StopCalled {
+		t.Error("expected Stop() to be called on SIGINT")
+	}
+	if pipeline.calls != 1 || pipeline.wavPath != "/tmp/rec.wav" {
+		t.Errorf("expected pipeline hand-off for /tmp/rec.wav, got calls=%d wavPath=%q", pipeline.calls, pipeline.wavPath)
+	}
+	if _, err := audio.ReadLock(); !errors.Is(err, os.ErrNotExist) {
+		t.Error("lockfile should be removed after the daemon exits")
+	}
+}
+
+func TestLogDaemonSIGUSR1CancelsAndDeletesWAV(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	pipeline := stubSpawnPipeline(t)
+
+	wavPath := filepath.Join(t.TempDir(), "rec.wav")
+	if err := os.WriteFile(wavPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fr := &audio.FakeRecorder{}
+	sigCh := make(chan os.Signal, 1)
+	sigCh <- syscall.SIGUSR1
+
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- runLogDaemon(context.Background(), cfg, fr, wavPath, sigCh, &out)
+	}()
+
+	if err := waitDaemon(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if !fr.CancelCalled {
+		t.Error("expected Cancel() to be called on SIGUSR1")
+	}
+	if pipeline.calls != 0 {
+		t.Error("pipeline should not run on cancel")
+	}
+	if _, err := os.Stat(wavPath); !os.IsNotExist(err) {
+		t.Error("wav file should be deleted on cancel")
+	}
+	if !strings.Contains(out.String(), "recording cancelled") {
+		t.Errorf("expected cancellation notice, got: %q", out.String())
+	}
+}
+
+func TestLogDaemonNaturalEndHandsOffToPipeline(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	pipeline := stubSpawnPipeline(t)
+
+	waitCh := make(chan struct{})
+	close(waitCh) // simulates the recorder ending on its own (e.g. duration cap)
+	fr := &audio.FakeRecorder{WaitCh: waitCh}
+	sigCh := make(chan os.Signal, 1)
+
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- runLogDaemon(context.Background(), cfg, fr, "/tmp/rec.wav", sigCh, &out)
+	}()
+
+	if err := waitDaemon(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if pipeline.calls != 1 {
+		t.Errorf("expected pipeline hand-off on natural end, got %d calls", pipeline.calls)
+	}
+}
+
+func TestLogDaemonRecordFailureSkipsPipeline(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	pipeline := stubSpawnPipeline(t)
+
+	waitCh := make(chan struct{})
+	close(waitCh)
+	fr := &audio.FakeRecorder{WaitCh: waitCh, Err: errors.New("mic permission denied")}
+	sigCh := make(chan os.Signal, 1)
+
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- runLogDaemon(context.Background(), cfg, fr, "/tmp/rec.wav", sigCh, &out)
+	}()
+
+	err := waitDaemon(t, done)
+	if err == nil {
+		t.Fatal("expected an error to propagate from a failed recording")
+	}
+	if pipeline.calls != 0 {
+		t.Error("pipeline should not run when the recorder failed")
+	}
+	if _, lockErr := audio.ReadLock(); !errors.Is(lockErr, os.ErrNotExist) {
+		t.Error("lockfile should still be removed after a recording failure")
+	}
+}
+
+func TestLogDaemonKeepWAVPassedToPipeline(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Audio.KeepWAV = true
+	isolateLock(t)
+	pipeline := stubSpawnPipeline(t)
+
+	fr := &audio.FakeRecorder{}
+	sigCh := make(chan os.Signal, 1)
+	sigCh <- syscall.SIGINT
+
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- runLogDaemon(context.Background(), cfg, fr, "/tmp/rec.wav", sigCh, &out)
+	}()
+
+	if err := waitDaemon(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if !pipeline.keepWAV {
+		t.Error("expected keepWAV=true to be passed to spawnPipeline when log.audio.keep_wav is set")
+	}
+}
+
+// --- WAV retention / frontmatter (scratch pipeline) tests ---
+
+func TestLogAudioScratchDeletesWAVOnSuccessByDefault(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = false
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "scratch recording cleanup test"}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, false, &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(audioPath); !os.IsNotExist(err) {
+		t.Error("scratch wav should be deleted after a successful pipeline run")
+	}
+}
+
+func TestLogAudioNonScratchNeverDeletesWAV(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = false
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "manually supplied wav is never deleted"}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	// scratch=false: this mirrors a user directly running `journal log <file>.wav`.
+	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(audioPath); err != nil {
+		t.Errorf("a directly-supplied wav must never be auto-deleted: %v", err)
+	}
+}
+
+func TestLogAudioScratchKeepWAVRetainsFileAndAddsFrontmatter(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = false
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "keep wav test"}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, true, &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(audioPath); err != nil {
+		t.Errorf("wav should be retained when keepWAV=true: %v", err)
+	}
+
+	entries, _ := os.ReadDir(cfg.LogAbsPath())
+	if len(entries) == 0 {
+		t.Fatal("no files in logs dir")
+	}
+	content, err := os.ReadFile(filepath.Join(cfg.LogAbsPath(), entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "audio: \""+audioPath+"\"") {
+		t.Errorf("expected audio: frontmatter with wav path, got:\n%s", string(content))
+	}
+}
+
+func TestLogAudioScratchEmptyTranscriptDiscardsWAV(t *testing.T) {
+	cfg := testRepo(t, nil)
+
+	audioPath := filepath.Join(t.TempDir(), "silence.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "   "}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	// Even with keepWAV=true, an empty/silent transcript discards the scratch wav.
+	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, true, &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(audioPath); !os.IsNotExist(err) {
+		t.Error("scratch wav should be discarded for an empty transcript")
+	}
+}
+
+func TestLogAudioScratchTranscriptionErrorKeepsWAV(t *testing.T) {
+	cfg := testRepo(t, nil)
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{ForcedErr: errors.New("transcription backend unavailable")}
+	fake := embed.NewFake(cfg.EmbedDim)
+
+	var out bytes.Buffer
+	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, false, &out)
+	if err == nil {
+		t.Fatal("expected transcription error")
+	}
+	if _, statErr := os.Stat(audioPath); statErr != nil {
+		t.Errorf("wav must be kept on transcription error even for a scratch recording: %v", statErr)
 	}
 }

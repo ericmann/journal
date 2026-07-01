@@ -64,6 +64,46 @@ raw text ──► Shape ──► Assemble ──► Land ──► Index
 Voice chunks are scoped separately from notes and transcripts; use
 `journal search --source voice` (aliases `log`/`logs`) to scope results.
 
+## Mic recording → async pipeline (`journal log` toggle, macOS only)
+
+The bare `journal log` toggle adds a recording stage in front of the pipeline
+above, entirely local (ffmpeg → local whisper.cpp):
+
+```
+press 1                          press 2 (or max_duration/silence_autostop cap)
+   │                                 │
+   ▼                                 ▼
+spawn daemon (detached) ──► write lock ──► ffmpeg records to scratch WAV
+   │ prints "● recording",                        │ SIGINT (stop/cap) or SIGUSR1 (cancel)
+   │ returns immediately                          ▼
+                                            finalize WAV
+                                                   │
+                        ┌──────────────────────────┴──────────────────────────┐
+                        ▼ SIGUSR1: cancel                                     ▼ SIGINT/cap: stop
+                  delete WAV, no note                      spawn `journal log <wav>` detached,
+                  remove lock, daemon exits                remove lock, daemon exits
+                                                                    │
+                                                                    ▼
+                                          Transcribe → Shape → Assemble → Land → Index
+                                          (same four-stage pipeline as above)
+```
+
+The first press spawns a detached background process (the "daemon") that
+writes a lockfile (`{pid, wav_path, started_at}`) and starts `ffmpeg -f
+avfoundation` recording to a scratch WAV under `log.audio.tmp_dir`; the
+foreground command prints "● recording" and returns immediately. The second
+press reads the lockfile and sends `SIGINT` to that pid; the daemon finalizes
+the WAV, spawns a second detached process running the ordinary `journal log
+<wav>` pipeline, removes the lockfile, and exits — so the stop press also
+returns immediately, with transcription/shaping/landing happening in the
+background. `--cancel` sends `SIGUSR1` instead: the daemon finalizes the same
+way but deletes the WAV and skips the pipeline entirely — no note, no network,
+no disk artifact. A dead PID in the lockfile (e.g. after a crash or sleep) is
+detected via a liveness probe and cleaned up on the next press before starting
+fresh. The recorded WAV is deleted once the note lands successfully unless
+`log.audio.keep_wav: true`, in which case its path is recorded in the note's
+`audio:` frontmatter field.
+
 ## `local_only: true`
 
 One config line blocks **cloud-AI egress** — note content reaching a
