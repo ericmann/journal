@@ -72,14 +72,14 @@ func (w *WhisperCPP) Name() string {
 // Returns an error (with "run `journal models pull`" hint) when the model file
 // is missing — it never downloads anything itself.
 func (w *WhisperCPP) Transcribe(ctx context.Context, audioPath string) (string, int, error) {
-	modelPath := filepath.Join(w.modelDir, w.model+".bin")
+	modelPath := ModelPath(w.modelDir, w.model)
 	if _, err := os.Stat(modelPath); errors.Is(err, os.ErrNotExist) {
 		return "", 0, fmt.Errorf("model file not found at %q: run `journal models pull`", modelPath)
 	}
 
 	dur, _ := wavDurationSec(audioPath)
 
-	bin, err := findWhisperBin()
+	bin, err := FindWhisperBin()
 	if err != nil {
 		return "", dur, err
 	}
@@ -104,18 +104,26 @@ func (w *WhisperCPP) Transcribe(ctx context.Context, audioPath string) (string, 
 // actionable message rather than discovering the problem only after
 // transcription is attempted.
 func CheckAvailable(modelDir, model string) error {
-	modelPath := filepath.Join(modelDir, model+".bin")
+	modelPath := ModelPath(modelDir, model)
 	if _, err := os.Stat(modelPath); errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("model file not found at %q: run `journal models pull`", modelPath)
 	}
-	if _, err := findWhisperBin(); err != nil {
+	if _, err := FindWhisperBin(); err != nil {
 		return err
 	}
 	return nil
 }
 
-// findWhisperBin looks for the whisper.cpp binary in PATH, trying common names.
-func findWhisperBin() (string, error) {
+// ModelPath returns the expected on-disk path for a whisper.cpp model file
+// under modelDir, given the model name without its .bin extension (e.g.
+// "base.en"). Shared by Transcribe, CheckAvailable, and `journal doctor` so
+// there's a single definition of where a provisioned model must live.
+func ModelPath(modelDir, model string) string {
+	return filepath.Join(modelDir, model+".bin")
+}
+
+// FindWhisperBin looks for the whisper.cpp binary in PATH, trying common names.
+func FindWhisperBin() (string, error) {
 	for _, name := range []string{"whisper-cli", "whisper-cpp", "whisper"} {
 		if p, err := exec.LookPath(name); err == nil {
 			return p, nil
