@@ -117,6 +117,9 @@ type Transcriber struct {
 	// Shown in the pull failure message and recorded in MODELS.md. Ignored
 	// when Gated is false.
 	AcceptURL string `yaml:"accept_url"`
+	// Filename is the remote/on-disk file name to pull (e.g. "config.yaml"
+	// for a pyannote diarization repo). Empty defaults to "model.bin".
+	Filename string `yaml:"filename"`
 }
 
 // Transcripts configures the meeting-transcript landing zone (populated by
@@ -314,6 +317,11 @@ type Config struct {
 	SyncConflict string `yaml:"sync_conflict"`
 	// Transcriber configures the local voice-transcription model.
 	Transcriber Transcriber `yaml:"transcriber"`
+	// Diarization configures an optional, independently-provisionable
+	// speaker-diarization model (e.g. pyannote) for the meeting pipeline.
+	// Empty ModelID (the default) means disabled — `journal models pull`
+	// skips it and no gated HF pull is attempted until a user configures it.
+	Diarization Transcriber `yaml:"diarization"`
 	// Transcripts configures the meeting-transcript landing zone + indexing.
 	Transcripts Transcripts `yaml:"transcripts"`
 	// Quill configures pulling transcripts from the local Quill app database.

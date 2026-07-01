@@ -45,13 +45,26 @@ type GatedAuth struct {
 	Token string
 }
 
-// Manifest records installed model metadata persisted alongside model.bin.
+// Manifest records installed model metadata persisted alongside the model
+// file. Filename is the on-disk/remote file name; manifests written before
+// this field existed decode with it empty, which callers treat as
+// "model.bin" (see filenameOrDefault).
 type Manifest struct {
 	ModelID   string `json:"model_id"`
 	Revision  string `json:"revision"`
+	Filename  string `json:"filename,omitempty"`
 	Checksum  string `json:"checksum"` // SHA-256 hex
 	Gated     bool   `json:"gated,omitempty"`
 	AcceptURL string `json:"accept_url,omitempty"`
+}
+
+// filenameOrDefault returns filename, defaulting to "model.bin" when empty —
+// the on-disk name every model used before Manifest.Filename existed.
+func filenameOrDefault(filename string) string {
+	if filename == "" {
+		return "model.bin"
+	}
+	return filename
 }
 
 // VerifyResult holds the outcome of re-checking one installed model's checksum.
@@ -111,23 +124,32 @@ func writeManifest(path string, m *Manifest) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-// Pull downloads the model into modelRoot if absent or if the checksum does not
-// match. It is idempotent: when the file and manifest both exist and checksums
-// agree, it returns immediately without network I/O. baseURL defaults to
-// DefaultBaseURL when empty. On any failure after the download has started, the
-// partial file is removed so no corrupt blob is left in place.
+// Pull downloads the model's "model.bin" into modelRoot if absent or if the
+// checksum does not match. It is a thin wrapper around PullFile — see PullFile
+// for the full behavior contract.
+func Pull(ctx context.Context, dl Downloader, modelID, revision, expectedChecksum, modelRoot, baseURL string, auth GatedAuth) (*Manifest, error) {
+	return PullFile(ctx, dl, modelID, revision, "model.bin", expectedChecksum, modelRoot, baseURL, auth)
+}
+
+// PullFile downloads filename from the modelID/revision repo into modelRoot
+// if absent or if the checksum does not match. It is idempotent: when the
+// file and manifest both exist and checksums agree, it returns immediately
+// without network I/O. baseURL defaults to DefaultBaseURL when empty. On any
+// failure after the download has started, the partial file is removed so no
+// corrupt blob is left in place.
 //
 // auth carries the gated-repo metadata and HF_TOKEN bearer credential; its
 // zero value is the ungated path (#64 behavior, no Authorization header). When
-// auth.Gated is true and the download fails with an auth error, Pull returns
-// an explicit "accept terms at <url>, set HF_TOKEN" message instead of the raw
-// HTTP error.
-func Pull(ctx context.Context, dl Downloader, modelID, revision, expectedChecksum, modelRoot, baseURL string, auth GatedAuth) (*Manifest, error) {
+// auth.Gated is true and the download fails with an auth error, PullFile
+// returns an explicit "accept terms at <url>, set HF_TOKEN" message instead
+// of the raw HTTP error.
+func PullFile(ctx context.Context, dl Downloader, modelID, revision, filename, expectedChecksum, modelRoot, baseURL string, auth GatedAuth) (*Manifest, error) {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
+	filename = filenameOrDefault(filename)
 	dir := modelDir(modelRoot, modelID)
-	modelFile := filepath.Join(dir, "model.bin")
+	modelFile := filepath.Join(dir, filename)
 	manifestFile := filepath.Join(dir, "manifest.json")
 
 	// Fast path: already present with a matching manifest + on-disk checksum.
@@ -143,7 +165,7 @@ func Pull(ctx context.Context, dl Downloader, modelID, revision, expectedChecksu
 		return nil, fmt.Errorf("creating model dir: %w", err)
 	}
 
-	url := baseURL + "/" + modelID + "/resolve/" + revision + "/model.bin"
+	url := baseURL + "/" + modelID + "/resolve/" + revision + "/" + filename
 	tmp := modelFile + ".tmp"
 	if err := dl.Download(ctx, url, tmp, auth.Token); err != nil {
 		_ = os.Remove(tmp)
@@ -171,6 +193,7 @@ func Pull(ctx context.Context, dl Downloader, modelID, revision, expectedChecksu
 	m := &Manifest{
 		ModelID:   modelID,
 		Revision:  revision,
+		Filename:  filename,
 		Checksum:  got,
 		Gated:     auth.Gated,
 		AcceptURL: auth.AcceptURL,
@@ -214,7 +237,7 @@ func Verify(modelRoot string) ([]VerifyResult, error) {
 	}
 	results := make([]VerifyResult, 0, len(manifests))
 	for _, m := range manifests {
-		modelFile := filepath.Join(modelRoot, sanitize(m.ModelID), "model.bin")
+		modelFile := filepath.Join(modelRoot, sanitize(m.ModelID), filenameOrDefault(m.Filename))
 		r := VerifyResult{Manifest: m}
 		got, ferr := checksumFileErr(modelFile)
 		switch {

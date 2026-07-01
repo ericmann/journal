@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/ericmann/journal/internal/config"
+	jlog "github.com/ericmann/journal/internal/log"
 	"github.com/ericmann/journal/internal/quill"
 	"github.com/spf13/cobra"
 )
@@ -80,15 +80,11 @@ func runQuillSync(ctx context.Context, cfg *config.Config, out io.Writer) error 
 	}
 
 	dir := cfg.TranscriptsAbsPath()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating transcripts dir: %w", err)
-	}
 
 	var written int
 	latest := since
 	for _, m := range meetings {
-		path := filepath.Join(dir, m.Filename())
-		if err := os.WriteFile(path, []byte(quill.RenderMarkdown(m)), 0o644); err != nil {
+		if _, err := jlog.Land(dir, m.Filename(), []byte(quill.RenderMarkdown(m))); err != nil {
 			return fmt.Errorf("writing %s: %w", m.Filename(), err)
 		}
 		written++

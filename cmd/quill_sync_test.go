@@ -64,6 +64,31 @@ func TestRunQuillSyncRendersAndWatermarks(t *testing.T) {
 	}
 }
 
+func TestRunQuillSyncLandFailureWrapsFilenameAndUnderlyingError(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Quill.DBPath = writeQuillFixture(t)
+
+	// Block the landing directory from being created: put a regular file where
+	// the transcripts directory needs to go.
+	if err := os.RemoveAll(cfg.TranscriptsAbsPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.TranscriptsAbsPath(), []byte("blocker"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := runQuillSync(context.Background(), cfg, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected an error when the landing directory cannot be created")
+	}
+	if !strings.Contains(err.Error(), "2026-06-05-weekly-sync.md") {
+		t.Errorf("error %q does not name the meeting file", err)
+	}
+	if !strings.Contains(err.Error(), "note directory") {
+		t.Errorf("error %q does not surface the shared Land error", err)
+	}
+}
+
 func TestRunQuillSyncDisabled(t *testing.T) {
 	cfg := testRepo(t, nil)
 	cfg.Quill.Enabled = false

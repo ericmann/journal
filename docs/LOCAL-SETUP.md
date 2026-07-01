@@ -97,6 +97,16 @@ explicit "accept terms at `<url>`, set `HF_TOKEN`" message rather than a raw
 401. `MODELS.md` records which installed models are gated and links their
 acceptance page.
 
+The meeting pipeline's diarization model (`diarization.model_id`, disabled by
+default) is a second, independent example of the same pattern: set
+`diarization.model_id: pyannote/speaker-diarization-community-1`,
+`diarization.filename: config.yaml` (pyannote's repo has no `model.bin`),
+`diarization.gated: true`, and `diarization.accept_url` to the model's terms
+page, then `journal models pull` provisions both the transcriber and
+diarization models in one run — see [TRANSCRIBE.md](TRANSCRIBE.md) for the
+full one-time setup and [CONFIGURATION.md](CONFIGURATION.md) for the key
+reference.
+
 ## 3. Configure journal
 
 In your journal repo's `.journal/config.yaml`:

@@ -63,3 +63,41 @@ func TestIndexVoiceChunksLandWithVoiceSource(t *testing.T) {
 		t.Errorf("SourceNote filter returned %d results, want 0", len(noteCandidates))
 	}
 }
+
+func TestIndexTranscriptChunksLandWithTranscriptSource(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	const dim = 4
+	s, err := store.Open(dbPath, dim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	content := "---\nsource: transcript\n---\n\n# Meeting\n\n## Transcript\n\nhello world from a meeting\n"
+	mtime := time.Date(2026, 6, 30, 14, 35, 0, 0, time.UTC)
+
+	fake := embed.NewFake(dim)
+	ix := index.NewIndexer(s, fake)
+
+	relPath := "transcripts/2026-06-30-1435-test.md"
+	_, err = IndexTranscript(context.Background(), ix, relPath, content, mtime, "meeting")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	q := make([]float32, dim)
+	candidates, err := s.KNN(context.Background(), q, 10, store.Filter{Sources: []string{store.SourceTranscript}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) == 0 {
+		t.Fatal("no transcript chunks found after IndexTranscript")
+	}
+	for _, c := range candidates {
+		if c.Source != store.SourceTranscript {
+			t.Errorf("chunk source = %q, want %q", c.Source, store.SourceTranscript)
+		}
+	}
+}

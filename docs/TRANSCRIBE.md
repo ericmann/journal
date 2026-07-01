@@ -139,6 +139,26 @@ accepting it, diarization 401s/403s even with a valid token.
 > today gives you 3.8.x, so you only need the one repo above. The voice-activity
 > step is **never** gated — WhisperX ships those weights inside the package.
 
+**Optional preflight — `journal models pull`.** Once you've clicked "Agree"
+above, you can verify the token/terms combination *before* sinking time into a
+slow WhisperX run. Set `diarization.model_id` (and `diarization.gated: true`,
+`diarization.accept_url`) in `.journal/config.yaml` — see
+[CONFIGURATION.md](CONFIGURATION.md) — then run:
+
+```sh
+journal models pull
+```
+
+This pulls just the repo's `config.yaml` manifest with your `HF_TOKEN` and
+fails fast with the same "accept terms at ..., set HF_TOKEN" message if
+something's wrong — a fast, synchronous check instead of discovering a 401
+after a multi-hour transcription. It does **not** replace step 4 above (the
+one-time click-through still has to happen in a browser) and it does **not**
+fully mirror the diarization weights for offline use — `scripts/transcribe.py`
+still resolves `pyannote.audio`'s bundled segmentation/embedding weights via
+its own `huggingface_hub` call at first real use, using the same validated
+token.
+
 ---
 
 ## Step 1 — recording → WhisperX JSON
@@ -189,7 +209,9 @@ summary with your `synth_provider`, and indexes it — immediately searchable.
   skipped step 4 (accept `pyannote/speaker-diarization-community-1`) or `HF_TOKEN`
   is unset/invalid. This surfaces **after** transcription, when diarization
   starts — a successful transcript followed by a gated-repo error is this, not a
-  transcription failure.
+  transcription failure. Run `journal models pull` (with `diarization.model_id`
+  configured — see step 4's preflight above) to catch this *before* a
+  transcription run instead of after.
 - **`torchcodec`/`libtorchcodec … built-in audio decoding will fail`** — harmless
   with ffmpeg 8; ignore it (see [§1 ffmpeg](#1-ffmpeg)). It is *not* why a run
   fails — look for the gated-repo error above instead.

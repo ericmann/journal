@@ -65,6 +65,52 @@ func TestTranscriptsAndQuillDefaults(t *testing.T) {
 	}
 }
 
+func TestDiarizationDefaultsToDisabled(t *testing.T) {
+	c := Default()
+	if c.Diarization.ModelID != "" {
+		t.Errorf("Diarization.ModelID = %q, want empty (disabled by default)", c.Diarization.ModelID)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("default config with empty diarization should validate: %v", err)
+	}
+}
+
+func TestLoadDiarizationBlockRoundTrips(t *testing.T) {
+	root := t.TempDir()
+	jdir := filepath.Join(root, ".journal")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yamlSrc := "diarization:\n" +
+		"  model_id: pyannote/speaker-diarization-community-1\n" +
+		"  revision: main\n" +
+		"  filename: config.yaml\n" +
+		"  gated: true\n" +
+		"  accept_url: https://huggingface.co/pyannote/speaker-diarization-community-1\n"
+	if err := os.WriteFile(filepath.Join(jdir, "config.yaml"), []byte(yamlSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := Transcriber{
+		ModelID:   "pyannote/speaker-diarization-community-1",
+		Revision:  "main",
+		Filename:  "config.yaml",
+		Gated:     true,
+		AcceptURL: "https://huggingface.co/pyannote/speaker-diarization-community-1",
+	}
+	if c.Diarization != want {
+		t.Errorf("Diarization = %+v, want %+v", c.Diarization, want)
+	}
+	// Transcriber block was omitted from the YAML — must still default.
+	if c.Transcriber.ModelID != "Systran/faster-whisper-base.en" {
+		t.Errorf("Transcriber.ModelID = %q, want defaulted", c.Transcriber.ModelID)
+	}
+}
+
 func TestQuillDBPathExpandsTilde(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	c := Default()
