@@ -36,7 +36,9 @@ jobs:
       github.event.label.name == 'agent-ready' &&
       (vars.AGENT_PROVIDER == 'claude' || vars.AGENT_PROVIDER == '')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Planning usually finishes in 4-11 min, but complexity:high plans have
+    # clipped the 15 min cap (cancelled mid-plan). Give headroom.
+    timeout-minutes: 30
     permissions:
       contents: write
       pull-requests: write
