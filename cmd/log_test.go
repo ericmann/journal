@@ -458,6 +458,15 @@ func stubFfmpegAvailable(t *testing.T, err error) {
 	t.Cleanup(func() { checkFfmpegAvailable = orig })
 }
 
+// stubRecordingSupported overrides the platform/backend preflight check so
+// tests can simulate an unsupported platform without needing one.
+func stubRecordingSupported(t *testing.T, err error) {
+	t.Helper()
+	orig := checkRecordingSupported
+	checkRecordingSupported = func(*config.Config) error { return err }
+	t.Cleanup(func() { checkRecordingSupported = orig })
+}
+
 // stubTranscriberAvailable overrides the transcriber-toolchain preflight
 // check so start tests never depend on (or require the absence of) a real
 // whisper.cpp install/model.
@@ -705,6 +714,36 @@ func TestLogStartRecordingFfmpegMissingFailsFast(t *testing.T) {
 	}
 	if _, lockErr := audio.ReadLock(); !errors.Is(lockErr, os.ErrNotExist) {
 		t.Error("no lockfile should be written when the ffmpeg preflight check fails")
+	}
+}
+
+func TestLogStartRecordingFailsFastOnUnsupportedPlatform(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	wantErr := errors.New(`recording is not supported on GOOS "windows" (supported: darwin, linux)`)
+	stubRecordingSupported(t, wantErr)
+	notifier := stubNewNotifier(t)
+	spawnCalled := false
+	orig := spawnDaemon
+	spawnDaemon = func(string) error { spawnCalled = true; return nil }
+	t.Cleanup(func() { spawnDaemon = orig })
+
+	var out bytes.Buffer
+	err := runLogStartRecording(cfg, &out)
+	if err == nil {
+		t.Fatal("expected an error when the platform/backend preflight check fails")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want %v", err, wantErr)
+	}
+	if spawnCalled {
+		t.Error("spawnDaemon should not be called when the platform preflight check fails")
+	}
+	if _, lockErr := audio.ReadLock(); !errors.Is(lockErr, os.ErrNotExist) {
+		t.Error("no lockfile should be written when the platform preflight check fails")
+	}
+	if len(notifier.Calls) != 0 {
+		t.Errorf("expected no notification for a platform-preflight failure (fails before ffmpeg/transcriber checks), got %d", len(notifier.Calls))
 	}
 }
 

@@ -9,6 +9,16 @@ versioning. Build-time design rationale lives in
 
 ### Added
 
+- **Linux recording support for `journal log`.** The mic-recording toggle
+  (bare `journal log`) now works on Linux, not just macOS: it captures via
+  `ffmpeg -f pulse` by default, or `-f alsa` on ALSA-only boxes (set
+  `log.audio.backend: alsa`), selected automatically by OS
+  (`log.audio.backend: ""`, the default) with an explicit override available.
+  Desktop notifications on Linux go through `notify-send`, degrading silently
+  (same as macOS's `osascript`/`terminal-notifier`) when it's absent. An
+  unsupported platform (anything other than macOS/Linux) fails fast on the
+  starting press, before the recording daemon spawns. macOS behavior
+  (`avfoundation`, `osascript`/`terminal-notifier`) is unchanged.
 - **`log.audio.{silence_duration,silence_noise_db}` config keys.** The
   `silence_autostop` watchdog's silence-interval length (default `30` seconds)
   and `silencedetect` noise floor (default `-35` dB) are now configurable

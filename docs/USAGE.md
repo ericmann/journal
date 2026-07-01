@@ -100,7 +100,7 @@ mirrors this: a `source` param on `search` and a `meetings` tool.
 
 `journal log` captures quick voice-style notes. Three entry points:
 
-**Mic recording toggle (bare `journal log`, macOS only):**
+**Mic recording toggle (bare `journal log`, macOS and Linux):**
 ```sh
 journal log            # first press: starts recording, prints "● recording"
 journal log            # second press: stops, finalizes the WAV, processes it in the background
@@ -111,20 +111,25 @@ start time — so a hotkey can bind to the bare command and "do the right
 thing" on every press. If the lockfile's PID is no longer running (e.g. the
 machine slept mid-recording), the next press cleans it up and starts fresh.
 Recording captures the default input device (`log.audio.device`) to a
-temporary 16 kHz/mono/16-bit WAV via `ffmpeg -f avfoundation`; a missing
-`ffmpeg` or unavailable device fails fast on the starting press, before
-anything is written. The stop press returns immediately — transcription and
-landing happen asynchronously in the background.
+temporary 16 kHz/mono/16-bit WAV via ffmpeg, using a backend selected by OS:
+`avfoundation` on macOS, `pulse` on Linux (the common case — PipeWire ships a
+pulse-compatible socket on virtually all modern desktop distros). On
+ALSA-only Linux boxes (containers, minimal server installs), set
+`log.audio.backend: alsa`. A missing `ffmpeg`, an unsupported platform, or an
+unavailable device fails fast on the starting press, before anything is
+written. The stop press returns immediately — transcription and landing
+happen asynchronously in the background.
 
 Each press also pops a desktop notification (in addition to the terminal
 output above), so the toggle is usable from a hotkey without watching a
 terminal: starting a recording sends "● recording", and the finalized note
 landing (asynchronously, after the stop press) sends "✓ logged: `<title>`"
-with the note's path. Notifications go through `osascript`, falling back to
-`terminal-notifier` if it's unavailable; if neither is present the failure is
-logged, not surfaced — a broken notifier never blocks or fails a recording.
+with the note's path. On macOS, notifications go through `osascript`,
+falling back to `terminal-notifier` if it's unavailable; on Linux, through
+`notify-send`. If no notifier is available the failure is logged, not
+surfaced — a broken notifier never blocks or fails a recording.
 See [Hammerspoon hotkey binding](#hammerspoon-hotkey-binding) below to wire
-this to a single key press.
+this to a single key press (macOS).
 
 Explicit controls, for scripting or a hotkey that always wants one direction:
 - `journal log --start` — start recording; a no-op ("already recording") if one is active.
@@ -145,8 +150,9 @@ Safety limits (`.journal/config.yaml`, see [CONFIGURATION.md](CONFIGURATION.md))
   otherwise the scratch WAV is deleted once the note is safely landed.
 
 Failure handling (a recording never silently vanishes):
-- A missing `ffmpeg` binary fails fast on the starting press, before anything
-  is written. Other recorder failures (mic permission denied by the OS, no
+- A missing `ffmpeg` binary or an unsupported platform (anything other than
+  macOS or Linux) fails fast on the starting press, before anything is
+  written. Other recorder failures (mic permission denied by the OS, no
   such device) are caught inside the background recorder — the starting press
   still prints "● recording", but no WAV or note is produced once the failure
   surfaces; `journal log --status` shortly after a press confirms whether a

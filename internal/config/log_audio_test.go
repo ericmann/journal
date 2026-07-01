@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -96,5 +97,59 @@ func TestValidateRejectsNegativeMaxDuration(t *testing.T) {
 	c.Log.Audio.MaxDuration = -1
 	if err := c.Validate(); err == nil {
 		t.Error("expected error for negative log.audio.max_duration")
+	}
+}
+
+func TestLogAudioBackendDefaultsEmpty(t *testing.T) {
+	c := Default()
+	if c.Log.Audio.Backend != "" {
+		t.Errorf("log.audio.backend = %q, want \"\" (auto-detect)", c.Log.Audio.Backend)
+	}
+}
+
+func TestValidateAcceptsKnownBackends(t *testing.T) {
+	for _, backend := range []string{"", "avfoundation", "pulse", "alsa"} {
+		t.Run(backend, func(t *testing.T) {
+			c := Default()
+			c.Log.Audio.Backend = backend
+			if err := c.Validate(); err != nil {
+				t.Errorf("Validate() with backend %q: %v", backend, err)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsUnknownBackend(t *testing.T) {
+	c := Default()
+	c.Log.Audio.Backend = "dshow"
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error for unknown log.audio.backend")
+	}
+	if !strings.Contains(err.Error(), "dshow") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestLoadOldConfigWithoutBackendKeyDefaultsCleanly(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".journal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Simulates a pre-Linux-support config: log.audio has no backend key.
+	yaml := "log:\n  audio:\n    device: default\n    sample_rate: 16000\n    channels: 1\n"
+	if err := os.WriteFile(filepath.Join(root, ".journal", "config.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Log.Audio.Backend != "" {
+		t.Errorf("backend absent from YAML should default to \"\", got %q", c.Log.Audio.Backend)
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("old config missing log.audio.backend should still validate: %v", err)
 	}
 }

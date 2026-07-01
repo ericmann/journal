@@ -91,6 +91,103 @@ func TestFakeRecorderContextCancellationUnblocksRecord(t *testing.T) {
 	}
 }
 
+func TestFfmpegRecorderBuildArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		backend     string
+		device      string
+		maxDuration time.Duration
+		wantContain [][]string
+		wantAbsent  []string
+	}{
+		{
+			name:        "avfoundation uses colon-prefixed input spec",
+			backend:     "avfoundation",
+			device:      "0",
+			wantContain: [][]string{{"-f", "avfoundation"}, {"-i", ":0"}},
+		},
+		{
+			name:        "pulse uses bare device input spec",
+			backend:     "pulse",
+			device:      "default",
+			wantContain: [][]string{{"-f", "pulse"}, {"-i", "default"}},
+			wantAbsent:  []string{":default"},
+		},
+		{
+			name:        "alsa uses bare device input spec",
+			backend:     "alsa",
+			device:      "hw:0,0",
+			wantContain: [][]string{{"-f", "alsa"}, {"-i", "hw:0,0"}},
+			wantAbsent:  []string{":hw:0,0"},
+		},
+		{
+			name:        "max duration adds -t cap",
+			backend:     "pulse",
+			device:      "default",
+			maxDuration: 90 * time.Second,
+			wantContain: [][]string{{"-t", "90"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := FfmpegRecorder{}
+			args := r.buildArgs(tt.backend, tt.device, 16000, 1, tt.maxDuration)
+
+			joined := strings.Join(args, " ")
+			for _, pair := range tt.wantContain {
+				want := strings.Join(pair, " ")
+				if !strings.Contains(joined, want) {
+					t.Errorf("buildArgs(%q, %q) = %v, want to contain %q", tt.backend, tt.device, args, want)
+				}
+			}
+			for _, absent := range tt.wantAbsent {
+				if strings.Contains(joined, absent) {
+					t.Errorf("buildArgs(%q, %q) = %v, must not contain %q", tt.backend, tt.device, args, absent)
+				}
+			}
+			if !strings.Contains(joined, "-ar 16000") || !strings.Contains(joined, "-ac 1") || !strings.Contains(joined, "-sample_fmt s16") {
+				t.Errorf("buildArgs(%q, %q) = %v, want sample rate/channels/sample_fmt present", tt.backend, tt.device, args)
+			}
+		})
+	}
+}
+
+func TestResolveBackend(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfgBackend string
+		goos       string
+		want       string
+		wantErr    bool
+	}{
+		{name: "darwin default", cfgBackend: "", goos: "darwin", want: "avfoundation"},
+		{name: "linux default", cfgBackend: "", goos: "linux", want: "pulse"},
+		{name: "linux explicit alsa override", cfgBackend: "alsa", goos: "linux", want: "alsa"},
+		{name: "explicit override wins even if GOOS-mismatched", cfgBackend: "avfoundation", goos: "linux", want: "avfoundation"},
+		{name: "unsupported goos errors", cfgBackend: "", goos: "windows", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveBackend(tt.cfgBackend, tt.goos)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ResolveBackend(%q, %q) = %q, nil, want an error", tt.cfgBackend, tt.goos, got)
+				}
+				if !strings.Contains(err.Error(), "not supported") || !strings.Contains(err.Error(), "darwin, linux") {
+					t.Errorf("unexpected error message: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ResolveBackend(%q, %q) unexpected error: %v", tt.cfgBackend, tt.goos, err)
+			}
+			if got != tt.want {
+				t.Errorf("ResolveBackend(%q, %q) = %q, want %q", tt.cfgBackend, tt.goos, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFfmpegRecorderSilencedetectFilter(t *testing.T) {
 	tests := []struct {
 		name string

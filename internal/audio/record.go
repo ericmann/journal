@@ -41,10 +41,33 @@ const (
 	defaultSilenceNoiseDB  = -35
 )
 
-// FfmpegRecorder records via `ffmpeg -f avfoundation` — macOS only at
-// runtime. It is never exercised in tests; internal/audio tests use
-// FakeRecorder instead.
+// ResolveBackend picks the ffmpeg input backend: cfgBackend verbatim if set
+// (already validated by config.Validate), else a GOOS-based default. goos is
+// a parameter (not runtime.GOOS read internally) so both branches are
+// unit-testable regardless of the OS running the test.
+func ResolveBackend(cfgBackend, goos string) (string, error) {
+	if cfgBackend != "" {
+		return cfgBackend, nil
+	}
+	switch goos {
+	case "darwin":
+		return "avfoundation", nil
+	case "linux":
+		return "pulse", nil
+	default:
+		return "", fmt.Errorf("recording is not supported on GOOS %q (supported: darwin, linux)", goos)
+	}
+}
+
+// FfmpegRecorder records via ffmpeg, using the backend named in Backend
+// ("avfoundation" on macOS, "pulse"/"alsa" on Linux — see ResolveBackend).
+// It is never exercised in tests; internal/audio tests use FakeRecorder
+// instead.
 type FfmpegRecorder struct {
+	// Backend is the ffmpeg input format (e.g. "avfoundation", "pulse",
+	// "alsa"). Empty is invalid at this layer — callers must resolve it
+	// first via ResolveBackend.
+	Backend string
 	// SilenceAutostop enables the silencedetect watchdog: after
 	// SilenceDuration of continuous silence, the recording is stopped
 	// automatically as a safety net (not the primary stop mechanism).
@@ -85,6 +108,34 @@ func (r FfmpegRecorder) silencedetectFilter() string {
 	return fmt.Sprintf("silencedetect=noise=%ddB:d=%d", r.silenceNoiseDB(), int(r.silenceThreshold().Seconds()))
 }
 
+// buildArgs constructs the ffmpeg argument list for capturing from backend,
+// up through the input/format/duration flags shared by every backend. It
+// does not append the silencedetect filter or the trailing output path —
+// Record adds those itself, since silencedetect is gated on SilenceAutostop
+// and the output path is the one arg that must come last.
+//
+// The only per-backend difference is the input spec: avfoundation addresses
+// devices as ":<device>", while pulse/alsa take the device name directly (no
+// ":" prefix — that syntax is avfoundation-specific).
+func (r FfmpegRecorder) buildArgs(backend, device string, sampleRate, channels int, maxDuration time.Duration) []string {
+	input := device
+	if backend == "avfoundation" {
+		input = ":" + device
+	}
+	args := []string{
+		"-hide_banner", "-loglevel", "info",
+		"-f", backend,
+		"-i", input,
+		"-ar", strconv.Itoa(sampleRate),
+		"-ac", strconv.Itoa(channels),
+		"-sample_fmt", "s16",
+	}
+	if maxDuration > 0 {
+		args = append(args, "-t", strconv.FormatFloat(maxDuration.Seconds(), 'f', -1, 64))
+	}
+	return args
+}
+
 // Record implements Recorder.
 func (r FfmpegRecorder) Record(ctx context.Context, wavPath, device string, sampleRate, channels int, maxDuration time.Duration) (<-chan error, StopFn, CancelFn) {
 	errCh := make(chan error, 1)
@@ -96,17 +147,7 @@ func (r FfmpegRecorder) Record(ctx context.Context, wavPath, device string, samp
 		return errCh, noop, noop
 	}
 
-	args := []string{
-		"-hide_banner", "-loglevel", "info",
-		"-f", "avfoundation",
-		"-i", ":" + device,
-		"-ar", strconv.Itoa(sampleRate),
-		"-ac", strconv.Itoa(channels),
-		"-sample_fmt", "s16",
-	}
-	if maxDuration > 0 {
-		args = append(args, "-t", strconv.FormatFloat(maxDuration.Seconds(), 'f', -1, 64))
-	}
+	args := r.buildArgs(r.Backend, device, sampleRate, channels, maxDuration)
 	if r.SilenceAutostop {
 		args = append(args, "-af", r.silencedetectFilter())
 	}
