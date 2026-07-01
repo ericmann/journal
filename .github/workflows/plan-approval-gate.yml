@@ -25,7 +25,10 @@ jobs:
       github.event.issue.pull_request == null &&
       startsWith(github.event.comment.body, '/approve-plan')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # complexity:high implementation: new package(s) + Go build + serial WASM
+    # test suite (go test -p 1) + PR creation regularly exceeds 15 min and was
+    # getting cancelled mid-build, leaving no PR. See docs/LEARNINGS.md.
+    timeout-minutes: 50
     permissions:
       contents: write
       pull-requests: write
