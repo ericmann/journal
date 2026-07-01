@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime"
 	"strings"
 )
 
@@ -66,6 +67,34 @@ func runTerminalNotifier(title, message string) error {
 	return nil
 }
 
+// notifySendNotifier sends notifications via Linux's `notify-send` CLI.
+type notifySendNotifier struct{}
+
+// Notify implements Notifier.
+func (notifySendNotifier) Notify(title, message string) error {
+	if _, err := exec.LookPath("notify-send"); err != nil {
+		return fmt.Errorf("notify-send not found in PATH: %w", err)
+	}
+	if err := exec.Command("notify-send", title, message).Run(); err != nil {
+		return fmt.Errorf("notify-send: %w", err)
+	}
+	return nil
+}
+
+// defaultNotifierForGOOS picks the live Notifier for goos: notify-send on
+// Linux, osascript/terminal-notifier on macOS and anywhere else (preserving
+// today's behavior, which already degrades silently off macOS). goos is a
+// parameter (not runtime.GOOS read internally) so both branches are
+// unit-testable regardless of the OS running the test.
+func defaultNotifierForGOOS(goos string) Notifier {
+	switch goos {
+	case "linux":
+		return notifySendNotifier{}
+	default:
+		return osascriptNotifier{}
+	}
+}
+
 // appleScriptQuote renders s as a double-quoted AppleScript string literal,
 // escaping backslashes and quotes so untrusted note text can never break out
 // of the literal into executable AppleScript.
@@ -78,7 +107,7 @@ func appleScriptQuote(s string) string {
 // DefaultNotifier is the live Notifier used by `journal log`. Tests inject a
 // fake Notifier instead of calling this, so no test ever pops a real OS
 // notification.
-var DefaultNotifier Notifier = osascriptNotifier{}
+var DefaultNotifier Notifier = defaultNotifierForGOOS(runtime.GOOS)
 
 // Notify sends a notification via n and degrades silently on failure: it
 // writes a log-only line to out rather than returning an error, so a broken

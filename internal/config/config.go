@@ -158,6 +158,10 @@ type LogAudio struct {
 	Device     string `yaml:"device"`
 	SampleRate int    `yaml:"sample_rate"`
 	Channels   int    `yaml:"channels"`
+	// Backend selects the ffmpeg input format: "" (auto-detect from GOOS —
+	// avfoundation on macOS, pulse on Linux), "pulse", "alsa", or
+	// "avfoundation". See audio.ResolveBackend.
+	Backend string `yaml:"backend"`
 	// TmpDir is where in-progress/scratch recordings are written. ~ is
 	// expanded. Empty falls back to <os temp dir>/journal-log.
 	TmpDir string `yaml:"tmp_dir"`
@@ -633,6 +637,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Log.Audio.SilenceDuration <= 0 {
 		return fmt.Errorf("log.audio.silence_duration must be > 0, got %d", c.Log.Audio.SilenceDuration)
+	}
+	switch c.Log.Audio.Backend {
+	case "", "avfoundation", "pulse", "alsa":
+	default:
+		return fmt.Errorf("log.audio.backend %q unsupported (want \"\"|avfoundation|pulse|alsa)", c.Log.Audio.Backend)
 	}
 	return nil
 }

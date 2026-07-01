@@ -95,7 +95,7 @@ from Land/Index: an optional `diarization.model_id` (pyannote) can be
 provisioned as a credential preflight via `journal models pull` — see
 [TRANSCRIBE.md](TRANSCRIBE.md) and [CONFIGURATION.md](CONFIGURATION.md).
 
-## Mic recording → async pipeline (`journal log` toggle, macOS only)
+## Mic recording → async pipeline (`journal log` toggle, macOS and Linux)
 
 The bare `journal log` toggle adds a recording stage in front of the pipeline
 above, entirely local (ffmpeg → local whisper.cpp):
@@ -120,9 +120,11 @@ spawn daemon (detached) ──► write lock ──► ffmpeg records to scratch
 ```
 
 The first press spawns a detached background process (the "daemon") that
-writes a lockfile (`{pid, wav_path, started_at}`) and starts `ffmpeg -f
-avfoundation` recording to a scratch WAV under `log.audio.tmp_dir`; the
-foreground command prints "● recording" and returns immediately. The second
+writes a lockfile (`{pid, wav_path, started_at}`) and starts ffmpeg recording
+to a scratch WAV under `log.audio.tmp_dir`, using a backend selected by OS
+(`avfoundation`/`pulse`/`alsa` — see `log.audio.backend` in
+[CONFIGURATION.md](CONFIGURATION.md)); the foreground command prints
+"● recording" and returns immediately. The second
 press reads the lockfile and sends `SIGINT` to that pid; the daemon finalizes
 the WAV, spawns a second detached process running the ordinary `journal log
 <wav>` pipeline, removes the lockfile, and exits — so the stop press also

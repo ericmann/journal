@@ -79,6 +79,7 @@ log:
     device: default
     sample_rate: 16000
     channels: 1
+    backend: ""                 # ffmpeg input: "" (auto by OS: avfoundation/pulse), "pulse", "alsa", "avfoundation"
     tmp_dir: ""                 # scratch recording dir; "" -> <os temp dir>/journal-log
     max_duration: 900           # seconds; self-finalizes + processes at the cap (0 = no cap)
     silence_autostop: false     # safety-net stop after sustained silence (not the primary stop)
@@ -160,6 +161,7 @@ diarization:
 | `log.shaping.keep_raw_transcript` | `true` | Include a collapsed `<details>` block with the original raw text in the landed note. |
 | `log.landing.dir` | `logs` | Repo-relative directory for landed voice notes (`YYYY-MM-DD-HHMM-<slug>.md`). |
 | `log.landing.backlink_daily` | `false` | Append a one-line breadcrumb to today's daily note after landing. |
+| `log.audio.backend` | `""` (auto by GOOS) | ffmpeg input backend for the recording toggle: `""` auto-detects `avfoundation` on macOS / `pulse` on Linux, or set `pulse`, `alsa`, or `avfoundation` explicitly (e.g. `alsa` on an ALSA-only/headless Linux box). An unsupported OS (anything but macOS/Linux) fails fast on the starting press. |
 | `log.audio.tmp_dir` | `""` (→ `<os temp dir>/journal-log`) | Directory for scratch recording WAVs made by the `journal log` toggle. `~` is expanded; created on demand. |
 | `log.audio.max_duration` | `900` | Caps a single recording in seconds; the recorder self-finalizes and hands off to the pipeline at the limit. `0` disables the cap. |
 | `log.audio.silence_autostop` | `false` | Optional safety-net stop after a sustained silence interval — not the primary stopping mechanism (that's the toggle/`--stop`). |

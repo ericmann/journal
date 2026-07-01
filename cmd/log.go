@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -96,7 +97,15 @@ var logCmd = &cobra.Command{
 // newRecorder builds the live Recorder from cfg. Tests inject an
 // audio.FakeRecorder directly into runLogDaemon instead of calling this.
 func newRecorder(cfg *config.Config) audio.Recorder {
+	// Error ignored: checkRecordingSupported already validated this resolves
+	// cleanly before the daemon spawns (see runLogStartRecording). If GOOS
+	// somehow changed between preflight and daemon exec (not realistically
+	// possible in one process), Record returns the resolution error over
+	// errCh the same way it already returns "ffmpeg not found" — no silent
+	// failure mode either way.
+	backend, _ := audio.ResolveBackend(cfg.Log.Audio.Backend, runtime.GOOS)
 	return audio.FfmpegRecorder{
+		Backend:         backend,
 		SilenceAutostop: cfg.Log.Audio.SilenceAutostop,
 		SilenceDuration: time.Duration(cfg.Log.Audio.SilenceDuration) * time.Second,
 		SilenceNoiseDB:  cfg.Log.Audio.SilenceNoiseDB,
@@ -113,9 +122,19 @@ var newNotifier = func(cfg *config.Config) audio.Notifier {
 // tests never depend on (or require the absence of) a real ffmpeg install.
 var checkFfmpegAvailable = func() error {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return fmt.Errorf("ffmpeg not found in PATH; install it (e.g. `brew install ffmpeg`) before recording: %w", err)
+		return fmt.Errorf("ffmpeg not found in PATH; install it (e.g. `brew install ffmpeg` on macOS, `apt install ffmpeg` on Linux) before recording: %w", err)
 	}
 	return nil
+}
+
+// checkRecordingSupported reports whether recording is supported on this
+// platform/config (see audio.ResolveBackend) — an unsupported GOOS (e.g.
+// Windows) must fail here, before the daemon spawns, rather than surfacing
+// only as a desktop notification from a detached process. Injectable so
+// tests can simulate an unsupported platform without needing one.
+var checkRecordingSupported = func(cfg *config.Config) error {
+	_, err := audio.ResolveBackend(cfg.Log.Audio.Backend, runtime.GOOS)
+	return err
 }
 
 // checkTranscriberAvailable reports whether the configured whisper.cpp
@@ -210,6 +229,9 @@ func runLogStartRecording(cfg *config.Config, out io.Writer) error {
 		if err := audio.RemoveLock(); err != nil {
 			return fmt.Errorf("removing stale recording lock: %w", err)
 		}
+	}
+	if err := checkRecordingSupported(cfg); err != nil {
+		return err
 	}
 	if err := checkFfmpegAvailable(); err != nil {
 		return err
