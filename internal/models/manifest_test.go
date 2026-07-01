@@ -26,6 +26,30 @@ func TestGenerateMDTable(t *testing.T) {
 		"Systran/faster-whisper-small.en",
 		"abc123",
 		"def456",
+		"| no |",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("GenerateMD missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestGenerateMDGatedModelRecordsAcceptURL(t *testing.T) {
+	manifests := []Manifest{
+		{
+			ModelID:   "pyannote/speaker-diarization-3.1",
+			Revision:  "main",
+			Checksum:  "abc123",
+			Gated:     true,
+			AcceptURL: "https://huggingface.co/pyannote/speaker-diarization-3.1",
+		},
+	}
+	got := GenerateMD(manifests)
+	for _, want := range []string{
+		"pyannote/speaker-diarization-3.1",
+		"yes",
+		"accept terms",
+		"https://huggingface.co/pyannote/speaker-diarization-3.1",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("GenerateMD missing %q in:\n%s", want, got)

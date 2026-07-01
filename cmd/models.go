@@ -74,9 +74,18 @@ func runModelsPull(ctx context.Context, cfg *config.Config, dl models.Downloader
 	}
 	modelRoot := cfg.TranscriberModelDirAbs()
 
-	fmt.Fprintf(out, "pulling %s @ %s → %s\n", modelID, revision, modelRoot)
+	if cfg.Transcriber.Gated {
+		fmt.Fprintf(out, "pulling %s @ %s → %s (gated)\n", modelID, revision, modelRoot)
+	} else {
+		fmt.Fprintf(out, "pulling %s @ %s → %s\n", modelID, revision, modelRoot)
+	}
 
-	m, err := models.Pull(ctx, dl, modelID, revision, cfg.Transcriber.Checksum, modelRoot, baseURL)
+	auth := models.GatedAuth{
+		Gated:     cfg.Transcriber.Gated,
+		AcceptURL: cfg.Transcriber.AcceptURL,
+		Token:     config.HuggingFaceToken(),
+	}
+	m, err := models.Pull(ctx, dl, modelID, revision, cfg.Transcriber.Checksum, modelRoot, baseURL, auth)
 	if err != nil {
 		return err
 	}

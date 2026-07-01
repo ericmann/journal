@@ -9,6 +9,16 @@ versioning. Build-time design rationale lives in
 
 ### Added
 
+- **`journal models pull` gated/HuggingFace-token path (Phase 5b).** Extends
+  Phase 2a's model provisioning with support for gated HuggingFace repos (the
+  first being pyannote's speaker-diarization models, arriving with the meeting
+  pipeline migration). Set `transcriber.gated: true` and `transcriber.accept_url`
+  in config; `pull` sends `HF_TOKEN` (read from the environment only, never
+  config) as a Bearer token. A gated model with no/invalid token fails with an
+  explicit "accept terms at `<url>`, set `HF_TOKEN`" message instead of a raw
+  401. `MODELS.md` now records each installed model's gated status and
+  acceptance-page link. Ungated pulls are unaffected — no token, no behavior
+  change.
 - **MCP tools `journal_log_text` / `journal_log_audio` (Phase 5a).** The MCP server
   (`journal mcp`) now exposes the `journal log --text` and `journal log <audio.wav>`
   pipelines as tools: `journal_log_text(text)` runs shape→assemble→land→index,
