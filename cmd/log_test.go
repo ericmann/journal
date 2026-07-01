@@ -418,6 +418,16 @@ func stubFfmpegAvailable(t *testing.T, err error) {
 	t.Cleanup(func() { checkFfmpegAvailable = orig })
 }
 
+// stubTranscriberAvailable overrides the transcriber-toolchain preflight
+// check so start tests never depend on (or require the absence of) a real
+// whisper.cpp install/model.
+func stubTranscriberAvailable(t *testing.T, err error) {
+	t.Helper()
+	orig := checkTranscriberAvailable
+	checkTranscriberAvailable = func(*config.Config) error { return err }
+	t.Cleanup(func() { checkTranscriberAvailable = orig })
+}
+
 // stubSpawnDaemon overrides spawnDaemon to record its call instead of
 // forking a real background process. It writes the lockfile itself,
 // simulating the daemon's first action, unless writeLock is false.
@@ -506,6 +516,7 @@ func TestLogToggleStartsWhenIdle(t *testing.T) {
 	cfg := testRepo(t, nil)
 	isolateLock(t)
 	stubFfmpegAvailable(t, nil)
+	stubTranscriberAvailable(t, nil)
 	gotWAV := stubSpawnDaemon(t, true)
 
 	var out bytes.Buffer
@@ -524,6 +535,7 @@ func TestLogStartRecordingNotifiesOnStart(t *testing.T) {
 	cfg := testRepo(t, nil)
 	isolateLock(t)
 	stubFfmpegAvailable(t, nil)
+	stubTranscriberAvailable(t, nil)
 	stubSpawnDaemon(t, true)
 	notifier := stubNewNotifier(t)
 
@@ -567,6 +579,7 @@ func TestLogToggleRecoversStaleLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	stubFfmpegAvailable(t, nil)
+	stubTranscriberAvailable(t, nil)
 	gotWAV := stubSpawnDaemon(t, true)
 
 	var out bytes.Buffer
@@ -631,6 +644,70 @@ func TestLogStartRecordingFfmpegMissingFailsFast(t *testing.T) {
 	}
 	if _, lockErr := audio.ReadLock(); !errors.Is(lockErr, os.ErrNotExist) {
 		t.Error("no lockfile should be written when the ffmpeg preflight check fails")
+	}
+}
+
+func TestLogStartRecordingTranscriberPreflight(t *testing.T) {
+	tests := []struct {
+		name           string
+		transcriberErr error
+	}{
+		{name: "missing binary", transcriberErr: errors.New("whisper.cpp binary not found in PATH")},
+		{name: "missing model", transcriberErr: errors.New(`model file not found at "x.bin": run "journal models pull"`)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testRepo(t, nil)
+			isolateLock(t)
+			stubFfmpegAvailable(t, nil)
+			stubTranscriberAvailable(t, tt.transcriberErr)
+			notifier := stubNewNotifier(t)
+			spawnCalled := false
+			orig := spawnDaemon
+			spawnDaemon = func(string) error { spawnCalled = true; return nil }
+			t.Cleanup(func() { spawnDaemon = orig })
+
+			var out bytes.Buffer
+			err := runLogStartRecording(cfg, &out)
+			if err == nil {
+				t.Fatal("expected an error when the transcriber toolchain is unavailable")
+			}
+			if !errors.Is(err, tt.transcriberErr) {
+				t.Errorf("err = %v, want %v", err, tt.transcriberErr)
+			}
+			if spawnCalled {
+				t.Error("spawnDaemon should not be called when the transcriber preflight check fails")
+			}
+			if _, lockErr := audio.ReadLock(); !errors.Is(lockErr, os.ErrNotExist) {
+				t.Error("no lockfile should be written when the transcriber preflight check fails")
+			}
+			if len(notifier.Calls) != 1 {
+				t.Fatalf("expected 1 failure notification, got %d: %+v", len(notifier.Calls), notifier.Calls)
+			}
+			if notifier.Calls[0].Title != "✕ journal log failed" {
+				t.Errorf("notification title = %q, want %q", notifier.Calls[0].Title, "✕ journal log failed")
+			}
+			if notifier.Calls[0].Message != tt.transcriberErr.Error() {
+				t.Errorf("notification message = %q, want %q", notifier.Calls[0].Message, tt.transcriberErr.Error())
+			}
+		})
+	}
+}
+
+func TestLogStartRecordingTranscriberAvailablePassesThrough(t *testing.T) {
+	cfg := testRepo(t, nil)
+	isolateLock(t)
+	stubFfmpegAvailable(t, nil)
+	stubTranscriberAvailable(t, nil)
+	gotWAV := stubSpawnDaemon(t, true)
+
+	var out bytes.Buffer
+	if err := runLogStartRecording(cfg, &out); err != nil {
+		t.Fatal(err)
+	}
+	if *gotWAV == "" {
+		t.Error("spawnDaemon should be called when the transcriber preflight check passes")
 	}
 }
 
