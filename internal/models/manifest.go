@@ -16,10 +16,14 @@ func GenerateMD(manifests []Manifest) string {
 		sb.WriteString("_No models installed yet. Run `journal models pull` to download the configured model._\n")
 		return sb.String()
 	}
-	sb.WriteString("| Model ID | Revision | SHA-256 Checksum |\n")
-	sb.WriteString("| --- | --- | --- |\n")
+	sb.WriteString("| Model ID | Revision | SHA-256 Checksum | Gated |\n")
+	sb.WriteString("| --- | --- | --- | --- |\n")
 	for _, m := range manifests {
-		_, _ = fmt.Fprintf(&sb, "| `%s` | `%s` | `%s` |\n", m.ModelID, m.Revision, m.Checksum)
+		gated := "no"
+		if m.Gated {
+			gated = fmt.Sprintf("yes — [accept terms](%s)", m.AcceptURL)
+		}
+		_, _ = fmt.Fprintf(&sb, "| `%s` | `%s` | `%s` | %s |\n", m.ModelID, m.Revision, m.Checksum, gated)
 	}
 	return sb.String()
 }

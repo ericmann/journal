@@ -30,6 +30,11 @@ const AnthropicKeyEnv = "ANTHROPIC_API_KEY"
 // key. Read from the environment only, never persisted to config.
 const OpenAIKeyEnv = "OPENAI_API_KEY"
 
+// HFTokenEnv is the only place the HuggingFace access token is read from. It
+// is required only for gated model repos (e.g. pyannote diarization); ungated
+// pulls work with no token set.
+const HFTokenEnv = "HF_TOKEN"
+
 // SyncConflict modes for the sync_conflict setting.
 const (
 	// SyncConflictManual aborts a conflicting merge and asks the user to resolve
@@ -104,6 +109,14 @@ type Transcriber struct {
 	// ModelDir is the directory where model files are stored. ~ is expanded.
 	// Defaults to ~/.cache/journal/models.
 	ModelDir string `yaml:"model_dir"`
+	// Gated marks ModelID as a gated HuggingFace repo requiring terms
+	// acceptance and an HF_TOKEN (e.g. pyannote diarization models). Ungated
+	// models (the default) leave this false.
+	Gated bool `yaml:"gated"`
+	// AcceptURL is the HuggingFace terms-acceptance page for a gated ModelID.
+	// Shown in the pull failure message and recorded in MODELS.md. Ignored
+	// when Gated is false.
+	AcceptURL string `yaml:"accept_url"`
 }
 
 // Transcripts configures the meeting-transcript landing zone (populated by
@@ -702,4 +715,13 @@ func OpenAIAPIKey() (string, error) {
 		return "", fmt.Errorf("%s is not set in the environment", OpenAIKeyEnv)
 	}
 	return key, nil
+}
+
+// HuggingFaceToken returns HF_TOKEN from the environment, or "" if unset.
+// Never read from or written to config. Unlike AnthropicAPIKey/OpenAIAPIKey,
+// a missing token is not itself an error — it's only required for gated model
+// repos, and internal/models.Pull produces the "accept terms" message when a
+// gated pull needs one.
+func HuggingFaceToken() string {
+	return os.Getenv(HFTokenEnv)
 }

@@ -87,6 +87,16 @@ token needed. After pulling, commit the updated `MODELS.md` in your journal repo
 so collaborators know exactly which model version to expect. See
 [CONFIGURATION.md](CONFIGURATION.md) for the `transcriber.*` config keys.
 
+**Gated models (e.g. speaker diarization).** Some models — pyannote's
+diarization repos being the first — are gated on HuggingFace: you must accept
+the model's terms on its page before it can be downloaded. Set
+`transcriber.gated: true` and `transcriber.accept_url` to that page in config,
+then export `HF_TOKEN` (a HuggingFace access token) in your shell before
+running `journal models pull`. Skip either step and `pull` fails with an
+explicit "accept terms at `<url>`, set `HF_TOKEN`" message rather than a raw
+401. `MODELS.md` records which installed models are gated and links their
+acceptance page.
+
 ## 3. Configure journal
 
 In your journal repo's `.journal/config.yaml`:

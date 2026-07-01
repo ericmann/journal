@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/models"
 )
 
@@ -25,6 +26,22 @@ func modelChecksum(data []byte) string {
 func modelFakeServer(t *testing.T, blob []byte) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(blob)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// modelGatedServer starts an httptest server that only serves blob when the
+// request's Bearer token matches wantToken, otherwise returning 401 — a
+// stand-in for a gated HuggingFace repo.
+func modelGatedServer(t *testing.T, blob []byte, wantToken string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+wantToken {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		_, _ = w.Write(blob)
 	}))
 	t.Cleanup(srv.Close)
@@ -258,5 +275,81 @@ func TestGenerateMDAfterPull(t *testing.T) {
 		if !strings.Contains(string(md), want) {
 			t.Errorf("MODELS.md missing %q", want)
 		}
+	}
+}
+
+func TestRunModelsPullGatedNoTokenFailsWithAcceptTermsMessage(t *testing.T) {
+	cfg := testRepo(t, nil)
+	blob := []byte("gated model weights")
+	srv := modelGatedServer(t, blob, "valid-token")
+
+	t.Setenv(config.HFTokenEnv, "")
+	cfg.Transcriber.ModelID = "pyannote/speaker-diarization-3.1"
+	cfg.Transcriber.Revision = "main"
+	cfg.Transcriber.ModelDir = t.TempDir()
+	cfg.Transcriber.Gated = true
+	cfg.Transcriber.AcceptURL = "https://huggingface.co/pyannote/speaker-diarization-3.1"
+
+	err := runModelsPull(context.Background(), cfg, models.NewHTTPDownloader(nil), srv.URL, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected gated pull with no token to fail")
+	}
+	if !strings.Contains(err.Error(), "accept terms at https://huggingface.co/pyannote/speaker-diarization-3.1") {
+		t.Errorf("error %q does not mention accept-terms URL", err)
+	}
+	if !strings.Contains(err.Error(), "HF_TOKEN") {
+		t.Errorf("error %q does not mention HF_TOKEN", err)
+	}
+}
+
+func TestRunModelsPullGatedWithTokenSucceedsAndRecordsInModelsMD(t *testing.T) {
+	cfg := testRepo(t, nil)
+	blob := []byte("gated model weights")
+	wantSum := modelChecksum(blob)
+	srv := modelGatedServer(t, blob, "valid-token")
+
+	t.Setenv(config.HFTokenEnv, "valid-token")
+	cfg.Transcriber.ModelID = "pyannote/speaker-diarization-3.1"
+	cfg.Transcriber.Revision = "main"
+	cfg.Transcriber.Checksum = wantSum
+	cfg.Transcriber.ModelDir = t.TempDir()
+	cfg.Transcriber.Gated = true
+	cfg.Transcriber.AcceptURL = "https://huggingface.co/pyannote/speaker-diarization-3.1"
+
+	var out bytes.Buffer
+	if err := runModelsPull(context.Background(), cfg, models.NewHTTPDownloader(nil), srv.URL, &out); err != nil {
+		t.Fatalf("gated runModelsPull with valid token: %v", err)
+	}
+
+	mdPath := filepath.Join(cfg.Root(), "MODELS.md")
+	md, err := os.ReadFile(mdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"pyannote/speaker-diarization-3.1",
+		"accept terms",
+		"https://huggingface.co/pyannote/speaker-diarization-3.1",
+	} {
+		if !strings.Contains(string(md), want) {
+			t.Errorf("MODELS.md missing %q:\n%s", want, md)
+		}
+	}
+}
+
+func TestRunModelsPullUngatedNoRegressionWithNoToken(t *testing.T) {
+	cfg := testRepo(t, nil)
+	blob := []byte("ungated model weights")
+	wantSum := modelChecksum(blob)
+	srv := modelFakeServer(t, blob)
+
+	t.Setenv(config.HFTokenEnv, "")
+	cfg.Transcriber.ModelID = "base.en"
+	cfg.Transcriber.Revision = "main"
+	cfg.Transcriber.Checksum = wantSum
+	cfg.Transcriber.ModelDir = t.TempDir()
+
+	if err := runModelsPull(context.Background(), cfg, models.NewHTTPDownloader(nil), srv.URL, &bytes.Buffer{}); err != nil {
+		t.Fatalf("ungated pull with no HF_TOKEN set: %v", err)
 	}
 }
