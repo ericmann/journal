@@ -326,6 +326,46 @@ func TestLogAudioTranscriptionErrorIsRetryable(t *testing.T) {
 	}
 }
 
+func TestLogAudioLandFailureNotifies(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = false
+
+	// Point the landing dir at a path that can never be created: a regular
+	// file sits where a required directory component must go, so
+	// os.MkdirAll (and thus jlog.Land) fails deterministically regardless of
+	// the test process's privileges (unlike a permission-bit failure, which
+	// root ignores).
+	blocker := filepath.Join(cfg.Root(), "logs-blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Log.Landing.Dir = filepath.ToSlash(filepath.Join("logs-blocker", "sub"))
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ft := &jlog.FakeTranscriber{Reply: "fixed the caching bug today", DurationSec: 15}
+	fake := embed.NewFake(cfg.EmbedDim)
+	notifier := stubNewNotifier(t)
+
+	var out bytes.Buffer
+	_, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
+	if err == nil {
+		t.Fatal("expected error for land failure")
+	}
+
+	// The hotkey/mic-toggle flow is silent unless a desktop notification
+	// fires — the user must be told the note failed to land.
+	if len(notifier.Calls) != 1 {
+		t.Fatalf("expected 1 failure notification, got %d: %+v", len(notifier.Calls), notifier.Calls)
+	}
+	if notifier.Calls[0].Title != "✕ journal log failed" {
+		t.Errorf("notification title = %q, want %q", notifier.Calls[0].Title, "✕ journal log failed")
+	}
+}
+
 func TestLogAudioEmptyTranscriptSkipsPipeline(t *testing.T) {
 	cfg := testRepo(t, nil)
 	audioPath := filepath.Join(t.TempDir(), "silence.wav")
