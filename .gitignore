@@ -41,6 +41,9 @@ go.work.sum
 # release build output
 dist/
 
+# local build/scratch output dir
+out/
+
 # personal voice profile for `journal synth` — read from your notes repo at
 # generation time; keep your own copy out of this public source repo.
 docs/VOICE_PROFILE.md
