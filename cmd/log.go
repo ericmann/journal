@@ -491,10 +491,14 @@ func runLogAudio(ctx context.Context, cfg *config.Config, e embed.Embedder, tr j
 	absDir := cfg.LogAbsPath()
 	relPath := filepath.ToSlash(filepath.Join(cfg.LogRelPath(), filename))
 
-	// Land the note.
+	// Land the note. Like the transcription-failure path above, the hotkey
+	// flow's stdout goes to /dev/null, so a desktop notification is the only
+	// way the user learns the note didn't land.
 	absPath, err := jlog.Land(absDir, filename, []byte(doc))
 	if err != nil {
-		return logLanded{}, err
+		audio.Notify(newNotifier(cfg), "✕ journal log failed",
+			"note failed to save — transcript not persisted", out)
+		return logLanded{}, fmt.Errorf("landing note: %w", err)
 	}
 	fmt.Fprintf(out, "logged: %s\n", relPath)
 	audio.Notify(newNotifier(cfg), fmt.Sprintf("✓ logged: %s", noteTitleOrDefault(in.Title)), relPath, out)
