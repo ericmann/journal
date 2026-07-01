@@ -108,6 +108,17 @@ versioning. Build-time design rationale lives in
 - **`log:` config namespace** with `shaping`, `landing`, `audio`, and `transcriber`
   keys; `LogAbsPath()`/`LogRelPath()` helpers mirror `TranscriptsAbsPath()`.
 
+### Fixed
+
+- **`journal log` hotkey/mic-toggle no longer fails silently.** When the
+  background transcribe→land pipeline can't run (most commonly whisper.cpp or the
+  model isn't installed), the detached pipeline process has no visible stdout, so
+  the only feedback the user gets is a desktop notification — and previously only
+  the *success* notification (`✓ logged`) ever fired. `journal log` now pops a
+  `✕ journal log failed` notification naming the retained WAV to retry with, and a
+  low-key "empty recording — nothing to log" notification when a recording
+  transcribes to silence, so a hotkey press always resolves to a visible outcome.
+
 ## [2.7.1] — 2026-06-25
 
 ### Added
