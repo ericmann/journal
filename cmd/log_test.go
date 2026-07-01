@@ -31,7 +31,7 @@ func TestLogTextLocalOnlyLandsRawNote(t *testing.T) {
 	fc := &synth.Fake{Reply: "should not be called"}
 
 	var out bytes.Buffer
-	err := runLogText(context.Background(), cfg, fake, fc, "quick note about deploy logs", &out)
+	_, err := runLogText(context.Background(), cfg, fake, fc, "quick note about deploy logs", &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestLogTextWithFakeSynthLandsShapedNote(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogText(context.Background(), cfg, fake, fc, "I reviewed the deploy logs no anomalies", &out)
+	_, err := runLogText(context.Background(), cfg, fake, fc, "I reviewed the deploy logs no anomalies", &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestLogTextIndexFailureIsNonFatal(t *testing.T) {
 
 	fake := embed.NewFake(cfg.EmbedDim)
 	var out bytes.Buffer
-	err := runLogText(context.Background(), cfg, fake, nil, "a note that fails to index", &out)
+	_, err := runLogText(context.Background(), cfg, fake, nil, "a note that fails to index", &out)
 	if err != nil {
 		t.Errorf("index failure should be non-fatal, got: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestLogTextShaperErrorFallsBackToRaw(t *testing.T) {
 	fc := &synth.Fake{ForcedErr: errors.New("fake network error")}
 
 	var out bytes.Buffer
-	err := runLogText(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), fc, "note text here", &out)
+	_, err := runLogText(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), fc, "note text here", &out)
 	if err != nil {
 		t.Errorf("shaping error should be non-fatal, got: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestLogTextSearchableByVoiceSource(t *testing.T) {
 
 	fake := embed.NewFake(cfg.EmbedDim)
 	var out bytes.Buffer
-	if err := runLogText(context.Background(), cfg, fake, nil, "searched by voice source", &out); err != nil {
+	if _, err := runLogText(context.Background(), cfg, fake, nil, "searched by voice source", &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -163,7 +163,7 @@ func TestLogAudioFakeTranscriberLandsNote(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
+	_, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestLogAudioNotifiesOnCompletion(t *testing.T) {
 	notifier := stubNewNotifier(t)
 
 	var out bytes.Buffer
-	if err := runLogAudio(context.Background(), cfg, fake, ft, fc, audioPath, false, false, &out); err != nil {
+	if _, err := runLogAudio(context.Background(), cfg, fake, ft, fc, audioPath, false, false, &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -241,7 +241,7 @@ func TestLogAudioUnshapedNotifiesWithDefaultTitle(t *testing.T) {
 	notifier := stubNewNotifier(t)
 
 	var out bytes.Buffer
-	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out); err != nil {
+	if _, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -269,7 +269,7 @@ func TestLogAudioWithShapingLandsShapedNote(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, fc, audioPath, false, false, &out)
+	_, err := runLogAudio(context.Background(), cfg, fake, ft, fc, audioPath, false, false, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +295,7 @@ func TestLogAudioTranscriptionErrorIsRetryable(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
+	_, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
 	if err == nil {
 		t.Fatal("expected error for transcription failure")
 	}
@@ -326,7 +326,7 @@ func TestLogAudioEmptyTranscriptSkipsPipeline(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
+	_, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out)
 	if err != nil {
 		t.Errorf("empty transcript should not error, got: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestLogAudioMissingFileReturnsError(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, nil, "/nonexistent/audio.wav", false, false, &out)
+	_, err := runLogAudio(context.Background(), cfg, fake, ft, nil, "/nonexistent/audio.wav", false, false, &out)
 	if err == nil {
 		t.Fatal("expected error for missing audio file")
 	}
@@ -365,7 +365,7 @@ func TestLogAudioIndexedByVoiceSource(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out); err != nil {
+	if _, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -895,7 +895,7 @@ func TestLogAudioScratchDeletesWAVOnSuccessByDefault(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, false, &out); err != nil {
+	if _, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, false, &out); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(audioPath); !os.IsNotExist(err) {
@@ -917,7 +917,7 @@ func TestLogAudioNonScratchNeverDeletesWAV(t *testing.T) {
 
 	var out bytes.Buffer
 	// scratch=false: this mirrors a user directly running `journal log <file>.wav`.
-	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out); err != nil {
+	if _, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, false, false, &out); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(audioPath); err != nil {
@@ -938,7 +938,7 @@ func TestLogAudioScratchKeepWAVRetainsFileAndAddsFrontmatter(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, true, &out); err != nil {
+	if _, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, true, &out); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(audioPath); err != nil {
@@ -971,7 +971,7 @@ func TestLogAudioScratchEmptyTranscriptDiscardsWAV(t *testing.T) {
 
 	var out bytes.Buffer
 	// Even with keepWAV=true, an empty/silent transcript discards the scratch wav.
-	if err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, true, &out); err != nil {
+	if _, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, true, &out); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(audioPath); !os.IsNotExist(err) {
@@ -991,7 +991,7 @@ func TestLogAudioScratchTranscriptionErrorKeepsWAV(t *testing.T) {
 	fake := embed.NewFake(cfg.EmbedDim)
 
 	var out bytes.Buffer
-	err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, false, &out)
+	_, err := runLogAudio(context.Background(), cfg, fake, ft, nil, audioPath, true, false, &out)
 	if err == nil {
 		t.Fatal("expected transcription error")
 	}

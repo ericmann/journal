@@ -234,12 +234,15 @@ daemon `journal` ships or manages; `journal log` remains a single static
 binary with no background service beyond the detached per-recording process
 started by the toggle itself.
 
-`journal mcp` runs an MCP server (stdio) exposing 13 tools — `search`, `recent`,
-`decisions`, `threads`, `show`, `capture`, `meetings`, `todos`, `done`, `stats`,
-`today`, `ask`, `synth` — plus read resources (`journal://today`, `journal://recent`,
-`journal://projects/{slug}/index`) and pre-built prompts (`weekly-reflection`,
-`decisions-review`, `project-status`). See [INTEGRATIONS.md](INTEGRATIONS.md) §3b
-for the one-block config. Synthesis is documented in [SYNTHESIS.md](SYNTHESIS.md);
+`journal mcp` runs an MCP server (stdio) exposing 15 tools — `search`, `recent`,
+`decisions`, `threads`, `show`, `capture`, `journal_log_text`, `journal_log_audio`,
+`meetings`, `todos`, `done`, `stats`, `today`, `ask`, `synth` — plus read resources
+(`journal://today`, `journal://recent`, `journal://projects/{slug}/index`) and
+pre-built prompts (`weekly-reflection`, `decisions-review`, `project-status`). See
+[INTEGRATIONS.md](INTEGRATIONS.md) §3b for the one-block config. `journal_log_text`
+and `journal_log_audio` run the same shape→assemble→land→index core as `journal log
+--text` / `journal log <audio.wav>` — the mic-recording stage stays CLI-only and is
+never exposed over MCP. Synthesis is documented in [SYNTHESIS.md](SYNTHESIS.md);
 backup in [SYNC.md](SYNC.md).
 
 ## Retrieval & queries

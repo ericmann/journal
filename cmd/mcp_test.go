@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
+	jlog "github.com/ericmann/journal/internal/log"
 	"github.com/ericmann/journal/internal/synth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -140,6 +142,129 @@ func TestMCPCaptureBadMarkerErrors(t *testing.T) {
 	cfg := testRepo(t, nil)
 	if _, err := mcpCapture(cfg, captureInput{Text: "x", Marker: "bogus"}); err == nil {
 		t.Error("expected error on invalid marker")
+	}
+}
+
+func TestMCPLogTextLandsNoteAndReturnsPathTitle(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = true
+	validReply := `{"title":"Deploy Review","summary":"Checked deploy logs.","body":"Reviewed the deploy logs.","tags":["deploy"],"markers":[]}`
+	fc := &synth.Fake{Reply: validReply}
+
+	out, err := mcpLogText(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), fc, logTextInput{Text: "reviewed the deploy logs no anomalies"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got logResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if !got.Landed {
+		t.Error("expected landed=true")
+	}
+	if !strings.HasPrefix(got.Path, "logs/") {
+		t.Errorf("path = %q, want it to start with logs/", got.Path)
+	}
+	if got.Title != "Deploy Review" {
+		t.Errorf("title = %q, want %q", got.Title, "Deploy Review")
+	}
+}
+
+func TestMCPLogTextEmptyTextErrors(t *testing.T) {
+	cfg := testRepo(t, nil)
+	if _, err := mcpLogText(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), nil, logTextInput{Text: "  "}); err == nil {
+		t.Error("expected error on empty text")
+	}
+}
+
+func TestMCPLogTextLocalOnlySkipsShaping(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = true
+	// local_only requires ollama provider.
+	cfg.LocalOnly = true
+	cfg.SynthProvider = config.SynthProviderOllama
+	// A client that would fail if called — local_only must skip shaping.
+	fc := &synth.Fake{Reply: "should not be called"}
+
+	out, err := mcpLogText(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), fc, logTextInput{Text: "quick note about deploy logs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got logResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if !got.Landed {
+		t.Error("expected landed=true even with shaping skipped (raw fallback)")
+	}
+	if fc.CallCount > 0 {
+		t.Errorf("shaping client called %d times under local_only, want 0", fc.CallCount)
+	}
+}
+
+func TestMCPLogAudioLandsNoteAndReturnsPathTitle(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Log.Shaping.Enabled = false
+
+	audioPath := filepath.Join(t.TempDir(), "note.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ft := &jlog.FakeTranscriber{Reply: "fixed the caching bug today", DurationSec: 15}
+
+	out, err := mcpLogAudio(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), ft, nil, logAudioInput{AudioPath: audioPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got logResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if !got.Landed {
+		t.Error("expected landed=true")
+	}
+	if !strings.HasPrefix(got.Path, "logs/") {
+		t.Errorf("path = %q, want it to start with logs/", got.Path)
+	}
+	// Audio was never a scratch recording — the supplied file must survive.
+	if _, statErr := os.Stat(audioPath); statErr != nil {
+		t.Errorf("MCP-supplied audio path must never be deleted: %v", statErr)
+	}
+}
+
+func TestMCPLogAudioEmptyTranscriptReturnsLandedFalse(t *testing.T) {
+	cfg := testRepo(t, nil)
+	audioPath := filepath.Join(t.TempDir(), "silence.wav")
+	if err := os.WriteFile(audioPath, []byte("RIFF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ft := &jlog.FakeTranscriber{Reply: "   "}
+
+	out, err := mcpLogAudio(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), ft, nil, logAudioInput{AudioPath: audioPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got logResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if got.Landed || got.Path != "" || got.Title != "" {
+		t.Errorf("expected empty landed=false result for an empty transcript, got %+v", got)
+	}
+}
+
+func TestMCPLogAudioEmptyPathErrors(t *testing.T) {
+	cfg := testRepo(t, nil)
+	if _, err := mcpLogAudio(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), &jlog.FakeTranscriber{}, nil, logAudioInput{AudioPath: "  "}); err == nil {
+		t.Error("expected error on empty audio_path")
+	}
+}
+
+func TestMCPLogAudioMissingFileErrors(t *testing.T) {
+	cfg := testRepo(t, nil)
+	ft := &jlog.FakeTranscriber{Reply: "text"}
+	if _, err := mcpLogAudio(context.Background(), cfg, embed.NewFake(cfg.EmbedDim), ft, nil, logAudioInput{AudioPath: "/nonexistent/audio.wav"}); err == nil {
+		t.Error("expected error for missing audio file")
 	}
 }
 
