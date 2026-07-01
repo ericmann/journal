@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,18 +16,23 @@ import (
 var modelsCmd = &cobra.Command{
 	Use:   "models",
 	Short: "Manage local models for voice transcription",
-	Long: "models provisions, lists, and verifies local whisper model files used\n" +
-		"by `journal transcribe`. Pull a model once; subsequent pulls are no-ops\n" +
-		"when the checksum matches. See docs/CONFIGURATION.md for the transcriber keys.",
+	Long: "models provisions, lists, and verifies local model files used by\n" +
+		"`journal transcribe` (whisper) and the meeting pipeline's optional\n" +
+		"diarization model. Pull a model once; subsequent pulls are no-ops when\n" +
+		"the checksum matches. See docs/CONFIGURATION.md for the transcriber/\n" +
+		"diarization keys.",
 }
 
 var modelsPullCmd = &cobra.Command{
 	Use:   "pull",
-	Short: "Download the configured transcribe model (idempotent)",
-	Long: "pull downloads the model defined by transcriber.model_id / revision / checksum\n" +
-		"in .journal/config.yaml into transcriber.model_dir (~/.cache/journal/models by\n" +
-		"default). If the file already exists and its checksum matches, nothing is\n" +
-		"downloaded. After a successful pull MODELS.md in the journal root is updated.",
+	Short: "Download every configured model (idempotent)",
+	Long: "pull downloads each model with a non-empty model_id in .journal/config.yaml\n" +
+		"(transcriber.*, and diarization.* when set) into its model_dir\n" +
+		"(~/.cache/journal/models by default). Unconfigured models (empty model_id)\n" +
+		"are skipped — no error, no network call. If a file already exists and its\n" +
+		"checksum matches, nothing is downloaded. Every configured model is attempted;\n" +
+		"the command exits non-zero if any of them failed. After the run MODELS.md in\n" +
+		"the journal root is updated.",
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
@@ -63,35 +69,67 @@ var modelsVerifyCmd = &cobra.Command{
 	},
 }
 
-func runModelsPull(ctx context.Context, cfg *config.Config, dl models.Downloader, baseURL string, out io.Writer) error {
-	modelID := cfg.Transcriber.ModelID
-	if modelID == "" {
-		return fmt.Errorf("transcriber.model_id is not set in .journal/config.yaml")
-	}
-	revision := cfg.Transcriber.Revision
+// pullOne provisions a single named model slot (e.g. "transcriber" or
+// "diarization") and prints its pull/gated progress line, matching the
+// single-model output journal has always produced.
+func pullOne(ctx context.Context, cfg *config.Config, name string, t config.Transcriber, dl models.Downloader, baseURL string, out io.Writer) (*models.Manifest, error) {
+	revision := t.Revision
 	if revision == "" {
 		revision = "main"
 	}
 	modelRoot := cfg.TranscriberModelDirAbs()
 
-	if cfg.Transcriber.Gated {
-		fmt.Fprintf(out, "pulling %s @ %s → %s (gated)\n", modelID, revision, modelRoot)
+	if t.Gated {
+		fmt.Fprintf(out, "pulling %s @ %s → %s (gated)\n", t.ModelID, revision, modelRoot)
 	} else {
-		fmt.Fprintf(out, "pulling %s @ %s → %s\n", modelID, revision, modelRoot)
+		fmt.Fprintf(out, "pulling %s @ %s → %s\n", t.ModelID, revision, modelRoot)
 	}
 
 	auth := models.GatedAuth{
-		Gated:     cfg.Transcriber.Gated,
-		AcceptURL: cfg.Transcriber.AcceptURL,
+		Gated:     t.Gated,
+		AcceptURL: t.AcceptURL,
 		Token:     config.HuggingFaceToken(),
 	}
-	m, err := models.Pull(ctx, dl, modelID, revision, cfg.Transcriber.Checksum, modelRoot, baseURL, auth)
+	m, err := models.PullFile(ctx, dl, t.ModelID, revision, t.Filename, t.Checksum, modelRoot, baseURL, auth)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	fmt.Fprintf(out, "ok  %s (%s) sha256:%s\n", m.ModelID, m.Revision, m.Checksum)
+	return m, nil
+}
 
-	// Regenerate MODELS.md in the journal root.
+// runModelsPull attempts every configured model slot (transcriber, and
+// diarization when set) with a non-empty model_id, skipping unconfigured
+// slots entirely. It attempts all configured slots even if one fails, then
+// regenerates MODELS.md from whatever is now installed, and finally returns
+// a joined error if any slot failed.
+func runModelsPull(ctx context.Context, cfg *config.Config, dl models.Downloader, baseURL string, out io.Writer) error {
+	slots := []struct {
+		name string
+		t    config.Transcriber
+	}{
+		{"transcriber", cfg.Transcriber},
+		{"diarization", cfg.Diarization},
+	}
+
+	var attempted int
+	var errs []error
+	for _, s := range slots {
+		if s.t.ModelID == "" {
+			continue
+		}
+		attempted++
+		if _, err := pullOne(ctx, cfg, s.name, s.t, dl, baseURL, out); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if attempted == 0 {
+		return fmt.Errorf("no models configured to pull: set transcriber.model_id (and/or diarization.model_id) in .journal/config.yaml")
+	}
+
+	// Regenerate MODELS.md from whatever is installed, even when a sibling
+	// model failed — a successful pull should still be reflected.
+	modelRoot := cfg.TranscriberModelDirAbs()
 	manifests, err := models.List(modelRoot)
 	if err != nil {
 		return fmt.Errorf("listing models: %w", err)
@@ -102,6 +140,10 @@ func runModelsPull(ctx context.Context, cfg *config.Config, dl models.Downloader
 		return fmt.Errorf("writing MODELS.md: %w", err)
 	}
 	fmt.Fprintf(out, "updated %s\n", relTo(cfg.Root(), mdPath))
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
 	return nil
 }
 

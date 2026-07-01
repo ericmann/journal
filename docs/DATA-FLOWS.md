@@ -53,9 +53,10 @@ raw text ──► Shape ──► Assemble ──► Land ──► Index
 2. **Assemble** — pure in-process rendering: YAML frontmatter
    (`source: voice`, `duration_sec`, `transcriber`, tags, marker counts) plus
    `## Summary`, `## Notes`, and an optional collapsed `## Raw transcript` block.
-3. **Land** — `os.WriteFile` to `logs/YYYY-MM-DD-HHMM-<slug>.md` under
-   `log.landing.dir`. A note is **always written** — shaping failure is
-   non-fatal. Optional: one-line daily breadcrumb when `log.landing.backlink_daily: true`.
+3. **Land** — `internal/log.Land` (create-dir + write) writes
+   `logs/YYYY-MM-DD-HHMM-<slug>.md` under `log.landing.dir`. A note is
+   **always written** — shaping failure is non-fatal. Optional: one-line
+   daily breadcrumb when `log.landing.backlink_daily: true`.
 4. **Index** — `Indexer.IndexVoice` chunks the landed note (reusing the
    transcript line-windowing strategy) and upserts chunks with
    `source = "voice"`. Failure is non-fatal — the note is on disk and
@@ -63,6 +64,36 @@ raw text ──► Shape ──► Assemble ──► Land ──► Index
 
 Voice chunks are scoped separately from notes and transcripts; use
 `journal search --source voice` (aliases `log`/`logs`) to scope results.
+
+## Meeting write path (`journal quill-sync`, `journal transcribe`)
+
+The meeting pipeline (Quill imports and WhisperX ingestion) lands and indexes
+through the same `internal/log` primitives as voice notes above — a rendered
+meeting is content-agnostic to `Land`/`IndexTranscript`, which only care about
+bytes, a filename, and a timestamp:
+
+```
+Quill DB / WhisperX JSON ──► Render ──► Land ──► Index
+                              (pure)    (disk)   (Ollama + sqlite-vec)
+```
+
+- **Render** stays pipeline-specific: `internal/quill/render.go` for Quill
+  imports, `internal/transcribe/transcribe.go` for WhisperX JSON. Frontmatter
+  (`source: quill` / `source: whisperx`), filenames, and Markdown shape are
+  unchanged from before this refactor.
+- **Land** uses the same `internal/log.Land` function voice notes use, writing
+  into `transcripts.path` (default `transcripts/`, gitignored).
+- **Index** uses `internal/log.IndexTranscript`, a thin wrapper around
+  `Indexer.IndexTranscript` — chunks are tagged `source = "transcript"` with
+  the configured `transcripts.tag`. `journal quill-sync` only lands (indexing
+  happens via the watcher or a separate `journal index` run); `journal
+  transcribe` lands and indexes synchronously in one command — this asymmetry
+  predates the refactor and is unchanged.
+
+Diarization (speaker labeling) for the WhisperX path is a separate concern
+from Land/Index: an optional `diarization.model_id` (pyannote) can be
+provisioned as a credential preflight via `journal models pull` — see
+[TRANSCRIBE.md](TRANSCRIBE.md) and [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Mic recording → async pipeline (`journal log` toggle, macOS only)
 

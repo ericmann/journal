@@ -94,10 +94,25 @@ schema_version: "2.0"                  # config schema; `journal init` upgrades 
 transcriber:
   model_id: Systran/faster-whisper-base.en   # HuggingFace model id (ungated)
   revision: main                              # branch/tag/commit to pin
+  filename: ""                                # remote/on-disk file name; "" defaults to "model.bin"
   checksum: ""                               # SHA-256 hex; populated after first pull
   model_dir: ~/.cache/journal/models          # global model store; not repo-specific
   gated: false                                # set true for gated repos (e.g. pyannote diarization)
   accept_url: ""                              # HuggingFace terms-acceptance page; required when gated: true
+
+# --- Meeting diarization model (optional; see `journal models pull` and docs/TRANSCRIBE.md) ---
+# Empty model_id (the default) means disabled: `journal models pull` skips it
+# entirely, no network call. Fill in model_id (and gated/accept_url) to
+# provision pyannote as a credential preflight before running WhisperX
+# diarization — recommended values:
+diarization:
+  model_id: ""      # e.g. pyannote/speaker-diarization-community-1
+  revision: main
+  filename: ""      # e.g. config.yaml — pyannote's repo has no model.bin, pull its manifest instead
+  checksum: ""
+  model_dir: ~/.cache/journal/models   # shares the transcriber model store
+  gated: false       # true for pyannote — set alongside accept_url
+  accept_url: ""     # e.g. https://huggingface.co/pyannote/speaker-diarization-community-1
 ```
 
 ## Key reference
@@ -153,10 +168,15 @@ transcriber:
 | `schema_version` | `2.0` | Config schema version; `journal init` upgrades older repos in place. |
 | `transcriber.model_id` | `Systran/faster-whisper-base.en` | HuggingFace model id for the whisper model used by `journal transcribe`. Ungated (no HF token needed for the `base.en`/`small.en` class). |
 | `transcriber.revision` | `main` | Branch, tag, or commit SHA to pin for the model download. |
-| `transcriber.checksum` | `""` | Expected SHA-256 hex digest of the downloaded `model.bin`. Empty = no verification (useful before the first pull). Set it from the checksum printed by `journal models pull` to lock the version. |
+| `transcriber.filename` | `""` | Remote/on-disk file name to pull. Empty defaults to `model.bin` (every whisper model). Set it (e.g. `config.yaml`) for a repo whose primary artifact isn't named `model.bin` — see `diarization.filename` below. |
+| `transcriber.checksum` | `""` | Expected SHA-256 hex digest of the downloaded model file. Empty = no verification (useful before the first pull). Set it from the checksum printed by `journal models pull` to lock the version. |
 | `transcriber.model_dir` | `~/.cache/journal/models` | Directory where model files are stored. Not repo-specific — shared across all journal repos on the machine. `~` is expanded. |
 | `transcriber.gated` | `false` | Marks `model_id` as a gated HuggingFace repo (e.g. `pyannote/speaker-diarization-3.1`) that requires accepting terms on huggingface.co and an `HF_TOKEN`. `journal models pull` fails with an explicit "accept terms at `accept_url`, set `HF_TOKEN`" message instead of a raw 401 when this is `true` and the token is missing/invalid. |
 | `transcriber.accept_url` | `""` | The HuggingFace terms-acceptance page for `model_id`. Shown in the pull failure message and recorded in `MODELS.md`. Ignored when `gated` is `false`. |
+| `diarization.model_id` | `""` (disabled) | HuggingFace model id for the meeting pipeline's optional speaker-diarization model (e.g. `pyannote/speaker-diarization-community-1`). Empty means disabled — `journal models pull` skips it entirely, no network call. Same shape and keys as `transcriber.*`; see [TRANSCRIBE.md](TRANSCRIBE.md) for the credential-preflight workflow. |
+| `diarization.filename` | `""` | Same meaning as `transcriber.filename`. pyannote's repo has no `model.bin`; set this to `config.yaml` to pull its primary manifest as a preflight. |
+| `diarization.model_dir` | `~/.cache/journal/models` | Same default as `transcriber.model_dir` — shares the same model store. |
+| `diarization.gated` / `diarization.accept_url` | `false` / `""` | Same meaning as `transcriber.gated`/`transcriber.accept_url`. Set both for pyannote (gated). |
 
 ## Secrets
 
@@ -170,11 +190,13 @@ API keys are read from the environment only — never written to config or logge
   OpenRouter. The same variable serves both openai-provider paths, so mixing two
   different OpenAI-compatible services (one for synth, one for embeddings) isn't
   supported yet.
-- **`HF_TOKEN`** — only needed when `transcriber.gated: true` (e.g. pyannote
-  diarization models). Accept the model's terms at `transcriber.accept_url` on
-  huggingface.co first, then export the token — `journal models pull` fails
-  with that exact "accept terms" message instead of an opaque 401 if either
-  step is missing. Ungated models (the default) never need this.
+- **`HF_TOKEN`** — only needed when `transcriber.gated: true` or
+  `diarization.gated: true` (e.g. pyannote diarization models). Accept the
+  model's terms at the corresponding `accept_url` on huggingface.co first,
+  then export the token — `journal models pull` fails with that exact "accept
+  terms" message instead of an opaque 401 if either step is missing. Ungated
+  models (the default) never need this. `diarization.model_id` is empty (and
+  thus skipped by `journal models pull`) until you configure it.
 
 To keep personal and work journals separate, clone the repo into different
 directories and export different keys in each.

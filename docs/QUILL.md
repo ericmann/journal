@@ -28,6 +28,13 @@ flowchart TD
 Transcripts are **ephemeral input**, not source of truth: `transcripts/` and the
 index are gitignored and per-machine. They are **never auto-committed**.
 
+Internally, the write step (`quill-sync` rendering Markdown into `transcripts/`)
+and the indexing step now share the same `internal/log.Land`/`IndexTranscript`
+primitives `journal log` (voice notes) uses — see
+[DATA-FLOWS.md](DATA-FLOWS.md#meeting-write-path-journal-quill-sync-journal-transcribe).
+This is an internal-only change: the two-step `quill-sync` → `index` workflow,
+filenames, and frontmatter below are unchanged.
+
 ## Setup
 
 1. **Install Quill** (macOS/Windows) and record/import some meetings.

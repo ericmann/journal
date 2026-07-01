@@ -29,14 +29,15 @@ func Filename(t time.Time, title, fallback string) string {
 }
 
 // Land writes content to absDir/filename, creating the directory if needed.
-// Returns the absolute path of the written file.
+// Returns the absolute path of the written file. Shared by both the voice-note
+// and meeting-transcript pipelines.
 func Land(absDir, filename string, content []byte) (string, error) {
 	if err := os.MkdirAll(absDir, 0o755); err != nil {
-		return "", fmt.Errorf("creating voice note directory: %w", err)
+		return "", fmt.Errorf("creating note directory: %w", err)
 	}
 	abs := filepath.Join(absDir, filename)
 	if err := os.WriteFile(abs, content, 0o644); err != nil {
-		return "", fmt.Errorf("writing voice note: %w", err)
+		return "", fmt.Errorf("writing note: %w", err)
 	}
 	return abs, nil
 }

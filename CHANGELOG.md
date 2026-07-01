@@ -9,6 +9,23 @@ versioning. Build-time design rationale lives in
 
 ### Added
 
+- **Meeting pipeline migrated onto the shared land/index core (Phase 5c).**
+  `journal quill-sync` and `journal transcribe` now write and index through the
+  same `internal/log.Land`/`IndexTranscript` primitives the voice-note pipeline
+  (`journal log`) uses, replacing bespoke `os.WriteFile` glue in each command.
+  Frontmatter (`source: quill`/`source: whisperx`), filenames, and chunking
+  behavior are byte-identical to before — this is an internal refactor, not a
+  behavior change. `journal models pull` gains a second, independently-optional
+  gated model slot (`diarization.*`, same shape as `transcriber.*`) so the
+  meeting pipeline's pyannote diarization model can be provisioned as a fast
+  credential preflight — see [docs/TRANSCRIBE.md](docs/TRANSCRIBE.md) and
+  [docs/CONFIGURATION.md](docs/CONFIGURATION.md). `diarization.model_id` is
+  empty (disabled) by default; `journal models pull` skips it entirely until
+  configured, and attempts every configured model even if one fails, exiting
+  non-zero only if any of them did. `internal/models.Pull` gained a
+  `PullFile` variant supporting a configurable remote/local filename (needed
+  since pyannote's repo has no `model.bin`) — `Pull` is now a thin wrapper
+  around it with no behavior change for existing whisper-model call sites.
 - **`journal models pull` gated/HuggingFace-token path (Phase 5b).** Extends
   Phase 2a's model provisioning with support for gated HuggingFace repos (the
   first being pyannote's speaker-diarization models, arriving with the meeting

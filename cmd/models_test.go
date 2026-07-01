@@ -337,6 +337,142 @@ func TestRunModelsPullGatedWithTokenSucceedsAndRecordsInModelsMD(t *testing.T) {
 	}
 }
 
+func TestRunModelsPullBothTranscriberAndDiarizationConfigured(t *testing.T) {
+	cfg := testRepo(t, nil)
+	transcriberBlob := []byte("whisper model weights")
+	transcriberSum := modelChecksum(transcriberBlob)
+	diarizationBlob := []byte("pyannote config yaml")
+	diarizationSum := modelChecksum(diarizationBlob)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "pyannote") {
+			_, _ = w.Write(diarizationBlob)
+			return
+		}
+		_, _ = w.Write(transcriberBlob)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg.Transcriber.ModelID = "base.en"
+	cfg.Transcriber.Revision = "main"
+	cfg.Transcriber.Checksum = transcriberSum
+	cfg.Transcriber.ModelDir = t.TempDir()
+
+	cfg.Diarization.ModelID = "pyannote/speaker-diarization-community-1"
+	cfg.Diarization.Revision = "main"
+	cfg.Diarization.Filename = "config.yaml"
+	cfg.Diarization.Checksum = diarizationSum
+	cfg.Diarization.ModelDir = cfg.Transcriber.ModelDir
+
+	var out bytes.Buffer
+	if err := runModelsPull(context.Background(), cfg, models.NewHTTPDownloader(nil), srv.URL, &out); err != nil {
+		t.Fatalf("runModelsPull: %v", err)
+	}
+
+	mdPath := filepath.Join(cfg.Root(), "MODELS.md")
+	md, err := os.ReadFile(mdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"base.en", transcriberSum, "pyannote/speaker-diarization-community-1", diarizationSum} {
+		if !strings.Contains(string(md), want) {
+			t.Errorf("MODELS.md missing %q:\n%s", want, md)
+		}
+	}
+}
+
+func TestRunModelsPullOnlyDiarizationConfiguredStillPullsDefaultTranscriber(t *testing.T) {
+	cfg := testRepo(t, nil)
+	blob := []byte("model data")
+	srv := modelFakeServer(t, blob)
+
+	// cfg.Transcriber keeps its non-empty default ModelID from testRepo/Default.
+	cfg.Transcriber.ModelDir = t.TempDir()
+	cfg.Diarization.ModelID = "pyannote/speaker-diarization-community-1"
+	cfg.Diarization.Filename = "config.yaml"
+	cfg.Diarization.ModelDir = cfg.Transcriber.ModelDir
+
+	var out bytes.Buffer
+	if err := runModelsPull(context.Background(), cfg, models.NewHTTPDownloader(nil), srv.URL, &out); err != nil {
+		t.Fatalf("runModelsPull: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, cfg.Transcriber.ModelID) {
+		t.Errorf("output missing transcriber pull: %s", output)
+	}
+	if !strings.Contains(output, "pyannote/speaker-diarization-community-1") {
+		t.Errorf("output missing diarization pull: %s", output)
+	}
+}
+
+func TestRunModelsPullGatedDiarizationMissingTokenFailsButTranscriberSucceeds(t *testing.T) {
+	cfg := testRepo(t, nil)
+	transcriberBlob := []byte("whisper model weights")
+	transcriberSum := modelChecksum(transcriberBlob)
+	diarizationBlob := []byte("gated pyannote config")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "pyannote") {
+			if r.Header.Get("Authorization") != "Bearer valid-token" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_, _ = w.Write(diarizationBlob)
+			return
+		}
+		_, _ = w.Write(transcriberBlob)
+	}))
+	t.Cleanup(srv.Close)
+
+	t.Setenv(config.HFTokenEnv, "")
+	cfg.Transcriber.ModelID = "base.en"
+	cfg.Transcriber.Revision = "main"
+	cfg.Transcriber.Checksum = transcriberSum
+	cfg.Transcriber.ModelDir = t.TempDir()
+
+	cfg.Diarization.ModelID = "pyannote/speaker-diarization-community-1"
+	cfg.Diarization.Revision = "main"
+	cfg.Diarization.Filename = "config.yaml"
+	cfg.Diarization.Gated = true
+	cfg.Diarization.AcceptURL = "https://huggingface.co/pyannote/speaker-diarization-community-1"
+	cfg.Diarization.ModelDir = cfg.Transcriber.ModelDir
+
+	var out bytes.Buffer
+	err := runModelsPull(context.Background(), cfg, models.NewHTTPDownloader(nil), srv.URL, &out)
+	if err == nil {
+		t.Fatal("expected error: diarization pull should fail with no HF_TOKEN")
+	}
+	if !strings.Contains(err.Error(), "diarization") {
+		t.Errorf("error %q should scope the failure to diarization", err)
+	}
+	if !strings.Contains(err.Error(), "accept terms at") {
+		t.Errorf("error %q should still carry the accept-terms message", err)
+	}
+
+	// Transcriber succeeded despite diarization failing — MODELS.md reflects it.
+	mdPath := filepath.Join(cfg.Root(), "MODELS.md")
+	md, mderr := os.ReadFile(mdPath)
+	if mderr != nil {
+		t.Fatalf("MODELS.md should still be written for the successful transcriber pull: %v", mderr)
+	}
+	if !strings.Contains(string(md), "base.en") {
+		t.Errorf("MODELS.md missing successful transcriber pull:\n%s", md)
+	}
+}
+
+func TestRunModelsPullNoModelsConfiguredError(t *testing.T) {
+	cfg := testRepo(t, nil)
+	cfg.Transcriber.ModelID = ""
+	cfg.Diarization.ModelID = ""
+	cfg.Transcriber.ModelDir = t.TempDir()
+
+	err := runModelsPull(context.Background(), cfg, models.NewHTTPDownloader(nil), "http://unused", &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "model_id") {
+		t.Errorf("expected model_id error, got: %v", err)
+	}
+}
+
 func TestRunModelsPullUngatedNoRegressionWithNoToken(t *testing.T) {
 	cfg := testRepo(t, nil)
 	blob := []byte("ungated model weights")

@@ -334,6 +334,107 @@ func TestPullGatedWithValidTokenSucceeds(t *testing.T) {
 	}
 }
 
+func TestPullFileCustomFilenameDownloadsAndRecordsManifest(t *testing.T) {
+	blob := []byte("pyannote config yaml contents")
+	wantSum := blobChecksum(blob)
+	srv := fakeServer(t, blob)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	dl := NewHTTPDownloader(nil)
+
+	m, err := PullFile(context.Background(), dl, "pyannote/speaker-diarization-community-1", "main", "config.yaml", wantSum, dir, srv.URL, GatedAuth{})
+	if err != nil {
+		t.Fatalf("PullFile: %v", err)
+	}
+	if m.Filename != "config.yaml" {
+		t.Errorf("manifest.Filename = %q, want config.yaml", m.Filename)
+	}
+
+	modelFile := filepath.Join(dir, "pyannote_speaker-diarization-community-1", "config.yaml")
+	data, err := os.ReadFile(modelFile)
+	if err != nil {
+		t.Fatalf("config.yaml not written: %v", err)
+	}
+	if string(data) != string(blob) {
+		t.Errorf("config.yaml content mismatch")
+	}
+}
+
+func TestVerifyManifestWithFilenameChecksumsRightPath(t *testing.T) {
+	blob := []byte("pyannote config yaml contents")
+	wantSum := blobChecksum(blob)
+	srv := fakeServer(t, blob)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	dl := NewHTTPDownloader(nil)
+
+	if _, err := PullFile(context.Background(), dl, "pyannote/speaker-diarization-community-1", "main", "config.yaml", wantSum, dir, srv.URL, GatedAuth{}); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := Verify(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || !results[0].OK {
+		t.Fatalf("expected OK verify against config.yaml, got %+v", results)
+	}
+}
+
+func TestVerifyManifestWithoutFilenameDefaultsToModelBin(t *testing.T) {
+	blob := []byte("model data")
+	srv := fakeServer(t, blob)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	dl := NewHTTPDownloader(nil)
+
+	if _, err := Pull(context.Background(), dl, "base.en", "main", "", dir, srv.URL, GatedAuth{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a manifest written before Filename existed.
+	manifestPath := filepath.Join(dir, "base.en", "manifest.json")
+	m, err := readManifest(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Filename = ""
+	if err := writeManifest(manifestPath, m); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := Verify(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || !results[0].OK {
+		t.Fatalf("expected OK verify defaulting to model.bin, got %+v", results)
+	}
+}
+
+func TestPullFileGatedNoTokenFailsWithAcceptTermsMessage(t *testing.T) {
+	blob := []byte("gated diarization config")
+	srv := gatedServer(t, blob, "valid-token")
+
+	dir := t.TempDir()
+	dl := NewHTTPDownloader(nil)
+	auth := GatedAuth{Gated: true, AcceptURL: "https://huggingface.co/pyannote/speaker-diarization-community-1"}
+
+	_, err := PullFile(context.Background(), dl, "pyannote/speaker-diarization-community-1", "main", "config.yaml", "", dir, srv.URL, auth)
+	if err == nil {
+		t.Fatal("expected error for gated model with no token, got nil")
+	}
+	if !strings.Contains(err.Error(), "accept terms at https://huggingface.co/pyannote/speaker-diarization-community-1") {
+		t.Errorf("error %q does not mention accept-terms URL", err)
+	}
+	if !strings.Contains(err.Error(), "HF_TOKEN") {
+		t.Errorf("error %q does not mention HF_TOKEN", err)
+	}
+}
+
 func TestPullUngatedNoRegressionWithNoToken(t *testing.T) {
 	blob := []byte("ungated model weights")
 	wantSum := blobChecksum(blob)

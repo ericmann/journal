@@ -12,6 +12,7 @@ import (
 	"github.com/ericmann/journal/internal/config"
 	"github.com/ericmann/journal/internal/embed"
 	"github.com/ericmann/journal/internal/index"
+	jlog "github.com/ericmann/journal/internal/log"
 	"github.com/ericmann/journal/internal/store"
 	"github.com/ericmann/journal/internal/synth"
 	"github.com/ericmann/journal/internal/transcribe"
@@ -115,11 +116,8 @@ func runTranscribe(ctx context.Context, cfg *config.Config, e embed.Embedder, cl
 
 	filename := transcribe.Filename(opts.date, opts.title)
 	rel := filepath.ToSlash(filepath.Join(cfg.TranscriptsRelPath(), filename))
-	abs := filepath.Join(cfg.TranscriptsAbsPath(), filename)
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(abs, []byte(md), 0o644); err != nil {
+	abs, err := jlog.Land(cfg.TranscriptsAbsPath(), filename, []byte(md))
+	if err != nil {
 		return err
 	}
 	// Transcripts take their date from the file mtime, so stamp it to the
@@ -133,7 +131,7 @@ func runTranscribe(ctx context.Context, cfg *config.Config, e embed.Embedder, cl
 		return err
 	}
 	defer s.Close()
-	st, err := index.NewIndexer(s, e).IndexTranscript(ctx, rel, md, opts.date, cfg.Transcripts.Tag)
+	st, err := jlog.IndexTranscript(ctx, index.NewIndexer(s, e), rel, md, opts.date, cfg.Transcripts.Tag)
 	if err != nil {
 		return fmt.Errorf("indexing transcript: %w", err)
 	}
