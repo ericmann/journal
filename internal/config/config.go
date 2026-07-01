@@ -136,11 +136,24 @@ type Quill struct {
 	AcceptQMImports bool `yaml:"accept_qm_imports"`
 }
 
-// LogAudio holds stub audio-capture keys (no-op in Phase 1; used in Phase 2).
+// LogAudio configures the `journal log` recorder: device selection, scratch
+// storage, and the toggle's safety limits (Phase 3).
 type LogAudio struct {
 	Device     string `yaml:"device"`
 	SampleRate int    `yaml:"sample_rate"`
 	Channels   int    `yaml:"channels"`
+	// TmpDir is where in-progress/scratch recordings are written. ~ is
+	// expanded. Empty falls back to <os temp dir>/journal-log.
+	TmpDir string `yaml:"tmp_dir"`
+	// MaxDuration caps a single recording in seconds; 0 disables the cap.
+	MaxDuration int `yaml:"max_duration"`
+	// SilenceAutostop enables a safety-net stop after a sustained silence
+	// interval (it is not the primary stopping mechanism — the toggle is).
+	SilenceAutostop bool `yaml:"silence_autostop"`
+	// KeepWAV retains the recorded WAV after a successful pipeline run and
+	// records its path in the landed note's `audio:` frontmatter. Default:
+	// delete the scratch WAV once the note is safely landed.
+	KeepWAV bool `yaml:"keep_wav"`
 }
 
 // LogTranscriber configures the local transcription backend used by `journal log <audio.wav>`.
@@ -374,7 +387,7 @@ func Default() Config {
 			AcceptQMImports: true,
 		},
 		Log: LogConfig{
-			Audio:       LogAudio{Device: "default", SampleRate: 16000, Channels: 1},
+			Audio:       LogAudio{Device: "default", SampleRate: 16000, Channels: 1, MaxDuration: 900},
 			Transcriber: LogTranscriber{Backend: "whisper.cpp", Model: "base.en", ModelDir: "~/.cache/journal/models"},
 			Shaping:     LogShaping{Enabled: true, KeepRawTranscript: true},
 			Landing:     LogLanding{Dir: "logs", BacklinkDaily: false},
@@ -442,6 +455,18 @@ func (c *Config) LogAbsPath() string {
 	return filepath.Join(c.root, filepath.FromSlash(p))
 }
 
+// expandHomeDir expands a leading ~ (or ~/...) to the user's home directory.
+// Paths that don't start with ~ are returned unchanged; a failure to resolve
+// the home directory also leaves the path unchanged.
+func expandHomeDir(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(p, "~"), "/"))
+		}
+	}
+	return p
+}
+
 // TranscriberModelDirAbs returns the absolute path to the transcriber model
 // directory, expanding a leading ~. Returns the default when ModelDir is empty.
 func (c *Config) TranscriberModelDirAbs() string {
@@ -449,12 +474,7 @@ func (c *Config) TranscriberModelDirAbs() string {
 	if d == "" {
 		d = "~/.cache/journal/models"
 	}
-	if d == "~" || strings.HasPrefix(d, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			d = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(d, "~"), "/"))
-		}
-	}
-	return d
+	return expandHomeDir(d)
 }
 
 // LogTranscriberModelDirAbs returns the absolute path to the log transcriber's
@@ -465,12 +485,23 @@ func (c *Config) LogTranscriberModelDirAbs() string {
 	if d == "" {
 		d = "~/.cache/journal/models"
 	}
-	if d == "~" || strings.HasPrefix(d, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			d = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(d, "~"), "/"))
-		}
+	return expandHomeDir(d)
+}
+
+// LogAudioTmpDirAbs returns the absolute directory for scratch recording WAVs,
+// expanding a leading ~ and creating it if missing. Falls back to
+// <os temp dir>/journal-log when log.audio.tmp_dir is empty.
+func (c *Config) LogAudioTmpDirAbs() (string, error) {
+	d := strings.TrimSpace(c.Log.Audio.TmpDir)
+	if d == "" {
+		d = filepath.Join(os.TempDir(), "journal-log")
+	} else {
+		d = expandHomeDir(d)
 	}
-	return d
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		return "", fmt.Errorf("creating log audio tmp dir %q: %w", d, err)
+	}
+	return d, nil
 }
 
 // QuillDBPath returns the configured Quill database path with ~ expanded, or ""
@@ -480,12 +511,7 @@ func (c *Config) QuillDBPath() string {
 	if p == "" {
 		return ""
 	}
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			p = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(p, "~"), "/"))
-		}
-	}
-	return p
+	return expandHomeDir(p)
 }
 
 // Validate checks invariants on non-secret settings.
@@ -573,6 +599,9 @@ func (c *Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Log.Landing.Dir) == "" {
 		return errors.New("log.landing.dir must not be empty")
+	}
+	if c.Log.Audio.MaxDuration < 0 {
+		return fmt.Errorf("log.audio.max_duration must be >= 0, got %d", c.Log.Audio.MaxDuration)
 	}
 	return nil
 }

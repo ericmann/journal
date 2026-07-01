@@ -155,3 +155,31 @@ func TestAssembleMarkerCounts(t *testing.T) {
 		t.Error("missing questions count")
 	}
 }
+
+func TestAssembleAudioPathEmitsFrontmatterField(t *testing.T) {
+	in := AssembleInput{
+		RawText:     "kept the wav",
+		CapturedAt:  testTime,
+		Transcriber: "whisper.cpp/base.en",
+		AudioPath:   "/tmp/journal-log/2026-06-30T15-04-05-abc123.wav",
+	}
+	got := Assemble(in)
+	if !strings.Contains(got, `audio: "/tmp/journal-log/2026-06-30T15-04-05-abc123.wav"`) {
+		t.Errorf("missing audio: <path> frontmatter, got:\n%s", got)
+	}
+	if strings.Contains(got, "audio: null") {
+		t.Error("audio: null should not appear when AudioPath is set")
+	}
+}
+
+func TestAssembleAudioPathEmptyKeepsNull(t *testing.T) {
+	in := AssembleInput{
+		RawText:     "no audio kept",
+		CapturedAt:  testTime,
+		Transcriber: "text",
+	}
+	got := Assemble(in)
+	if !strings.Contains(got, "audio: null") {
+		t.Error("expected audio: null when AudioPath is empty")
+	}
+}
